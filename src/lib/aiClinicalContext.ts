@@ -56,6 +56,7 @@ export function toAIClinicalContext(
     recovery: ficha.recovery,
     handover: ficha.handover,
     narrativeLaunches: ficha.narrativeLaunches
+    // voiceTranscripts propositalmente omitido: a fala pode ter nome/CPF.
   };
 }
 

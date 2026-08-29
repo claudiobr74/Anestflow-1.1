@@ -76,6 +76,7 @@ export type ProcedureRow = {
   outputs: AnesthesiaDocument["outputs"];
   inhalation_agents: AnesthesiaDocument["inhalationAgents"];
   narratives: AnesthesiaDocument["narrativeLaunches"];
+  voice_transcripts?: AnesthesiaDocument["voiceTranscripts"] | null;
   pending_transfer: AnesthesiaDocument["pendingTransfer"] | null;
   created_at: string;
   updated_at: string;
@@ -120,6 +121,7 @@ export function isMeaningfulDocument(docObj: Partial<AnesthesiaDocument>): boole
     typeof recovery.temp === "number"
   )) return true;
   if (docObj.preEvaluation && (docObj.preEvaluation.physicalExam?.respiratory || docObj.preEvaluation.airwayEvaluation || docObj.preEvaluation.currentMedications)) return true;
+  if (docObj.voiceTranscripts && docObj.voiceTranscripts.length > 0) return true;
   return false;
 }
 
@@ -145,6 +147,7 @@ export function parentPayloadForWrite(
     outputs: doc.outputs || [],
     inhalation_agents: doc.inhalationAgents || [],
     narratives: doc.narrativeLaunches || [],
+    voice_transcripts: doc.voiceTranscripts || [],
     schema_version: doc.docVersion || "2.0.0"
   };
   // pending_transfer e responsible_id só mudam via RPC de handover.
@@ -193,6 +196,7 @@ export function rowToDocumentBase(
     outputs: Array.isArray(row.outputs) ? row.outputs : [],
     inhalationAgents: Array.isArray(row.inhalation_agents) ? row.inhalation_agents : [],
     narrativeLaunches: Array.isArray(row.narratives) ? row.narratives : [],
+    voiceTranscripts: Array.isArray(row.voice_transcripts) ? row.voice_transcripts : [],
     pendingTransfer: row.pending_transfer || undefined,
     vitals: [],
     bolusDrugs: [],
