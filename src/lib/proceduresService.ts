@@ -468,7 +468,7 @@ export async function assumeResponsibilityAtomic(
   if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de assumir a responsabilidade.");
 
   const reasonCheck = validateAssumeReason(reason);
-  if (!reasonCheck.ok) {
+  if (reasonCheck.ok === false) {
     throw new Error(reasonCheck.message);
   }
 

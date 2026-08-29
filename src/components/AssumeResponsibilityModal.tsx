@@ -36,7 +36,7 @@ export default function AssumeResponsibilityModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const check = validateAssumeReason(reason);
-    if (!check.ok) {
+    if (check.ok === false) {
       setError(check.message);
       return;
     }
