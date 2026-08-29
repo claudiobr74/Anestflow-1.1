@@ -8,6 +8,7 @@ import {
 } from "./syncEngine";
 import { subscribeProcedureRealtime } from "./procedureRealtime";
 import { isUuid } from "./procedureMapper";
+import { clinicalChangeFingerprint } from "./clinicalChangeFingerprint";
 
 export function useSyncEngine(
   document: AnesthesiaDocument,
@@ -154,21 +155,7 @@ export function useSyncEngine(
     if (!document || !document.id) return;
 
     // Fast state hashing to detect genuine changes
-    const currentHash = JSON.stringify({
-      id: document.id,
-      patient: document.patient,
-      vitalsLen: document.vitals?.length || 0,
-      vitalsLast: document.vitals?.[document.vitals.length - 1],
-      drugsLen: document.bolusDrugs?.length || 0,
-      drugsLast: document.bolusDrugs?.[document.bolusDrugs.length - 1],
-      infusionsLen: document.continuousInfusions?.length || 0,
-      infusionsLast: document.continuousInfusions?.[document.continuousInfusions.length - 1],
-      eventsLen: document.events?.length || 0,
-      eventsLast: document.events?.[document.events.length - 1],
-      preEvaluation: document.preEvaluation,
-      status: document.status,
-      currentResponsibleUid: document.currentResponsibleUid
-    });
+    const currentHash = clinicalChangeFingerprint(document);
 
     // On initial mount or document switch, record current state hash without triggering auto-sync
     if (currentDocIdRef.current !== document.id || !lastDocStateHashRef.current) {
@@ -229,21 +216,7 @@ export function useSyncEngine(
       if (isLocalSavingRef.current || !onRemoteUpdate) return;
       void getProcedureById(document.id).then((remote) => {
         if (!remote || isLocalSavingRef.current) return;
-        lastDocStateHashRef.current = JSON.stringify({
-          id: remote.id,
-          patient: remote.patient,
-          vitalsLen: remote.vitals?.length || 0,
-          vitalsLast: remote.vitals?.[remote.vitals.length - 1],
-          drugsLen: remote.bolusDrugs?.length || 0,
-          drugsLast: remote.bolusDrugs?.[remote.bolusDrugs.length - 1],
-          infusionsLen: remote.continuousInfusions?.length || 0,
-          infusionsLast: remote.continuousInfusions?.[remote.continuousInfusions.length - 1],
-          eventsLen: remote.events?.length || 0,
-          eventsLast: remote.events?.[remote.events.length - 1],
-          preEvaluation: remote.preEvaluation,
-          status: remote.status,
-          currentResponsibleUid: remote.currentResponsibleUid
-        });
+        lastDocStateHashRef.current = clinicalChangeFingerprint(remote);
         onRemoteUpdate(remote);
       }).catch((error) => {
         console.warn("[SyncEngine] Aviso no listener remoto:", error);

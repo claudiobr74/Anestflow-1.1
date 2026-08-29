@@ -4,6 +4,7 @@ import {
   Volume2, VolumeX, Moon, Sun, LayoutGrid, Cloud, 
   CheckCircle2, Trash2, ShieldCheck, Save
 } from 'lucide-react';
+import { CLINICAL_STORAGE_KEYS } from '../lib/clinicalStorageKeys';
 
 export interface AppSettings {
   defaultHospital: string;
@@ -59,7 +60,7 @@ export default function SettingsModal({
 
   const handleClearLocalCache = () => {
     try {
-      sessionStorage.removeItem("anesthesia_doc");
+      sessionStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
       setShowClearSuccess(true);
       setTimeout(() => setShowClearSuccess(false), 3000);
     } catch (e) {

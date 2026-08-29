@@ -3,6 +3,7 @@
  * Postos hospitalares compartilhados: encerra a sessão local mesmo se o
  * refresh token do Auth ainda for válido. Não grava PHI — só timestamps.
  */
+import { CLINICAL_STORAGE_KEYS } from "./clinicalStorageKeys";
 
 export const SESSION_TIMEBOX_MS = 12 * 60 * 60 * 1000;
 export const SESSION_INACTIVITY_MS = 8 * 60 * 60 * 1000;
@@ -120,12 +121,12 @@ export function clearSessionEndReason(): void {
 export function clearClinicalBrowserCache(): void {
   try {
     localStorage.removeItem("anesthesia_user");
-    localStorage.removeItem("anesthesia_doc");
-    localStorage.removeItem("anestflow_pending_sync_queue");
+    localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
+    localStorage.removeItem(CLINICAL_STORAGE_KEYS.pendingSyncQueue);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith("anestflow_doc_local_")) stale.push(key);
+      if (key && key.startsWith(CLINICAL_STORAGE_KEYS.localDocPrefix)) stale.push(key);
     }
     stale.forEach((key) => localStorage.removeItem(key));
   } catch {

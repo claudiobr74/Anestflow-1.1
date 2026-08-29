@@ -54,8 +54,12 @@ Importante:
   );
 
   try {
-    return jsonResponse(JSON.parse(text || '{"alerts":[]}'));
+    const parsed = JSON.parse(text || "");
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.alerts)) {
+      return jsonResponse({ error: "AI_REVIEW_PARSE_FAILED" }, 502);
+    }
+    return jsonResponse(parsed);
   } catch {
-    return jsonResponse({ alerts: [] });
+    return jsonResponse({ error: "AI_REVIEW_PARSE_FAILED" }, 502);
   }
 }, "O tempo limite para revisão do documento foi excedido.");

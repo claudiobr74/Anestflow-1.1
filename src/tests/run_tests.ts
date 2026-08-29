@@ -116,9 +116,10 @@ console.log("\n3. Verificando sanitização no Logout...");
 try {
   const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
   const policy = fs.readFileSync(path.join(process.cwd(), "src/lib/sessionPolicy.ts"), "utf-8");
+  const cacheKeys = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalStorageKeys.ts"), "utf-8");
   assert(appContent.includes("clearClinicalBrowserCache"), "Logout remove rascunhos clínicos do localStorage");
-  assert(policy.includes("anestflow_doc_local_"), "Cache local de ficha é apagado no encerramento");
-  assert(policy.includes("anestflow_pending_sync_queue"), "Fila de sync pendente é apagada no encerramento");
+  assert(cacheKeys.includes("anestflow_doc_local_") && policy.includes("CLINICAL_STORAGE_KEYS"), "Cache local de ficha é apagado no encerramento");
+  assert(cacheKeys.includes("anestflow_pending_sync_queue") && policy.includes("pendingSyncQueue"), "Fila de sync pendente é apagada no encerramento");
 } catch (err) {
   assert(false, `Falha na verificação de logout: ${err}`);
 }
@@ -501,7 +502,158 @@ try {
   assert(false, `Falha na verificação da onda 10: ${err}`);
 }
 
-// 13. VERIFICAÇÃO FINAL DE RESULTADOS
+// 13. FASE 0+1 — FINGERPRINT, SEM INVENTAR DADO, VOZ, IDs, CACHE
+console.log("\n13. Verificando Fase 0+1 (persistência clínica e segurança de dado)...");
+try {
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { clinicalChangeFingerprint } = await import("../lib/clinicalChangeFingerprint.ts");
+  const {
+    UNREGISTERED,
+    displayAldreteScore,
+    displayAldreteTotal,
+    displayBloodPressure,
+    displayQmentumRange,
+    qmentumRange,
+    resolveRecoveryBaseline,
+  } = await import("../lib/clinicalDisplay.ts");
+  const { CLINICAL_CACHE_KEY_INVENTORY, CLINICAL_STORAGE_KEYS } = await import("../lib/clinicalStorageKeys.ts");
+  const { ensureUniqueClinicalEventIds } = await import("../lib/syncEngine.ts");
+  const {
+    applyVoiceActionsToDocument,
+    summarizeVoiceActions,
+    sanitizeVoiceCommand,
+  } = await import("../lib/voiceCommand.ts");
+  const {
+    AI_REVIEW_PARSE_FAILED,
+    AI_REVIEW_UNAVAILABLE_MESSAGE,
+    parseAiReviewPayload,
+  } = await import("../lib/aiReviewParse.ts");
+
+  const base = getBlankDocument();
+  base.id = "fase01-doc";
+  base.status = "Draft";
+  const hash0 = clinicalChangeFingerprint(base);
+
+  const withTimer = { ...base, timers: { ...base.timers, startAnesthesia: "2026-08-29T12:00:00Z" } };
+  assert(clinicalChangeFingerprint(withTimer) !== hash0, "Alterar timer muda o fingerprint");
+
+  const withGas = {
+    ...base,
+    inhalationAgents: [{ id: "ia-1", agent: "Sevoflurano" as const, startTime: "2026-08-29T12:00:00Z" }],
+  };
+  assert(clinicalChangeFingerprint(withGas) !== hash0, "Alterar gás muda o fingerprint");
+
+  const withFluid = {
+    ...base,
+    fluids: [{ id: "fl-1", type: "Cristaloide" as const, name: "Ringer", volumePrepared: 500, volumeAdministered: 500, startTime: "2026-08-29T12:00:00Z" }],
+  };
+  assert(clinicalChangeFingerprint(withFluid) !== hash0, "Alterar fluido muda o fingerprint");
+
+  const withSrpa = { ...base, recovery: { ...base.recovery, pas: 110, pad: 70, fc: 64, spo2: 97, temp: 36.1 } };
+  assert(clinicalChangeFingerprint(withSrpa) !== hash0, "Alterar SRPA muda o fingerprint");
+
+  const withAirway = { ...base, airway: { ...base.airway, deviceSize: "7.5" } };
+  assert(clinicalChangeFingerprint(withAirway) !== hash0, "Alterar via aérea muda o fingerprint");
+
+  const withChecklist = { ...base, checklist: { ...base.checklist, patientIdConfirmed: false } };
+  assert(clinicalChangeFingerprint(withChecklist) !== hash0, "Alterar checklist muda o fingerprint");
+
+  assert(clinicalChangeFingerprint(base) === hash0, "Ficha inalterada mantém o mesmo fingerprint");
+
+  const emptyBaseline = resolveRecoveryBaseline({}, null);
+  assert(emptyBaseline.pas === undefined && emptyBaseline.fc === undefined, "Sem PA/FC de SRPA nem intra, baseline fica vazio");
+  assert(displayBloodPressure(emptyBaseline.pas, emptyBaseline.pad) === UNREGISTERED, "PDF de PA sem registro não inventa 120/80");
+  assert(qmentumRange(emptyBaseline.pas, 20) === null, "QMentum sem baseline não calcula faixa");
+  assert(displayQmentumRange(null) === UNREGISTERED, "Limite QMentum sem baseline é Não registrado");
+  assert(!String(displayBloodPressure(undefined, undefined)).includes("120"), "Texto de PA não contém 120 inventado");
+
+  const fromIntra = resolveRecoveryBaseline({}, { pas: 118, pad: 76, fc: 71, spo2: 99, temp: 36.4 });
+  assert(fromIntra.pas === 118 && fromIntra.fc === 71, "Baseline usa intra só se o registro existir");
+
+  assert(displayAldreteScore(0) === "0/2", "Aldrete 0 não é tratado como vazio");
+  assert(displayAldreteScore(undefined) === UNREGISTERED, "Aldrete não registrado distingue de 0");
+  assert(displayAldreteTotal([0, 0, 0, 0, 0]) === "0/10", "Aldrete total 0 é válido");
+  assert(displayAldreteTotal([2, 2, undefined, 2, 2]) === UNREGISTERED, "Aldrete incompleto não soma como se fosse 0");
+
+  const pdfSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
+  const recSrc = fs.readFileSync(path.join(process.cwd(), "src/components/RecoveryTab.tsx"), "utf-8");
+  assert(!pdfSrc.includes("?? 120") && !pdfSrc.includes("?? 80") && !pdfSrc.includes("?? 98") && !pdfSrc.includes("?? 36.5"), "PDF não tem fallbacks 120/80/98/36.5");
+  assert(!recSrc.includes("?? 120") && !recSrc.includes("?? 36.5"), "RecoveryTab não tem fallbacks inventados de PA/temp");
+  assert(pdfSrc.includes("scoreActivity || 0") === false, "PDF Aldrete não usa || 0");
+
+  const incompleteVoice = sanitizeVoiceCommand({
+    bolusDrugs: [{ name: "Fentanil" }],
+    continuousInfusions: [{ name: "Remifentanil" }],
+    inhalationAgents: [{ name: "sevo" }],
+  });
+  assert(Boolean(incompleteVoice), "sanitize preserva lançamentos incompletos");
+  const incompleteSummary = summarizeVoiceActions(incompleteVoice!);
+  assert(incompleteSummary.some((l) => /Dose: não informada/i.test(l)), "Resumo de bolus sem dose não inventa 0");
+  assert(incompleteSummary.some((l) => /Via: não informada/i.test(l)), "Resumo de bolus sem via não inventa EV");
+  assert(incompleteSummary.some((l) => /Concentração: não informada/i.test(l)), "Resumo de gás/infusão sem conc não inventa 2%");
+  const appliedIncomplete = applyVoiceActionsToDocument(base, incompleteVoice!, null, new Date("2026-08-29T12:00:00Z"));
+  const fentanil = appliedIncomplete.bolusDrugs.find((d) => /fentanil/i.test(d.name));
+  assert(Boolean(fentanil), "Bolus reconhecido pelo nome entra na ficha");
+  assert(fentanil?.dose !== 0 && fentanil?.dose === undefined, "Dose ausente não vira 0");
+  assert(fentanil?.route !== "EV" && fentanil?.route === undefined, "Via ausente não vira EV");
+  const sevo = appliedIncomplete.inhalationAgents.find((g) => g.agent === "Sevoflurano");
+  assert(Boolean(sevo), "Sevo sem concentração ainda é lançado");
+  assert(sevo?.inspiredConc === undefined, "Sevo sem conc não inventa 2%");
+  assert(!appliedIncomplete.events.some((e) => /2[,.]0\s*%/.test(e.name)), "Evento de gás não inventa 2,0%");
+  const remi = appliedIncomplete.continuousInfusions.find((i) => /remifentanil/i.test(i.name));
+  assert(Boolean(remi), "Infusão reconhecida pelo nome entra na ficha");
+  assert(remi?.concentration !== "1" && !remi?.concentration, "Concentração ausente não vira 1");
+  assert(remi?.totalVolumePrepared !== 100 && remi?.totalVolumePrepared === undefined, "Volume ausente não vira 100 mL");
+  assert(!appliedIncomplete.events.some((e) => /1[,.]0\s*L\/min/.test(e.name)), "Evento de O2/ar não inventa 1 L/min");
+
+  const dupDoc = {
+    ...base,
+    events: [
+      { id: "same", timestamp: "2026-08-29T12:00:00Z", category: "Outro" as const, name: "Primeiro" },
+      { id: "same", timestamp: "2026-08-29T12:01:00Z", category: "Outro" as const, name: "Segundo" },
+    ],
+  };
+  const unique = ensureUniqueClinicalEventIds(dupDoc);
+  assert(unique.events.length === 2, "ID duplicado não descarta o segundo lançamento");
+  assert(unique.events[0].id !== unique.events[1].id, "Duplicata recebe ID novo");
+  assert(unique.events.map((e) => e.name).sort().join(",") === "Primeiro,Segundo", "Os dois eventos sobrevivem");
+
+  assert(parseAiReviewPayload("{bad").ok === false, "Payload não-objeto é parse falho");
+  assert(parseAiReviewPayload({ foo: 1 }).ok === false, "JSON sem alerts é parse falho");
+  assert(parseAiReviewPayload({ error: AI_REVIEW_PARSE_FAILED }).ok === false, "Código AI_REVIEW_PARSE_FAILED é parse falho");
+  const emptyOk = parseAiReviewPayload({ alerts: [] });
+  assert(emptyOk.ok === true && emptyOk.ok && emptyOk.alerts.length === 0, "alerts: [] válido não é parse falho");
+  assert(AI_REVIEW_UNAVAILABLE_MESSAGE.includes("Nenhuma conclusão"), "Mensagem de IA indisponível não finge zero alertas");
+
+  const reviewFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/review/index.ts"), "utf-8");
+  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED"), "Edge review devolve erro explícito de parse");
+  assert(reviewFn.includes("502"), "Edge review usa status de falha no parse");
+  assert(!/JSON\.parse\(\s*text\s*\|\|\s*['"]\{\s*"alerts"\s*:\s*\[\s*\]/.test(reviewFn), "Edge review não mascara parse falho com alerts vazios");
+
+  const reviewUi = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  assert(reviewUi.includes("parseAiReviewPayload"), "ReviewTab interpreta payload de auditoria");
+  assert(reviewUi.includes("AI_REVIEW_UNAVAILABLE_MESSAGE") || reviewUi.includes("Auditoria de IA indisponível"), "UI distingue parse falho de zero alertas");
+
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  assert(!appSrc.includes("email: user.hospital"), "Assinatura/claim não usa hospital como e-mail");
+  assert(appSrc.includes("email: user.email"), "E-mail de assinatura vem do Auth/perfil");
+
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  assert(syncSrc.includes("clinicalChangeFingerprint"), "useSyncEngine usa fingerprint clínico completo");
+
+  assert(CLINICAL_CACHE_KEY_INVENTORY.includes(CLINICAL_STORAGE_KEYS.anesthesiaDoc), "Inventário lista anesthesia_doc");
+  assert(CLINICAL_CACHE_KEY_INVENTORY.some((k) => k.includes("anestflow_doc_local_")), "Inventário lista anestflow_doc_local_*");
+  assert(CLINICAL_CACHE_KEY_INVENTORY.includes(CLINICAL_STORAGE_KEYS.pendingSyncQueue), "Inventário lista fila de sync");
+  assert(CLINICAL_CACHE_KEY_INVENTORY.some((k) => k.includes("anestflow_active_doc_")), "Inventário lista anestflow_active_doc_${uid}");
+
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme.includes("Fase 0") && readme.includes("Fase 1"), "README documenta Fase 0+1");
+  assert(readme.includes("anesthesia_doc") && readme.includes("anestflow_pending_sync_queue"), "README documenta chaves de cache atuais");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 0+1: ${err}`);
+}
+
+// 14. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

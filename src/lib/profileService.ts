@@ -6,6 +6,7 @@ export type DoctorProfile = {
   uf: string;
   hospital: string;
   uid: string;
+  email?: string | null;
 };
 
 export type ProfileRow = {
@@ -33,7 +34,8 @@ export function profileToDoctor(row: ProfileRow): DoctorProfile {
     name: (row.full_name || "").trim(),
     crm: (row.crm || "").trim(),
     uf: (row.uf || "").trim(),
-    hospital: (row.hospital || "").trim()
+    hospital: (row.hospital || "").trim(),
+    email: row.email || null
   };
 }
 

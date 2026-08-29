@@ -1,4 +1,9 @@
 import { AnesthesiaDocument } from "../types";
+import { newClientId } from "./procedureMapper";
+import {
+  CLINICAL_STORAGE_KEYS,
+  localDocStorageKey,
+} from "./clinicalStorageKeys";
 
 export type SyncStatus = "saved" | "syncing" | "offline" | "error";
 
@@ -11,36 +16,25 @@ export interface SyncEngineState {
   errorMessage: string | null;
 }
 
-const PENDING_QUEUE_KEY = "anestflow_pending_sync_queue";
-const LOCAL_DOC_PREFIX = "anestflow_doc_local_";
+const PENDING_QUEUE_KEY = CLINICAL_STORAGE_KEYS.pendingSyncQueue;
 
 /**
- * Ensures all nested clinical events in an AnesthesiaDocument have unique IDs and removes duplicate IDs.
+ * Garante IDs únicos nos arrays clínicos. Duplicata regenera ID — nunca descarta o lançamento.
  */
 export function ensureUniqueClinicalEventIds(doc: AnesthesiaDocument): AnesthesiaDocument {
   if (!doc) return doc;
 
-  const generateId = () => {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    return "evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-  };
-
   const ensureIdsInArray = <T extends { id?: string }>(arr?: T[]): T[] => {
     if (!Array.isArray(arr)) return [];
     const seen = new Set<string>();
-    const deduplicated: T[] = [];
-
-    for (const item of arr) {
-      if (!item) continue;
-      const validId = item.id && item.id.trim() ? item.id : generateId();
-      if (!seen.has(validId)) {
-        seen.add(validId);
-        deduplicated.push({ ...item, id: validId });
+    return arr.filter(Boolean).map((item) => {
+      let validId = item.id && item.id.trim() ? item.id : newClientId();
+      while (seen.has(validId)) {
+        validId = newClientId();
       }
-    }
-    return deduplicated;
+      seen.add(validId);
+      return { ...item, id: validId };
+    });
   };
 
   return {
@@ -84,8 +78,8 @@ export class SyncQueueManager {
       localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(queue));
       
       // Also cache local document
-      localStorage.setItem(`${LOCAL_DOC_PREFIX}${document.id}`, JSON.stringify(document));
-      localStorage.setItem("anesthesia_doc", JSON.stringify(document));
+      localStorage.setItem(localDocStorageKey(document.id), JSON.stringify(document));
+      localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify(document));
     } catch (e) {
       console.warn("Error enqueueing pending document:", e);
     }
@@ -107,14 +101,14 @@ export class SyncQueueManager {
 
   static saveLocalCopy(document: AnesthesiaDocument) {
     try {
-      localStorage.setItem(`${LOCAL_DOC_PREFIX}${document.id}`, JSON.stringify(document));
-      localStorage.setItem("anesthesia_doc", JSON.stringify(document));
+      localStorage.setItem(localDocStorageKey(document.id), JSON.stringify(document));
+      localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify(document));
     } catch (e) {}
   }
 
   static getLocalCopy(docId: string): AnesthesiaDocument | null {
     try {
-      const raw = localStorage.getItem(`${LOCAL_DOC_PREFIX}${docId}`);
+      const raw = localStorage.getItem(localDocStorageKey(docId));
       return raw ? JSON.parse(raw) : null;
     } catch (e) {
       return null;

@@ -31,6 +31,18 @@ import {
 } from "lucide-react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { getProcedureAmendments } from "../lib/proceduresService";
+import {
+  UNREGISTERED,
+  displayAldreteScore,
+  displayAldreteTotal,
+  displayBloodPressure,
+  displayQmentumRange,
+  displayTemperature,
+  displayVital,
+  isRecordedNumber,
+  qmentumRange,
+  resolveRecoveryBaseline,
+} from "../lib/clinicalDisplay";
 
 interface PdfPreviewModalProps {
   isOpen: boolean;
@@ -164,11 +176,12 @@ export default function PdfPreviewModal({
   };
 
   const latestIntra = getLatestIntraoperativeVitals();
-  const baselinePas = recovery.pas ?? latestIntra?.pas ?? 120;
-  const baselinePad = recovery.pad ?? latestIntra?.pad ?? 80;
-  const baselineFc = recovery.fc ?? latestIntra?.fc ?? 80;
-  const baselineSpo2 = recovery.spo2 ?? latestIntra?.spo2 ?? 98;
-  const baselineTemp = recovery.temp ?? latestIntra?.temp ?? 36.5;
+  const baseline = resolveRecoveryBaseline(recovery, latestIntra);
+  const baselinePas = baseline.pas;
+  const baselinePad = baseline.pad;
+  const baselineFc = baseline.fc;
+  const baselineSpo2 = baseline.spo2;
+  const baselineTemp = baseline.temp;
 
   // Deviation parameters
   const pasDeviationPct = recovery.paramPasDeviationPct ?? 20;
@@ -177,20 +190,32 @@ export default function PdfPreviewModal({
   const minTemp = recovery.paramMinTemp ?? 35.5;
   const maxTemp = recovery.paramMaxTemp ?? 37.8;
 
-  // Calculated safe ranges
-  const minPas = Math.round(baselinePas * (1 - pasDeviationPct / 100));
-  const maxPas = Math.round(baselinePas * (1 + pasDeviationPct / 100));
-  const minPad = Math.round(baselinePad * (1 - pasDeviationPct / 100));
-  const maxPad = Math.round(baselinePad * (1 + pasDeviationPct / 100));
-  const minFc = Math.round(baselineFc * (1 - fcDeviationPct / 100));
-  const maxFc = Math.round(baselineFc * (1 + fcDeviationPct / 100));
+  const pasRange = qmentumRange(baselinePas, pasDeviationPct);
+  const padRange = qmentumRange(baselinePad, pasDeviationPct);
+  const fcRange = qmentumRange(baselineFc, fcDeviationPct);
+  const minPas = pasRange?.min;
+  const maxPas = pasRange?.max;
+  const minPad = padRange?.min;
+  const maxPad = padRange?.max;
+  const minFc = fcRange?.min;
+  const maxFc = fcRange?.max;
 
-  const getAnesthesiaDurationMinutes = () => {
-    if (!doc.timers?.startAnesthesia) return 120;
+  const getAnesthesiaDurationMinutes = (): number | null => {
+    if (!doc.timers?.startAnesthesia) return null;
     const start = new Date(doc.timers.startAnesthesia).getTime();
     const end = doc.timers.endAnesthesia ? new Date(doc.timers.endAnesthesia).getTime() : Date.now();
     const diff = Math.round((end - start) / 60000);
-    return diff > 0 ? diff : 120;
+    return diff > 0 ? diff : null;
+  };
+
+  const recordedWeightKg = (): number | null => {
+    const raw = patient.weight;
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+    if (typeof raw === "string" && raw.trim()) {
+      const parsed = parseFloat(raw);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return null;
   };
 
   const parseConcentration = (concentrationStr: string) => {
@@ -212,7 +237,7 @@ export default function PdfPreviewModal({
     if (sortedHist.length === 0) return { totalDose: 0, totalVolume: 0, doseUnit: "mg" };
 
     const endMins = getAnesthesiaDurationMinutes();
-    const weight = patient.weight ? parseFloat(patient.weight) || 70 : 70;
+    const weight = recordedWeightKg();
 
     for (let i = 0; i < sortedHist.length; i++) {
       const current = sortedHist[i];
@@ -224,6 +249,7 @@ export default function PdfPreviewModal({
       } else if (current.status === "Pausado" || current.status === "Finalizado") {
         segmentEnd = current.minutesFromStart;
       }
+      if (segmentEnd == null) continue;
       
       const duration = Math.max(0, segmentEnd - current.minutesFromStart);
       if (duration === 0) continue;
@@ -270,6 +296,7 @@ export default function PdfPreviewModal({
           }
         }
       } else if (u === "mcg/kg/min") {
+        if (weight == null) continue;
         const doseMcg = rate * weight * duration;
         if (conc.value > 0) {
           if (conc.unit === "mcg") {
@@ -281,6 +308,7 @@ export default function PdfPreviewModal({
           }
         }
       } else if (u === "mcg/kg/h") {
+        if (weight == null) continue;
         const doseMcg = (rate * weight * duration) / 60;
         if (conc.value > 0) {
           if (conc.unit === "mcg") {
@@ -292,6 +320,7 @@ export default function PdfPreviewModal({
           }
         }
       } else if (u === "mg/kg/min") {
+        if (weight == null) continue;
         const doseMg = rate * weight * duration;
         if (conc.value > 0) {
           if (conc.unit === "mg") {
@@ -303,6 +332,7 @@ export default function PdfPreviewModal({
           }
         }
       } else if (u === "mg/kg/h") {
+        if (weight == null) continue;
         const doseMg = (rate * weight * duration) / 60;
         if (conc.value > 0) {
           if (conc.unit === "mg") {
@@ -359,7 +389,7 @@ export default function PdfPreviewModal({
 
   const getAmpoulesForInfusion = (inf: any) => {
     if (inf.ampoules !== undefined && inf.ampoules > 0) return inf.ampoules;
-    return getInfusionDefaultAmpoules(inf.name, inf.totalVolumePrepared || 100);
+    return getInfusionDefaultAmpoules(inf.name, inf.totalVolumePrepared);
   };
 
   // Timeline scale calculation for vitals chart
@@ -1672,10 +1702,10 @@ export default function PdfPreviewModal({
                       </span>
                       <span className="text-zinc-500 block">Profissional Responsável: {recovery.admittingStaff || doc.team?.anesthesiologistLead || "—"}</span>
                       <p className="text-zinc-600 font-semibold mt-1.5 text-xs tabular-nums leading-normal">
-                        PA Admissão: <span className="text-zinc-900 font-extrabold">{baselinePas}/{baselinePad} mmHg</span><br/>
-                        FC Admissão: <span className="text-zinc-900 font-extrabold">{baselineFc} bpm</span><br/>
-                        SpO₂ Admissão: <span className="text-zinc-900 font-extrabold">{baselineSpo2}%</span><br/>
-                        Temp Admissão: <span className="text-zinc-900 font-extrabold">{baselineTemp.toFixed(1)}°C</span><br/>
+                        PA Admissão: <span className="text-zinc-900 font-extrabold">{isRecordedNumber(baselinePas) || isRecordedNumber(baselinePad) ? `${displayBloodPressure(baselinePas, baselinePad)} mmHg` : UNREGISTERED}</span><br/>
+                        FC Admissão: <span className="text-zinc-900 font-extrabold">{isRecordedNumber(baselineFc) ? displayVital(baselineFc, " bpm") : UNREGISTERED}</span><br/>
+                        SpO₂ Admissão: <span className="text-zinc-900 font-extrabold">{isRecordedNumber(baselineSpo2) ? displayVital(baselineSpo2, "%") : UNREGISTERED}</span><br/>
+                        Temp Admissão: <span className="text-zinc-900 font-extrabold">{displayTemperature(baselineTemp)}</span><br/>
                         Dor Admissão: <span className="text-zinc-900 font-extrabold">{recovery.painScale !== undefined ? `${recovery.painScale}/10` : "—"}</span>
                       </p>
                     </div>
@@ -1684,9 +1714,9 @@ export default function PdfPreviewModal({
                     <div className="bg-indigo-50/50 p-1.5 rounded-lg border border-indigo-100">
                       <span className="text-indigo-950 block font-black uppercase text-xs mb-1">Limites de Alerta Calculados (QMentum)</span>
                       <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs font-bold text-zinc-700 tabular-nums">
-                        <div>PAS: <span className="text-indigo-800 font-extrabold">{minPas} - {maxPas}</span> mmHg</div>
-                        <div>PAD: <span className="text-indigo-800 font-extrabold">{minPad} - {maxPad}</span> mmHg</div>
-                        <div>FC: <span className="text-indigo-800 font-extrabold">{minFc} - {maxFc}</span> bpm</div>
+                        <div>PAS: <span className="text-indigo-800 font-extrabold">{pasRange ? displayQmentumRange(pasRange) : UNREGISTERED}</span>{pasRange ? " mmHg" : ""}</div>
+                        <div>PAD: <span className="text-indigo-800 font-extrabold">{padRange ? displayQmentumRange(padRange) : UNREGISTERED}</span>{padRange ? " mmHg" : ""}</div>
+                        <div>FC: <span className="text-indigo-800 font-extrabold">{fcRange ? displayQmentumRange(fcRange) : UNREGISTERED}</span>{fcRange ? " bpm" : ""}</div>
                         <div>SpO₂: <span className="text-indigo-800 font-extrabold">≥ {minSpo2}%</span></div>
                         <div className="col-span-2">Temp: <span className="text-indigo-800 font-extrabold">{minTemp.toFixed(1)}°C - {maxTemp.toFixed(1)}°C</span></div>
                       </div>
@@ -1695,20 +1725,22 @@ export default function PdfPreviewModal({
                     <div className="bg-white p-1.5 rounded-lg border border-zinc-200">
                       <span className="text-zinc-400 block font-extrabold uppercase text-xs mb-1">Cálculo Índice Aldrete & Kroulik</span>
                       <div className="grid grid-cols-2 gap-y-0.5 gap-x-2 text-xs font-bold text-zinc-600">
-                        <div>Atividade Motora:</div><div className="text-right text-indigo-700">{recovery.scoreActivity || 0}/2</div>
-                        <div>Respiração:</div><div className="text-right text-indigo-700">{recovery.scoreRespiration || 0}/2</div>
-                        <div>Circulação:</div><div className="text-right text-indigo-700">{recovery.scoreCirculation || 0}/2</div>
-                        <div>Nível Consciência:</div><div className="text-right text-indigo-700">{recovery.scoreConsciousness || 0}/2</div>
-                        <div>Saturação O₂:</div><div className="text-right text-indigo-700">{recovery.scoreSaturation || 0}/2</div>
+                        <div>Atividade Motora:</div><div className="text-right text-indigo-700">{displayAldreteScore(recovery.scoreActivity)}</div>
+                        <div>Respiração:</div><div className="text-right text-indigo-700">{displayAldreteScore(recovery.scoreRespiration)}</div>
+                        <div>Circulação:</div><div className="text-right text-indigo-700">{displayAldreteScore(recovery.scoreCirculation)}</div>
+                        <div>Nível Consciência:</div><div className="text-right text-indigo-700">{displayAldreteScore(recovery.scoreConsciousness)}</div>
+                        <div>Saturação O₂:</div><div className="text-right text-indigo-700">{displayAldreteScore(recovery.scoreSaturation)}</div>
                       </div>
                       <div className="border-t border-zinc-200 mt-1 pt-1 flex justify-between font-black text-indigo-950 text-xs">
                         <span>SCORE ALDRETE TOTAL:</span>
                         <span className="text-indigo-800">
-                          {((recovery.scoreActivity || 0) + 
-                            (recovery.scoreRespiration || 0) + 
-                            (recovery.scoreCirculation || 0) + 
-                            (recovery.scoreConsciousness || 0) + 
-                            (recovery.scoreSaturation || 0))}/10
+                          {displayAldreteTotal([
+                            recovery.scoreActivity,
+                            recovery.scoreRespiration,
+                            recovery.scoreCirculation,
+                            recovery.scoreConsciousness,
+                            recovery.scoreSaturation,
+                          ])}
                         </span>
                       </div>
                     </div>
@@ -1732,11 +1764,13 @@ export default function PdfPreviewModal({
                             </thead>
                             <tbody className="divide-y divide-zinc-100 text-zinc-700 font-bold tabular-nums">
                               {recovery.records.map((r: any, idx: number) => {
-                                const aldTotal = (r.aldreteActivity ?? 0) +
-                                                 (r.aldreteRespiration ?? 0) +
-                                                 (r.aldreteCirculation ?? 0) +
-                                                 (r.aldreteConsciousness ?? 0) +
-                                                 (r.aldreteOximetry ?? 0);
+                                const aldLabel = displayAldreteTotal([
+                                  r.aldreteActivity,
+                                  r.aldreteRespiration,
+                                  r.aldreteCirculation,
+                                  r.aldreteConsciousness,
+                                  r.aldreteOximetry,
+                                ]);
                                 return (
                                   <tr key={r.id || idx}>
                                     <td className="py-0.5">{r.minutesFromAdmission}'</td>
@@ -1744,8 +1778,8 @@ export default function PdfPreviewModal({
                                     <td className="py-0.5 text-center">{r.fc ?? "—"}</td>
                                     <td className="py-0.5 text-center">{r.spo2 ? `${r.spo2}%` : "—"}</td>
                                     <td className="py-0.5 text-center">{r.temp ? `${r.temp}°C` : "—"}</td>
-                                    <td className="py-0.5 text-center">{r.painScale ?? "—"}/10</td>
-                                    <td className="py-0.5 text-right font-black text-indigo-700">{aldTotal}/10</td>
+                                    <td className="py-0.5 text-center">{isRecordedNumber(r.painScale) ? `${r.painScale}/10` : "—"}</td>
+                                    <td className="py-0.5 text-right font-black text-indigo-700">{aldLabel}</td>
                                   </tr>
                                 );
                               })}
