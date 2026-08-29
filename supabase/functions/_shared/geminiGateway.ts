@@ -98,7 +98,7 @@ function buildTranscriptionBody(model: string, audio: { mimeType: string; data: 
     input: [{ type: "audio", mime_type: audio.mimeType, data: audio.data }],
     generation_config: {
       transcription_config: {
-        language_hints: ["pt-BR"],
+        language_codes: ["pt-BR"],
         custom_vocabulary: audio.vocabulary,
         mode: { type: "verbatim" },
       },

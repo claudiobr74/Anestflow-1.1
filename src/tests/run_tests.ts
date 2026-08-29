@@ -1906,9 +1906,48 @@ try {
     vocabulary: ["fentanil"],
   });
   assertNoObsoleteGemini36Sampling(asr);
-  const asrCfg = asr.generation_config as { thinking_level?: unknown; transcription_config?: { mode?: { type?: string } } };
+  const asrCfg = asr.generation_config as {
+    thinking_level?: unknown;
+    transcription_config?: {
+      language_codes?: string[];
+      language_hints?: unknown;
+      mode?: { type?: string };
+      custom_vocabulary?: string[];
+    };
+  };
   assert(asrCfg.thinking_level === undefined, "Transcrição não envia thinking_level");
   assert(asrCfg.transcription_config?.mode?.type === "verbatim", "ASR verbatim");
+  assert(
+    JSON.stringify(asrCfg.transcription_config?.language_codes) === JSON.stringify(["pt-BR"]),
+    "buildTranscriptionBody/espelho envia language_codes = [pt-BR]",
+  );
+  assert(
+    asrCfg.transcription_config?.language_hints === undefined,
+    "buildTranscriptionBody/espelho NÃO envia language_hints",
+  );
+  assert(!JSON.stringify(asr).includes("language_hints"), "payload ASR serializado não contém language_hints");
+  assert(
+    JSON.stringify(asrCfg.transcription_config?.custom_vocabulary) === JSON.stringify(["fentanil"]),
+    "custom_vocabulary permanece em transcription_config",
+  );
+  assert(gatewaySrc.includes("language_codes: [\"pt-BR\"]"), "gateway buildTranscriptionBody usa language_codes");
+  assert(!gatewaySrc.includes("language_hints"), "gateway buildTranscriptionBody não usa language_hints");
+  const runtimeTsFiles: string[] = [];
+  const walkRuntime = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "tests") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walkRuntime(full);
+      else if (/\.(ts|tsx|js)$/.test(entry.name)) runtimeTsFiles.push(full);
+    }
+  };
+  walkRuntime(path.join(process.cwd(), "src"));
+  walkRuntime(path.join(process.cwd(), "supabase/functions"));
+  const languageHintsHits = runtimeTsFiles.filter((file) => fs.readFileSync(file, "utf-8").includes("language_hints"));
+  assert(
+    languageHintsHits.length === 0,
+    `runtime sem language_hints (${languageHintsHits.map((f) => path.relative(process.cwd(), f)).join(", ") || "ok"})`,
+  );
   assert(extractInteractionText({ output_text: "ok" }) === "ok", "extract usa output_text");
   assert(extractInteractionText({ steps: [{ type: "thought", content: { text: "segredo" } }, { type: "message", content: { text: "fala" } }] }) === "fala", "thinking não vira texto clínico");
 

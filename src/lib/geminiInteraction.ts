@@ -55,7 +55,7 @@ export function buildTranscriptionInteractionBody(options: {
     ],
     generation_config: {
       transcription_config: {
-        language_hints: ["pt-BR"],
+        language_codes: ["pt-BR"],
         custom_vocabulary: options.vocabulary,
         mode: { type: "verbatim" },
       },
