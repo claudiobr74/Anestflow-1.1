@@ -3,8 +3,12 @@ import { AnesthesiaDocument } from "../types.js";
 import { validateClinicalPassword, MIN_PASSWORD_LENGTH } from "../lib/passwordPolicy.ts";
 import {
   evaluateSession,
+  evaluateWorkstationLock,
+  needsSignatureStepUp,
   SESSION_INACTIVITY_MS,
   SESSION_TIMEBOX_MS,
+  SIGNATURE_STEP_UP_MS,
+  WORKSTATION_LOCK_MS,
   sessionEndMessage,
 } from "../lib/sessionPolicy.ts";
 import {
@@ -922,7 +926,7 @@ try {
   assert(saveSrc.includes("saveProcedure(ficha: AnesthesiaDocument"), "saveProcedure recebe ficha");
 
   assert(
-    drawerSrc.includes("{ document: ficha, models }"),
+    drawerSrc.includes("document: toAIClinicalContext(ficha)") && drawerSrc.includes("models"),
     "generate-description continua enviando a chave document da Edge Function"
   );
   assert(
@@ -1013,7 +1017,156 @@ try {
   assert(false, `Falha na verificação da Fase 6: ${err}`);
 }
 
-// 19. VERIFICAÇÃO FINAL DE RESULTADOS
+// 19. FASE 7 — tipos, PWA, headers, lock, IA, PDF, CORS
+console.log("\n19. Verificando Fase 7 (hardening)...");
+try {
+  const { execSync } = await import("node:child_process");
+  execSync("npx tsc --noEmit -p tsconfig.lib.strict.json", { stdio: "pipe" });
+  assert(true, "tsconfig.lib.strict.json passa (src/lib em strict)");
+
+  const tsconfig = fs.readFileSync(path.join(process.cwd(), "tsconfig.json"), "utf-8");
+  assert(!/"strict"\s*:\s*true/.test(tsconfig), "tsconfig principal não liga strict global");
+  assert(tsconfig.includes("src/lib/ts-strict-shims"), "tsconfig principal exclui o shim de React");
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
+  assert(pkg.scripts["lint:lib"] === "tsc --noEmit -p tsconfig.lib.strict.json", "package.json tem lint:lib");
+  assert(!JSON.stringify(pkg).includes("@types/react"), "App não instala @types/react no projeto inteiro");
+
+  const sigSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/signatureService.ts"), "utf-8");
+  assert(!sigSrc.includes("obj: any"), "signatureService não usa obj: any");
+
+  const { PWA_CACHE_NAME, PWA_REGISTER_TYPE } = await import("../lib/pwaPolicy.ts");
+  assert(PWA_CACHE_NAME === "anestflow-pwa-v7", "cacheName da PWA é anestflow-pwa-v7");
+  assert(PWA_REGISTER_TYPE === "autoUpdate", "PWA usa autoUpdate");
+  const viteConfig = fs.readFileSync(path.join(process.cwd(), "vite.config.ts"), "utf-8");
+  assert(viteConfig.includes("cacheId") && viteConfig.includes("PWA_CACHE_NAME"), "vite.config versiona cacheId");
+  assert(viteConfig.includes("skipWaiting: true") && viteConfig.includes("clientsClaim: true"), "SW faz skipWaiting e clientsClaim");
+  assert(viteConfig.includes("cleanupOutdatedCaches: true"), "SW limpa caches antigos");
+  const mainSrc = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
+  assert(mainSrc.includes("import.meta.env.DEV") && mainSrc.includes("unregister"), "Unregister de SW só em DEV");
+  const prodish = mainSrc.split("import.meta.env.DEV")[0];
+  assert(!prodish.includes("unregister"), "Produção não desregistra o service worker");
+
+  const { ANESTFLOW_SECURITY_HEADERS } = await import("../lib/securityHeaders.ts");
+  const vercelCfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf-8"));
+  const vercelHeaders: Array<{ key: string; value: string }> = vercelCfg.headers?.[0]?.headers ?? [];
+  for (const [key, value] of Object.entries(ANESTFLOW_SECURITY_HEADERS)) {
+    const found = vercelHeaders.find((h) => h.key === key);
+    assert(found?.value === value, `vercel.json replica ${key}`);
+  }
+  assert(ANESTFLOW_SECURITY_HEADERS["Permissions-Policy"].includes("microphone=(self)"), "Permissions-Policy libera microfone no próprio origin");
+  assert(ANESTFLOW_SECURITY_HEADERS["Permissions-Policy"].includes("camera=()"), "Permissions-Policy bloqueia câmera");
+  assert(ANESTFLOW_SECURITY_HEADERS["Content-Security-Policy"].includes("frame-ancestors 'none'"), "CSP tem frame-ancestors none");
+  const serverSrc = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
+  assert(serverSrc.includes("applyAnestflowSecurityHeaders"), "Express aplica os mesmos headers");
+  const apiSrc = fs.readFileSync(path.join(process.cwd(), "api/public-config.ts"), "utf-8");
+  assert(apiSrc.includes("ANESTFLOW_SECURITY_HEADERS"), "public-config Vercel aplica os headers");
+
+  assert(WORKSTATION_LOCK_MS === 20 * 60 * 1000, "Lock do posto é 20 minutos");
+  assert(SIGNATURE_STEP_UP_MS === 15 * 60 * 1000, "Step-up de assinatura é 15 minutos");
+  assert(SESSION_INACTIVITY_MS === 8 * 60 * 60 * 1000, "Logout por ociosidade continua 8 horas");
+  const t0 = 2_000_000;
+  assert(
+    evaluateWorkstationLock({ startedAt: t0, lastActivityAt: t0, now: t0 + 19 * 60 * 1000 }) === false,
+    "19 min ociosos não travam o posto"
+  );
+  assert(
+    evaluateWorkstationLock({ startedAt: t0, lastActivityAt: t0, now: t0 + 20 * 60 * 1000 }) === true,
+    "20 min ociosos travam o posto"
+  );
+  assert(
+    evaluateSession({ startedAt: t0, lastActivityAt: t0, now: t0 + 8 * 60 * 60 * 1000 }) === "inactivity",
+    "8h ociosas ainda encerram a sessão"
+  );
+  assert(
+    needsSignatureStepUp({ startedAt: t0, lastActivityAt: t0, now: t0 + 14 * 60 * 1000 }) === false,
+    "14 min não pedem senha na assinatura"
+  );
+  assert(
+    needsSignatureStepUp({ startedAt: t0, lastActivityAt: t0, now: t0 + 15 * 60 * 1000 }) === true,
+    "15 min pedem senha na assinatura"
+  );
+
+  const guardSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSessionGuard.ts"), "utf-8");
+  assert(guardSrc.includes("onLock") && guardSrc.includes("lockedRef"), "useSessionGuard tem onLock e respeita locked");
+  assert(guardSrc.includes("if (lockIfNeeded()) return"), "Clique que dispara o lock não renova o relógio");
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  assert(appSrc.includes("WorkstationLockScreen"), "App monta o overlay de lock");
+  assert(appSrc.includes("needsSignatureStepUp"), "Encerramento pede step-up de senha");
+  assert(appSrc.includes("setWorkstationLocked(true)"), "Lock não faz logout");
+  const lockUi = fs.readFileSync(path.join(process.cwd(), "src/components/WorkstationLockScreen.tsx"), "utf-8");
+  assert(lockUi.includes("signInWithPassword"), "Desbloqueio revalida a senha");
+  assert(!lockUi.includes("signOut") && !lockUi.includes("setFicha"), "Lock não destrói a ficha nem faz logout sozinho");
+
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { toAIClinicalContext, aiContextOmitsIdentifiers } = await import("../lib/aiClinicalContext.ts");
+  const fichaIa = getBlankDocument();
+  fichaIa.id = "fase07-doc";
+  fichaIa.currentResponsibleUid = "uid-responsavel";
+  fichaIa.participantUids = ["uid-responsavel"];
+  fichaIa.patient.fullName = "Paciente Teste Fase Sete";
+  fichaIa.patient.cpf = "39053344705";
+  fichaIa.patient.recordNumber = "PRONT-7";
+  fichaIa.patient.admissionNumber = "ADM-7";
+  const ctx = toAIClinicalContext(fichaIa);
+  assert(aiContextOmitsIdentifiers(ctx), "toAIClinicalContext omite identificadores");
+  assert(fichaIa.patient.cpf === "39053344705", "Strip da IA não muta a ficha viva");
+  assert(ctx.patient && typeof ctx.patient === "object" && !("cpf" in (ctx.patient as object)), "CPF não vai no contexto");
+  const reviewUi = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  assert(reviewUi.includes("toAIClinicalContext(ficha)"), "ReviewTab envia contexto stripado");
+  const drawerUi = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
+  assert(drawerUi.includes("toAIClinicalContext(ficha)"), "Descrição envia contexto stripado");
+  assert(drawerUi.includes("document: toAIClinicalContext(ficha)"), "Chave document da Edge permanece");
+
+  const geminiSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/gemini.ts"), "utf-8");
+  assert(!geminiSrc.includes("gemini-flash-latest"), "Modelo gemini-flash-latest foi removido");
+  assert(geminiSrc.includes("gemini-3.1-flash-lite"), "Modelo pinado é gemini-3.1-flash-lite");
+  assert(geminiSrc.includes("prompt_version") && geminiSrc.includes("GeminiInvocationMeta"), "Gemini devolve metadados versionados");
+  const reviewFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/review/index.ts"), "utf-8");
+  assert(reviewFn.includes("prompt_version: \"review-v1\""), "review declara prompt_version");
+  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED"), "Parse falho de review continua explícito");
+  assert(reviewFn.includes("stripClinicalIdentifiers"), "Edge review stripa identificadores");
+  const { parseAiReviewPayload, AI_REVIEW_PARSE_FAILED } = await import("../lib/aiReviewParse.ts");
+  assert(parseAiReviewPayload({ alerts: [], ai: { model: "gemini-3.1-flash-lite" } }).ok === true, "Metadados extras não viram parse falho");
+  assert(parseAiReviewPayload({ error: AI_REVIEW_PARSE_FAILED, ai: { success: false } }).ok === false, "AI_REVIEW_PARSE_FAILED continua distinto de alerts vazios");
+  assert(parseAiReviewPayload({ alerts: [] }).ok === true, "alerts: [] continua sucesso (zero achados)");
+
+  const { toSignedAnesthesiaRecordV1, pdfFinalSearchableText, SIGNED_RECORD_SCHEMA } = await import("../lib/pdfFinal.ts");
+  const { UNREGISTERED } = await import("../lib/clinicalDisplay.ts");
+  const signed = toSignedAnesthesiaRecordV1(getBlankDocument());
+  const text1 = pdfFinalSearchableText(signed);
+  const text2 = pdfFinalSearchableText(signed);
+  assert(text1 === text2, "Golden do PDF final é estável");
+  assert(signed.schema === SIGNED_RECORD_SCHEMA, "Schema do PDF final é SignedAnesthesiaRecordV1");
+  assert(text1.includes(UNREGISTERED), "Ausência no PDF final permanece ausência");
+  assert(!text1.includes("120/80"), "PDF final não inventa 120/80");
+  const pdfPreview = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
+  assert(pdfPreview.includes("html-to-image") || pdfPreview.includes("toPng") || pdfPreview.includes("htmlToImage"), "Preview de captura permanece");
+
+  const corsSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/cors.ts"), "utf-8");
+  assert(corsSrc.includes("ANESTFLOW_CORS_ORIGIN"), "CORS aceita origem opcional");
+  assert(corsSrc.includes("|| \"*\""), "CORS default continua *");
+  const authSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/auth.ts"), "utf-8");
+  assert(authSrc.includes("getUser") && authSrc.includes("email_confirmed_at"), "JWT + e-mail confirmado permanecem");
+  const configToml = fs.readFileSync(path.join(process.cwd(), "supabase/config.toml"), "utf-8");
+  assert(configToml.includes("verify_jwt = true"), "verify_jwt permanece ligado");
+
+  const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  assert(appSrc.includes("const [ficha, setFicha]"), "App.tsx não foi fatiado");
+  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab.tsx não foi fatiado");
+
+  const readme7 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme7.includes("Fase 7") && readme7.includes("toAIClinicalContext"), "README documenta Fase 7");
+  assert(readme7.includes("20 min") && readme7.includes("lint:lib"), "README documenta lock e lint:lib");
+} catch (err) {
+  const extra =
+    err && typeof err === "object" && "stderr" in err
+      ? String((err as { stderr?: Buffer | string }).stderr || "")
+      : "";
+  assert(false, `Falha na verificação da Fase 7: ${err}${extra ? `\n${extra}` : ""}`);
+}
+
+// 20. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
