@@ -152,7 +152,8 @@ export default function App() {
   // Monitor Supabase Auth state to ensure immediate, complete cleanup of session clinical data when unauthenticated
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    import("./lib/supabase").then(({ getSupabase, isSupabaseConfigured }) => {
+    import("./lib/supabase").then(async ({ getSupabase, isSupabaseConfigured, ensureSupabaseConfig }) => {
+      await ensureSupabaseConfig();
       if (!isSupabaseConfigured()) return;
       const supabase = getSupabase();
       const { data } = supabase.auth.onAuthStateChange((event, session) => {

@@ -7,10 +7,16 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import { applySupabaseEnvFromFiles, describeSupabaseEnvPresence } from "./src/lib/supabaseEnvFiles";
+import { CANONICAL_SUPABASE_URL } from "./src/lib/supabaseProject";
 
 const projectRoot = process.cwd();
 dotenv.config({ path: path.join(projectRoot, ".env.local") });
 dotenv.config({ path: path.join(projectRoot, ".env") });
+const supabaseEnv = applySupabaseEnvFromFiles(
+  projectRoot,
+  process.env.NODE_ENV === "production" ? "production" : "development"
+);
 
 const app = express();
 const PORT = 3000;
@@ -50,6 +56,20 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
+// Publishable key only — same class of secret as VITE_* in the browser bundle.
+app.get("/api/public-config", (_req, res) => {
+  const url = (process.env.VITE_SUPABASE_URL || CANONICAL_SUPABASE_URL).trim();
+  const key = (
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    ""
+  ).trim();
+  res.json({
+    supabaseUrl: url || null,
+    supabasePublishableKey: key && !key.includes("xxxxxxxx") ? key : null
+  });
+});
+
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -61,6 +81,7 @@ async function setupVite() {
     });
     app.use(vite.middlewares);
     console.log("Vite development middleware mounted successfully.");
+    console.log(describeSupabaseEnvPresence(supabaseEnv.url, supabaseEnv.key));
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -68,6 +89,7 @@ async function setupVite() {
       res.sendFile(path.join(distPath, "index.html"));
     });
     console.log("Serving compiled static assets in production mode.");
+    console.log(describeSupabaseEnvPresence(supabaseEnv.url, supabaseEnv.key));
   }
 
   app.listen(PORT, "0.0.0.0", () => {

@@ -267,9 +267,10 @@ try {
   assert(false, `Falha na verificação da onda 7: ${err}`);
 }
 
-console.log("\n8. Verificando leitura estática das env Vite do Supabase...");
+console.log("\n8. Verificando injeção das env Vite/Express do Supabase...");
 try {
   const supabaseLib = fs.readFileSync(path.join(process.cwd(), "src/lib/supabase.ts"), "utf-8");
+  const envFilesLib = fs.readFileSync(path.join(process.cwd(), "src/lib/supabaseEnvFiles.ts"), "utf-8");
   const loginContent = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
   const mainContent = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
   const serverContent = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
@@ -281,9 +282,38 @@ try {
     "Chave lida com acesso estático import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"
   );
   assert(!supabaseLib.includes("env?.[name]"), "Cliente não usa acesso dinâmico env[name] (Vite não injeta em produção)");
-  assert(loginContent.includes("getSupabaseConfigError"), "Login explica o campo que falta");
+  assert(loginContent.includes("ensureSupabaseConfig"), "Login espera o fallback /api/public-config");
   assert(mainContent.includes("serviceWorker") && mainContent.includes("unregister"), "Dev desregistra SW de um dist antigo");
-  assert(serverContent.includes("envDir") && viteConfig.includes("envDir"), "Vite recebe envDir na raiz do projeto");
+  assert(serverContent.includes("/api/public-config"), "Express expõe a config pública do Supabase");
+  assert(!serverContent.includes("service_role"), "public-config não usa service_role");
+  assert(viteConfig.includes("applySupabaseEnvFromFiles"), "vite.config aplica .env.local antes do loadEnv");
+  assert(envFilesLib.includes("usable(fromProc)"), "Arquivo prevalece sobre process.env vazio");
+
+  const { applySupabaseEnvFromFiles } = await import("../lib/supabaseEnvFiles.ts");
+  const tmp = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-"));
+  fs.writeFileSync(
+    path.join(tmp, ".env.local"),
+    "VITE_SUPABASE_URL=https://envfile.supabase.co\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fromfile\n"
+  );
+  const prevUrl = process.env.VITE_SUPABASE_URL;
+  const prevKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const prevAnon = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = "";
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "";
+  delete process.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    const resolved = applySupabaseEnvFromFiles(tmp, "development");
+    assert(resolved.url === "https://envfile.supabase.co", "URL do .env.local vence process.env vazio");
+    assert(resolved.key === "sb_publishable_fromfile", "Chave do .env.local vence process.env vazio");
+  } finally {
+    if (prevUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+    else process.env.VITE_SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevKey;
+    if (prevAnon === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
+    else process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 } catch (err) {
   assert(false, `Falha na verificação das env Vite: ${err}`);
 }
