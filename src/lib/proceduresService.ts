@@ -151,25 +151,64 @@ async function insertProcedureParent(
   );
 }
 
-async function signOnServer(cleanedDoc: AnesthesiaDocument): Promise<void> {
-  const canonical = cleanedDoc.signatureSnapshot;
-  if (!canonical) {
-    throw new Error("Canonical da assinatura ausente. Tente encerrar a ficha novamente.");
+export type ProcedureIntegrityReport = {
+  snapshotOk: boolean;
+  persistedOk: boolean | null;
+  storedHash: string;
+  snapshotHash: string;
+  schema: string | null;
+  legacy: boolean;
+};
+
+export function isProcedureIntegrityIntact(report: ProcedureIntegrityReport): boolean {
+  return report.snapshotOk === true && report.persistedOk === true;
+}
+
+function parseIntegrityReport(data: unknown): ProcedureIntegrityReport {
+  const row = (data || {}) as Record<string, unknown>;
+  const persisted = row.persisted_ok;
+  return {
+    snapshotOk: row.snapshot_ok === true,
+    persistedOk: persisted === true ? true : persisted === false ? false : null,
+    storedHash: typeof row.stored_hash === "string" ? row.stored_hash : "",
+    snapshotHash: typeof row.snapshot_hash === "string" ? row.snapshot_hash : "",
+    schema: typeof row.schema === "string" ? row.schema : null,
+    legacy: row.legacy === true
+  };
+}
+
+/**
+ * Encerra e sela a ficha no servidor. O cliente envia só o id —
+ * canonical, hash e identidade do signatário não saem do Postgres.
+ */
+export async function closeProcedureAtomic(procedureId: string): Promise<AnesthesiaDocument> {
+  if (!isUuid(procedureId) || isMockProcedureId(procedureId)) {
+    throw new Error("Salve a ficha na nuvem antes de encerrar o procedimento.");
   }
-  const { data, error } = await getSupabase().rpc("sign_procedure", {
-    p_procedure_id: cleanedDoc.id,
-    p_canonical: canonical,
-    p_signer: cleanedDoc.signedBy || {}
+  const { error } = await getSupabase().rpc("sign_procedure", {
+    p_procedure_id: procedureId
   });
-  if (error) throwClinical(error, "Erro ao assinar a ficha no servidor.");
-  if (typeof data === "string" && data) {
-    cleanedDoc.hash = data;
+  if (error) throwClinical(error, "Erro ao selar a ficha no servidor.");
+  const sealed = await getProcedureById(procedureId);
+  if (!sealed) throw new Error("Ficha não encontrada após o encerramento.");
+  return sealed;
+}
+
+export async function verifyProcedureIntegrity(procedureId: string): Promise<ProcedureIntegrityReport> {
+  if (!isUuid(procedureId) || isMockProcedureId(procedureId)) {
+    throw new Error("Só é possível verificar o selo de uma ficha gravada na nuvem.");
   }
+  const { data, error } = await getSupabase().rpc("verify_procedure_integrity", {
+    p_procedure_id: procedureId
+  });
+  if (error) throwClinical(error, "Erro ao verificar a integridade da ficha.");
+  return parseIntegrityReport(data);
 }
 
 /**
  * Grava a ficha no Supabase (tabela procedures + eventos filhos).
- * Assinatura usa a RPC sign_procedure (o cliente não pode UPDATE para signed).
+ * Encerramento usa closeProcedureAtomic / RPC sign_procedure(uuid) —
+ * o cliente não envia canonical nem faz UPDATE para signed.
  */
 export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): Promise<void> {
   if (!userId) throw new Error("Usuário não autenticado.");
@@ -272,12 +311,6 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
     }
 
     await persistClinicalChildren(cleanedDoc, userId);
-
-    if (cleanedDoc.status === "Signed") {
-      await signOnServer(cleanedDoc);
-      ficha.hash = cleanedDoc.hash;
-      ficha.status = "Signed";
-    }
   };
 
   try {
@@ -550,9 +583,9 @@ export async function addProcedureAmendment(
     p_procedure_id: procedureId,
     p_body: amendment.text,
     p_reason: amendment.reason,
-    p_author_name: amendment.authorName,
-    p_author_crm: amendment.authorCRM,
-    p_author_uf: amendment.authorUF
+    p_author_name: "",
+    p_author_crm: "",
+    p_author_uf: ""
   });
   if (error) throwClinical(error, "Erro ao gravar adendo.");
 

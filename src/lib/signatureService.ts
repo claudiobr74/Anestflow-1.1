@@ -153,7 +153,9 @@ export async function computeSHA256(data: string): Promise<string> {
 }
 
 /**
- * Signs an anesthesia sheet with a real SHA-256 cryptographic hash, stores signer metadata, version, snapshot, and locks it.
+ * Canonical local (testes de determinismo). O selo oficial da ficha é montado
+ * no Postgres (`sign_procedure(uuid)` / SignedAnesthesiaRecordV1) — este
+ * helper não é autoridade de encerramento.
  */
 export async function signAndLockDocument(
   doc: AnesthesiaDocument,
@@ -200,7 +202,8 @@ export async function signAndLockDocument(
 }
 
 /**
- * Verifies whether a signed document's clinical content matches its recorded SHA-256 hash.
+ * Checagem A local (hash do snapshot). Não declara a ficha íntegra —
+ * a integridade oficial exige A+B em `verifyProcedureIntegrity`.
  */
 export async function verifyDocumentIntegrity(
   doc: AnesthesiaDocument
@@ -210,7 +213,7 @@ export async function verifyDocumentIntegrity(
       isValid: false,
       computedHash: "",
       storedHash: doc.hash,
-      message: "Documento ainda não foi assinado digitalmente."
+      message: "Documento ainda não foi selado no servidor."
     };
   }
 
@@ -224,8 +227,8 @@ export async function verifyDocumentIntegrity(
     computedHash,
     storedHash: doc.hash,
     message: isValid
-      ? "Assinatura e hash SHA-256 validados. O documento está autêntico e imutável."
-      : "ALERTA DE VIOLAÇÃO: O conteúdo clínico foi alterado após a geração da assinatura digital!"
+      ? "Checagem A (hash do snapshot) conferiu. A integridade persistida (checagem B) só vale no servidor."
+      : "ALERTA DE VIOLAÇÃO: o snapshot local não confere com o hash SHA-256 armazenado."
   };
 }
 

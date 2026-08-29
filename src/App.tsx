@@ -840,20 +840,18 @@ export default function App() {
     }
 
     try {
-      const { signAndLockDocument } = await import("./lib/signatureService");
-      const closedDoc = await signAndLockDocument(ficha, {
-        uid: user.uid,
-        name: user.name,
-        crm: user.crm,
-        uf: user.uf,
-        email: user.email || null
-      });
+      const { saveProcedure, closeProcedureAtomic } = await import("./lib/proceduresService");
+      const toFlush = {
+        ...ficha,
+        status: ficha.status === "Signed" ? "InProgress" : ficha.status
+      };
+      await saveProcedure(toFlush, user.uid);
+      const sealed = await closeProcedureAtomic(toFlush.id);
 
-      const { saveProcedure } = await import("./lib/proceduresService");
-      await saveProcedure(closedDoc, user.uid);
-      
-      alert(`Procedimento encerrado com sucesso!\n\nAssinatura Digital SHA-256:\n${closedDoc.hash}\n\nO documento está homologado e imutável no servidor.`);
-      setFichaWithBroadcast(closedDoc);
+      alert(
+        `Procedimento encerrado com sucesso!\n\nSelo criptográfico de integridade (SHA-256):\n${sealed.hash || ""}\n\nO registro clínico foi selado no servidor e tornou-se imutável.`
+      );
+      setFichaWithBroadcast(sealed);
     } catch (err: any) {
       console.error(err);
       alert(err?.message || "Ocorreu um erro ao tentar salvar o encerramento do procedimento na nuvem.");

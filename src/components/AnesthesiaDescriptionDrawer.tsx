@@ -1379,7 +1379,7 @@ export default function AnesthesiaDescriptionDrawer({
 
                 {/* PDF Signatures Mockup */}
                 <div className="border-t pt-4 flex justify-between items-center text-xs text-slate-400 tabular-nums">
-                  <span>Assinatura Digital</span>
+                  <span>Selo de integridade</span>
                   <span>{ficha.status === "Signed" ? "DOCUMENTO ASSINADO" : "RASCUNHO EM ANDAMENTO"}</span>
                 </div>
 

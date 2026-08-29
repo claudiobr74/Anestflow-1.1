@@ -1635,7 +1635,7 @@ export default function PdfPreviewModal({
 
                 {/* ASSINATURA ELETRÔNICA HOMOLOGADA */}
                 <div className="border-t border-zinc-200 pt-2.5 mt-3">
-                  <span className="text-zinc-400 block uppercase font-extrabold text-xs mb-1">Assinatura Eletrônica e Hash SHA-256</span>
+                  <span className="text-zinc-400 block uppercase font-extrabold text-xs mb-1">Selo criptográfico de integridade</span>
                   
                   {doc.status === "Signed" && doc.hash ? (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-center relative overflow-hidden">
@@ -1645,7 +1645,7 @@ export default function PdfPreviewModal({
                       </div>
                       <div className="flex items-center justify-center gap-1.5 text-emerald-700 font-black text-[9.5px]">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>ASSINATURA DIGITAL VALIDADA (SHA-256)</span>
+                        <span>SELO CRIPTOGRÁFICO DE INTEGRIDADE (SHA-256)</span>
                       </div>
                       <p className="font-black text-zinc-800 text-xs mt-1 leading-none uppercase">
                         {((doc.signedBy?.name || team.anesthesiologistLead || "Anestesiologista Responsável")).toUpperCase()}
@@ -1659,14 +1659,14 @@ export default function PdfPreviewModal({
                         </p>
                       )}
                       <p className="text-xs text-emerald-800 tabular-nums font-bold mt-1.5 break-all uppercase leading-tight bg-emerald-100/60 p-1 rounded border border-emerald-200/80">
-                        HASH SHA-256: {doc.hash.toUpperCase()}
+                        INTEGRIDADE SHA-256: {doc.hash.toUpperCase()}
                       </p>
                     </div>
                   ) : (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-center">
                       <div className="flex items-center justify-center gap-1 text-amber-700 font-black text-[9.5px]">
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>PENDENTE DE ASSINATURA DIGITAL</span>
+                        <span>PENDENTE DE SELO DE INTEGRIDADE</span>
                       </div>
                       <p className="font-black text-zinc-800 text-xs mt-1 leading-none uppercase">
                         {(team.anesthesiologistLead || "Médico Anestesista").toUpperCase()}
@@ -1816,7 +1816,7 @@ export default function PdfPreviewModal({
                             </div>
                             {amd.hash && (
                               <div className="text-[6.5px] tabular-nums text-indigo-900 bg-indigo-50/50 p-0.5 rounded border border-indigo-100 truncate">
-                                HASH SHA-256 DO ADENDO: {amd.hash}
+                                INTEGRIDADE SHA-256 DO ADENDO: {amd.hash}
                               </div>
                             )}
                           </div>

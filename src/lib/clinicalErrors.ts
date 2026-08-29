@@ -61,6 +61,20 @@ export function mapClinicalError(error: unknown, fallback = "Erro ao gravar a fi
   if (raw.includes("amendment_requires_signed")) {
     return new Error("Adendos só podem ser adicionados depois que a ficha estiver assinada.");
   }
+  if (raw.includes("signing_not_ready")) {
+    return new Error(
+      "A ficha não atende aos critérios mínimos de encerramento (início da anestesia, identificação do paciente ou responsável/CRM)."
+    );
+  }
+  if (raw.includes("profile_required")) {
+    return new Error("Seu perfil profissional precisa estar cadastrado para selar ou aditar a ficha.");
+  }
+  if (raw.includes("not_signed")) {
+    return new Error("Esta ficha ainda não foi selada no servidor.");
+  }
+  if (raw.includes("canonical_required")) {
+    return new Error("Encerramento recusado: o selo canônico é gerado no servidor, não no navegador.");
+  }
   if (raw.includes("row-level security") || raw.includes("42501")) {
     const hint = err?.message || fallback;
     return new Error(`Acesso recusado pelas políticas de segurança da ficha. ${hint}`);

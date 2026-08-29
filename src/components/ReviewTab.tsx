@@ -15,8 +15,13 @@ import {
   parseAiReviewPayload,
 } from "../lib/aiReviewParse";
 import { getSupabase } from "../lib/supabase";
-import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } from "../lib/signatureService";
-import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
+import { createSignedAmendment } from "../lib/signatureService";
+import {
+  addProcedureAmendment,
+  getProcedureAmendments,
+  isProcedureIntegrityIntact,
+  verifyProcedureIntegrity
+} from "../lib/proceduresService";
 import { evaluateSigningReadiness } from "../lib/signingReadinessEngine";
 
 interface ReviewTabProps {
@@ -177,10 +182,27 @@ export default function ReviewTab({
   const handleVerifyIntegrity = async () => {
     setVerifyingHash(true);
     try {
-      const res = await verifyDocumentIntegrity(ficha);
-      setVerificationResult(res);
+      const report = await verifyProcedureIntegrity(ficha.id);
+      const intact = isProcedureIntegrityIntact(report);
+      let message: string;
+      if (intact) {
+        message = "Selo criptográfico de integridade conferido (checagens A e B).";
+      } else if (report.legacy && report.snapshotOk) {
+        message =
+          "O hash do snapshot bate (checagem A), mas o registro é legado e não usa o contrato V2. Não é possível afirmar integridade persistida.";
+      } else if (!report.snapshotOk) {
+        message = "O hash armazenado não confere com o snapshot selado (checagem A).";
+      } else {
+        message = "O snapshot selado não coincide com os dados atuais do servidor (checagem B).";
+      }
+      setVerificationResult({
+        isValid: intact,
+        message,
+        computedHash: report.snapshotHash
+      });
     } catch (err) {
-      setVerificationResult({ isValid: false, message: "Erro ao recalcular hash SHA-256.", computedHash: "" });
+      const mapped = err instanceof Error ? err.message : "Erro ao verificar o selo de integridade.";
+      setVerificationResult({ isValid: false, message: mapped, computedHash: "" });
     } finally {
       setVerifyingHash(false);
     }
@@ -210,12 +232,7 @@ export default function ReviewTab({
     if (onCloseProcedure) {
       await onCloseProcedure();
     } else {
-      const signedDoc = await signAndLockDocument(ficha, {
-        name: ficha.team.anesthesiologistLead || "Anestesiologista Responsável",
-        crm: ficha.team.crmLead || "",
-        uf: ficha.team.ufLead || "SP"
-      });
-      onUpdateDocument(signedDoc);
+      alert("O encerramento precisa ser selado no servidor. Recarregue a ficha e tente novamente.");
     }
   };
 
@@ -258,7 +275,7 @@ export default function ReviewTab({
       setAmendmentText("");
       setAmendmentReason("");
       setShowAmendmentForm(false);
-      alert(`Adendo Retificatório assinado e selado com sucesso!\n\nHash SHA-256 do Adendo:\n${saved.hash}\n\nO documento clínico original assinado permaneceu imutável.`);
+      alert(`Adendo retificatório selado com sucesso.\n\nIntegridade SHA-256 do adendo:\n${saved.hash}\n\nO registro clínico original permanece imutável.`);
     } catch (err: any) {
       console.error("Erro ao adicionar adendo:", err);
       alert(err?.message || "Erro ao salvar o adendo retificatório.");
@@ -271,7 +288,7 @@ export default function ReviewTab({
     <div className="space-y-6">
       
       {/* CARD 1: MAIN REVISION STATUS CARD */}
-      {/* CARD 1: REVISÃO E ASSINATURA DIGITAL SHA-256 */}
+      {/* CARD 1: REVISÃO E SELO DE INTEGRIDADE */}
       <div className="bg-white dark:bg-zinc-900 border-slate-200/60 dark:border-zinc-800/60 p-6 rounded-lg border shadow-sm transition-colors flex flex-col gap-4">
         <div className="flex flex-col md:flex-row gap-5 justify-between items-start md:items-center">
           <div className="space-y-1">
@@ -279,7 +296,7 @@ export default function ReviewTab({
               {isSigned ? (
                 <>
                   <Lock className="w-5 h-5 text-emerald-600" />
-                  <span>Documento Oficial Assinado Digitalmente (SHA-256)</span>
+                  <span>Documento oficial com selo criptográfico de integridade</span>
                 </>
               ) : (
                 <>
@@ -326,7 +343,7 @@ export default function ReviewTab({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-zinc-700 pb-2.5">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-zinc-200">
                 <KeyRound className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Informações de Validação da Assinatura</span>
+                <span>Selo criptográfico de integridade</span>
               </div>
               <button
                 type="button"
@@ -364,7 +381,7 @@ export default function ReviewTab({
 
               <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-lg border border-slate-200 dark:border-zinc-800 md:col-span-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-400 uppercase">Hash SHA-256 Real (Canônico)</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase">Integridade SHA-256 (canônico)</span>
                   <button
                     type="button"
                     onClick={handleCopyHash}
@@ -658,7 +675,7 @@ export default function ReviewTab({
                     </div>
                     {amd.hash && (
                       <div className="bg-slate-100/80 dark:bg-zinc-800/80 p-1.5 rounded border border-slate-200 dark:border-zinc-700 truncate">
-                        <span className="font-bold text-slate-700 dark:text-zinc-300 block text-xs">HASH SHA-256 DO ADENDO:</span>
+                        <span className="font-bold text-slate-700 dark:text-zinc-300 block text-xs">INTEGRIDADE SHA-256 DO ADENDO:</span>
                         <span className="tabular-nums text-xs text-indigo-600 dark:text-indigo-400 select-all font-bold">{amd.hash}</span>
                       </div>
                     )}
@@ -690,9 +707,9 @@ export default function ReviewTab({
             <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 mb-4">
               <Lock className="h-6 w-6" />
             </div>
-            <h3 className="text-lg font-bold">Assinar e Selar Ficha Anestésica?</h3>
+            <h3 className="text-lg font-bold">Selar ficha anestésica?</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
-              Ao encerrar, o sistema gerará um <strong>snapshot canônico</strong> com <strong>Hash Criptográfico SHA-256</strong> e registrará sua responsabilidade técnica. A ficha tornar-se-á <strong>estritamente imutável</strong>. Deseja prosseguir?
+              Ao encerrar, o servidor monta o contrato clínico <strong>SignedAnesthesiaRecordV1</strong> e grava o <strong>selo criptográfico de integridade (SHA-256)</strong>. O navegador não envia o canonical. A ficha tornar-se-á <strong>estritamente imutável</strong>. Deseja prosseguir?
             </p>
             <div className="mt-6 flex gap-3">
               <button

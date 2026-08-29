@@ -116,7 +116,7 @@ Não desligue a confirmação de e-mail para contornar o limite.
 O cliente grava no schema da onda 1:
 
 - `saveProcedure` → `public.procedures` + tabelas filhas (`procedure_vitals`, `medications`, `fluids`, `infusions`, `events`)
-- Assinatura → RPC `sign_procedure` (hash SHA-256 no servidor). O cliente **não** faz UPDATE para `signed`.
+- Encerramento → RPC `sign_procedure(p_procedure_id)` (o servidor monta `SignedAnesthesiaRecordV1`, calcula o SHA-256 e grava o signatário a partir de `profiles`). O cliente **não** envia canonical nem faz UPDATE para `signed`.
 - Troca / assunção → `transfer_responsibility` / `request_transfer` / `claim_responsibility` (aceite) / `assume_responsibility` (assunção excepcional) / `decline_pending_transfer`
 - Adendo → `add_procedure_amendment`
 - Participantes → `add_participant_by_email`, `list_procedure_participant_profiles`, `remove_procedure_collaborator`
@@ -248,7 +248,7 @@ Edição clínica é **fail-closed**: só o `currentResponsibleUid` grava. O cri
 - Ao registrar o início da anestesia, `Draft` vira `InProgress`. O header só diz “Anestesia em andamento” se existe `startAnesthesia` **e** não existe `endAnesthesia`.
 - Encerramento usa `evaluateSigningReadiness` (`SigningReadinessEngine`) fora do `ReviewTab`: CRITICAL / IMPORTANT / INFO. Capnografia **não** é bloqueio universal. Técnica ausente é IMPORTANT. Sem responsável autenticado é CRITICAL.
 
-Ficha assinada bloqueia mutação; a gravação que fecha o caso usa `closingSignature`. Claim e transferência **não** passam por `assertCanEdit` no sentido de mutação local: o cliente chama as RPCs da Fase 4. Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
+Ficha assinada bloqueia mutação. O encerramento **não** grava `status: Signed` pelo cliente: `closeProcedureAtomic` chama `sign_procedure(uuid)` depois de um flush clínico. `closingSignature` permanece só como escape se alguém ainda passar uma ficha já marcada Signed para `saveProcedure`. Claim e transferência **não** passam por `assertCanEdit` no sentido de mutação local: o cliente chama as RPCs da Fase 4. Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
 
 ## Fase 4 (claim/transfer só via RPC)
 
@@ -270,11 +270,36 @@ O botão Sincronização do `ShareModal` pausa de verdade o **autosave de saída
 
 O live `fase04_live.ts` (um usuário) cobre no-op, self-transfer, perfil ausente e `reason_required`. Com `ONDA3_TEST_EMAIL_B` + `ONDA3_TEST_PASSWORD_B`, `fase04_handover_live.ts` exercita participante sem pendência (`claim_requires_pending`), `request_transfer` A→B, aceite via `claim_responsibility` e `assume_responsibility` excepcional.
 
+## Fase 4B (integridade documental V2)
+
+O navegador **não** é autoridade do JSON selado. Encerrar a ficha chama `sign_procedure(p_procedure_id)` — sem `p_canonical`, sem hash e sem nome/CRM/UF do signatário vindos do cliente.
+
+No mesmo COMMIT o Postgres:
+
+1. Confere `auth.uid()`, responsável e critérios CRITICAL do `SigningReadinessEngine` (início da anestesia, ordem cirurgia/anestesia, nome ≥ 5, `responsible_id`, chefe + CRM).
+2. Trava a linha (`SELECT … FOR UPDATE`), lê a ficha e as tabelas filhas.
+3. Monta `SignedAnesthesiaRecordV1` (paciente, procedimento, equipe, pré, técnica, via aérea, monitor/equipamento, acessos, vitais, bolus, infusões, inalatórios, fluidos, débitos, eventos, incidentes, timers, transferências, checklist, recuperação, handover, narrativas e metadados).
+4. Preenche o signatário a partir de `profiles`.
+5. Canonical = `jsonb::text` determinístico; SHA-256 desse texto; grava `signed_canonical`, `content_hash`, `signed_by`, `signed_at` e `status = signed`.
+
+Verificação (`verify_procedure_integrity`):
+
+- **A:** `hash(snapshot) == stored_hash`
+- **B:** `canonical(dados atuais do servidor) == signed_snapshot`
+
+A UI só trata a ficha como íntegra quando **A e B** passam. Fichas seladas no contrato antigo (canonical do cliente) podem passar A e são marcadas `legacy` — não se afirma integridade persistida só com A.
+
+Na interface isso é **selo criptográfico de integridade** / **Integridade SHA-256**. SHA-256 isolado **não** é apresentado como assinatura digital do médico.
+
+Adendos: autor oficial = `auth.uid()` → `profiles`. `p_author_name` / `p_author_crm` / `p_author_uf` do navegador são ignorados. O canonical do adendo vincula procedimento, snapshot (`content_hash`), autor, timestamp, conteúdo e motivo.
+
+O PDF final fino da Fase 7 (`pdfFinal.ts`) continua sendo um recorte para golden tests e **não** substitui o JSON selado no banco. Live: `fase04b_live.ts` (e `onda3_live.ts` atualizado para o close atômico).
+
 ## Fase 5 (renomear `document` → `ficha`)
 
 A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava o `document` do DOM: o menu overflow e o download de modelos precisavam de `window.document` para não bater na ficha.
 
-O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument`, `canEditDocument` e `signAndLockDocument` não mudam. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: toAIClinicalContext(ficha), models }`).
+O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument` e `canEditDocument` não mudam. `signAndLockDocument` permanece só para testes locais de hash — o encerramento real é `closeProcedureAtomic`. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: toAIClinicalContext(ficha), models }`).
 
 Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` não foram fatiados.
 
