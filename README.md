@@ -3,22 +3,27 @@
 <p>Registro anestésico digital (PWA) — migração de Firebase para Supabase em andamento.</p>
 </div>
 
-## Onda 0 (fundação)
+## Projeto Supabase (canônico)
 
-O app ainda autentica e persiste no Firebase. A onda 0 só abre o trilho Supabase: CLI, Auth local, env e projeto hospedado. Schema/RLS é a onda 1; login no cliente é a onda 2.
+O backend alvo é o projeto **Anestflow** na organização Macedotech:
 
 | Item | Valor |
 |---|---|
-| Organização | Macedotech Org |
-| Projeto hospedado | `plciototnjsdjzhudptc` ([dashboard](https://supabase.com/dashboard/project/plciototnjsdjzhudptc)) |
-| Região atual | `us-west-2` |
-| Região alvo (LGPD) | `sa-east-1` — **não criada**: limite de 2 projetos free (já existem `Anestflow` e `Virginiapsi`) |
+| Nome | Anestflow |
+| Ref | `plciototnjsdjzhudptc` |
+| URL | `https://plciototnjsdjzhudptc.supabase.co` |
+| Região | `us-west-2` |
+| Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Para ir a São Paulo depois: pausar ou subir de plano um dos projetos free, criar `anestflow-sa` em `sa-east-1` e apontar o `.env.local`.
+Identidade versionada em `supabase/remote.json`. Tabelas ainda vazias — schema/RLS entram na onda 1.
 
-### Auth (espelhar no Dashboard do projeto hospedado)
+## Onda 0 (fundação)
 
-O `supabase/config.toml` já define isto para `supabase start`:
+O app ainda autentica e persiste no Firebase. A onda 0 só abre o trilho: CLI, Auth local, env e vínculo com este projeto. Login no cliente é a onda 2.
+
+### Auth (espelhar no Dashboard)
+
+O `supabase/config.toml` já define isto para `npx supabase start`:
 
 - Cadastro anônimo desligado
 - Confirmação de e-mail **obrigatória**
@@ -28,7 +33,7 @@ O `supabase/config.toml` já define isto para `supabase start`:
 - Google OAuth preparado mas **desligado** até existirem Client ID/Secret (não colocar secret no Vite)
 - Firebase **não** é provider third-party
 
-No projeto cloud, abra **Authentication → Providers / Settings** e marque as mesmas opções. O CLI não aplica `config.toml` no projeto hospedado.
+No cloud: **Authentication → Providers / Settings** com as mesmas opções. O CLI não aplica `config.toml` no projeto hospedado.
 
 ### Variáveis de ambiente
 
@@ -36,12 +41,7 @@ No projeto cloud, abra **Authentication → Providers / Settings** e marque as m
 cp .env.example .env.local
 ```
 
-Preencha só:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY` (chave `sb_publishable_…`; nunca `service_role`)
-
-A chave publishable pode ir no cliente. `service_role` não entra no repositório nem no front.
+`VITE_SUPABASE_URL` já aponta para o Anestflow. Preencha só `VITE_SUPABASE_PUBLISHABLE_KEY` (chave `sb_publishable_…` no Dashboard). Nunca `service_role` no front.
 
 ### Stack local (opcional nesta onda)
 
@@ -49,20 +49,18 @@ A chave publishable pode ir no cliente. `service_role` não entra no repositóri
 npx supabase start
 ```
 
-Requer Docker. A API local fica em `http://127.0.0.1:54321`. O app Vite/Express continua em `http://127.0.0.1:3000`.
+Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3000`.
 
 ## Rodar o app (ainda Firebase)
-
-**Pré-requisito:** Node.js
 
 1. `npm install`
 2. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express)
 3. `npm run dev`
 
-Firebase permanece até a onda 2. Não adicione novos documentos Firestore.
+Firebase permanece até a onda 2. Não adicione novos documentos Firestore. Não copie PHI para este projeto até a RLS da onda 1.
 
 ## Segurança imediata (fora do código)
 
 1. Tornar o repositório GitHub **privado**.
-2. Rotacionar a API key do Firebase já commitada em `firebase-applet-config.json`.
-3. Não copiar PHI de Firestore para o Supabase nesta onda (projeto remoto está vazio de tabelas).
+2. Rotacionar a API key Firebase já commitada em `firebase-applet-config.json`.
+3. Confirmar e-mail ON e anônimo OFF no Dashboard do Anestflow.

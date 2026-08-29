@@ -1,7 +1,8 @@
 # AnestFlow local Auth/API config (onda 0).
-# Hosted project: plciototnjsdjzhudptc (Macedotech Org)
-# Region today: us-west-2 — sa-east-1 was blocked by the 2-project free-tier cap.
-# Mirror these Auth flags in Dashboard → Authentication until they are applied via API:
+# Hosted project (canonical): Anestflow — plciototnjsdjzhudptc
+# Dashboard: https://supabase.com/dashboard/project/plciototnjsdjzhudptc
+# Region: us-west-2
+# Mirror these Auth flags in Dashboard → Authentication:
 #   - Confirm email: ON
 #   - Anonymous sign-ins: OFF
 #   - Minimum password length: 12 + letters/digits mixed case
