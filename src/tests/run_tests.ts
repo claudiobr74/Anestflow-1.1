@@ -289,6 +289,14 @@ try {
   assert(appContent.includes("overflowMenuOpen"), "Menu de overflow do cabeçalho abre por clique");
   assert(!appContent.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
   assert(appContent.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
+  assert(
+    appContent.includes("window.document.addEventListener"),
+    "Menu overflow escuta o DOM via window.document (a ficha também se chama document)"
+  );
+  assert(
+    !appContent.includes("\n    document.addEventListener("),
+    "Menu overflow não usa document.addEventListener sombreado pela ficha"
+  );
 } catch (err) {
   assert(false, `Falha na verificação da onda 7: ${err}`);
 }
