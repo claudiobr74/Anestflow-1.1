@@ -3,6 +3,9 @@ import { ASSUME_REASON_REQUIRED_MESSAGE } from "./assumeResponsibility";
 export const STALE_REVISION_MESSAGE =
   "Esta ficha foi atualizada em outro lugar. Recarregamos a versão mais recente para não sobrescrever o que já está na nuvem.";
 
+export const REMOTE_DIRTY_CONFLICT_MESSAGE =
+  "Esta ficha mudou em outro lugar enquanto havia alterações locais não salvas. Não substituímos o que está nesta aba. Recarregue para ver a nuvem, ou continue editando depois de resolver o conflito.";
+
 export const CLAIM_REQUIRES_PENDING_MESSAGE =
   "Não há transferência pendente para aceitar. Para assumir o caso sem convite, use Assumir responsabilidade e informe o motivo.";
 
@@ -63,8 +66,14 @@ export function mapClinicalError(error: unknown, fallback = "Erro ao gravar a fi
   }
   if (raw.includes("signing_not_ready")) {
     return new Error(
-      "A ficha não atende aos critérios mínimos de encerramento (início da anestesia, identificação do paciente ou responsável/CRM)."
+      "A ficha não atende aos critérios mínimos de encerramento (início e término da anestesia, identificação do paciente ou responsável/CRM)."
     );
+  }
+  if (raw.includes("pending_transfer_blocks_sign")) {
+    return new Error("Há uma transferência de responsabilidade pendente. Resolva-a antes de selar a ficha.");
+  }
+  if (raw.includes("invalid_child_payload")) {
+    return new Error("O pacote clínico enviado ao servidor é inválido. Nenhuma parte da ficha foi gravada.");
   }
   if (raw.includes("profile_required")) {
     return new Error("Seu perfil profissional precisa estar cadastrado para selar ou aditar a ficha.");

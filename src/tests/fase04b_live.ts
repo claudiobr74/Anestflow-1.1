@@ -86,6 +86,7 @@ try {
 
 const ready = baseDoc("ready");
 ready.timers.startAnesthesia = new Date().toISOString();
+ready.timers.endAnesthesia = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 ready.vitals = [
   {
     id: crypto.randomUUID(),

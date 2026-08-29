@@ -38,6 +38,7 @@ console.log("login ok", uid);
 
 const stamp = Date.now();
 const startAnesthesia = "2026-08-29T12:00:00.000Z";
+const endAnesthesia = "2026-08-29T14:30:00.000Z";
 const doc = getBlankDocument();
 doc.createdByUid = uid;
 doc.currentResponsibleUid = uid;
@@ -50,7 +51,7 @@ doc.patient.hospital = "Hospital Teste Checkpoint";
 doc.team.anesthesiologistLead = "Dr. Agente Checkpoint";
 doc.team.crmLead = "000040";
 doc.team.ufLead = "SP";
-doc.timers = { startAnesthesia };
+doc.timers = { startAnesthesia, endAnesthesia };
 doc.inhalationAgents = [
   {
     id: crypto.randomUUID(),

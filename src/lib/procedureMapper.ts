@@ -151,12 +151,28 @@ export function parentPayloadForWrite(
     schema_version: doc.docVersion || "2.0.0"
   };
   // pending_transfer e responsible_id só mudam via RPC de handover.
-  // revision só incrementa no trigger do servidor — o cliente não manda o valor.
+  // revision só incrementa no servidor (save_procedure_atomic / trigger).
   if (options.includeStatus) {
     const writeStatus = doc.status === "Signed" ? "in_progress" : toDbStatus(doc.status);
     payload.status = writeStatus === "signed" ? "in_progress" : writeStatus;
   }
   return payload;
+}
+
+export function childrenPayloadForWrite(doc: AnesthesiaDocument): {
+  vitals: AnesthesiaDocument["vitals"];
+  medications: AnesthesiaDocument["bolusDrugs"];
+  fluids: AnesthesiaDocument["fluids"];
+  infusions: AnesthesiaDocument["continuousInfusions"];
+  events: AnesthesiaDocument["events"];
+} {
+  return {
+    vitals: doc.vitals || [],
+    medications: doc.bolusDrugs || [],
+    fluids: doc.fluids || [],
+    infusions: doc.continuousInfusions || [],
+    events: doc.events || []
+  };
 }
 
 export function rowToDocumentBase(

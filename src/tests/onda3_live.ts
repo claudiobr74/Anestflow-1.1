@@ -53,6 +53,7 @@ blank.team.anesthesiologistLead = "Dr. Agente Onda Tres";
 blank.team.crmLead = "123456";
 blank.team.ufLead = "GO";
 blank.timers.startAnesthesia = new Date().toISOString();
+blank.timers.endAnesthesia = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
 blank.vitals = [
   {
     id: crypto.randomUUID(),

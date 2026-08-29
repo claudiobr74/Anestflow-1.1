@@ -13,6 +13,7 @@ import {
 } from "./clinicalChildren";
 import {
   amendmentFromRow,
+  childrenPayloadForWrite,
   expectedProcedureRevision,
   isMockProcedureId,
   isUuid,
@@ -25,7 +26,7 @@ import {
 } from "./procedureMapper";
 
 export type { ClinicalSubcollectionName };
-export { addClinicalEventItem, deleteClinicalEventItem, getClinicalEventItems } from "./clinicalChildren";
+export { addClinicalEventItem, deleteClinicalEventItem, getClinicalEventItems, voidClinicalItem } from "./clinicalChildren";
 export { isMeaningfulDocument };
 
 const SAVE_TIMEOUT_MS = 20000;
@@ -245,72 +246,40 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
   const write = async () => {
     const supabase = getSupabase();
 
-    if (isUuid(cleanedDoc.id)) {
-      const { data: existing, error: readError } = await supabase
-        .from("procedures")
-        .select("id, status, created_by, responsible_id, revision")
-        .eq("id", cleanedDoc.id)
-        .maybeSingle();
-      if (readError) throwClinical(readError);
-
-      if (existing) {
-        if (existing.status === "signed") {
-          if (cleanedDoc.status === "Signed") return;
-          throw new Error(
-            "Ficha Assinada e Imutável: O documento foi assinado digitalmente e não pode mais sofrer alterações diretamente. Para correções, utilize o recurso de Adendo Retificatório Imutável."
-          );
-        }
-        if (existing.responsible_id && existing.responsible_id !== userId) {
-          throw new Error(
-            `Edição bloqueada: A ficha está sob a responsabilidade de Dr(a). ${cleanedDoc.team?.anesthesiologistLead || "outro profissional"}.`
-          );
-        }
-
-        const expected = expectedProcedureRevision(cleanedDoc);
-        const serverRevision = expectedProcedureRevision({
-          revision: existing.revision as number | null | undefined
-        });
-        if (serverRevision !== expected) {
-          throw new Error("stale_revision");
-        }
-
-        const { data: updated, error: updateError } = await supabase
-          .from("procedures")
-          .update(parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true }))
-          .eq("id", cleanedDoc.id)
-          .eq("revision", expected)
-          .select("revision, updated_at")
-          .maybeSingle();
-        if (updateError) throwClinical(updateError);
-        if (!updated) {
-          const { data: again, error: againError } = await supabase
-            .from("procedures")
-            .select("id, status, responsible_id, revision")
-            .eq("id", cleanedDoc.id)
-            .maybeSingle();
-          if (againError) throwClinical(againError);
-          if (!again) throw new Error("Ficha não encontrada na nuvem.");
-          if (again.status === "signed") {
-            throw new Error(
-              "Ficha Assinada e Imutável: O documento foi assinado digitalmente e não pode mais sofrer alterações diretamente. Para correções, utilize o recurso de Adendo Retificatório Imutável."
-            );
-          }
-          if (again.responsible_id && again.responsible_id !== userId) {
-            throw new Error(
-              `Edição bloqueada: A ficha está sob a responsabilidade de Dr(a). ${cleanedDoc.team?.anesthesiologistLead || "outro profissional"}.`
-            );
-          }
-          throw new Error("stale_revision");
-        }
-        applyRevisionMeta(ficha, cleanedDoc, updated);
-      } else {
-        await insertProcedureParent(supabase, ficha, cleanedDoc, userId, cleanedDoc.id);
-      }
-    } else {
-      await insertProcedureParent(supabase, ficha, cleanedDoc, userId, crypto.randomUUID());
+    if (!isUuid(cleanedDoc.id)) {
+      const procedureId = crypto.randomUUID();
+      cleanedDoc.id = procedureId;
+      ficha.id = procedureId;
     }
 
-    await persistClinicalChildren(cleanedDoc, userId);
+    const { data: existing, error: readError } = await supabase
+      .from("procedures")
+      .select("id, status, responsible_id, revision")
+      .eq("id", cleanedDoc.id)
+      .maybeSingle();
+    if (readError) throwClinical(readError);
+
+    if (existing?.status === "signed") {
+      if (cleanedDoc.status === "Signed") return;
+      throw new Error(
+        "Ficha Assinada e Imutável: O documento foi assinado digitalmente e não pode mais sofrer alterações diretamente. Para correções, utilize o recurso de Adendo Retificatório Imutável."
+      );
+    }
+
+    const expected = expectedProcedureRevision(cleanedDoc);
+    const { data, error } = await supabase.rpc("save_procedure_atomic", {
+      p_procedure_id: cleanedDoc.id,
+      p_expected_revision: expected,
+      p_parent: parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true }),
+      p_children: childrenPayloadForWrite(cleanedDoc)
+    });
+    if (error) throwClinical(error);
+
+    const row = (data || {}) as { revision?: number; updated_at?: string };
+    applyRevisionMeta(ficha, cleanedDoc, {
+      revision: typeof row.revision === "number" ? row.revision : undefined,
+      updated_at: typeof row.updated_at === "string" ? row.updated_at : undefined
+    });
   };
 
   try {

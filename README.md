@@ -341,7 +341,7 @@ Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx
 - Settings deixam de ser decorativas: `vitalIntervalMinutes` e `soundAlertsEnabled` alimentam o intra (intervalo do alarme + beep). `compactMode` reduz padding (`anestflow-compact`). Dark já existia (`anesthesia_theme`).
 - Error Boundary e o **chrome** do PDF Preview seguem o tema. As folhas do PDF continuam brancas para impressão.
 - Supervisor de IA não usa `console.log` em produção (`supervisorDevLog` só em DEV).
-- `deleteClinicalEventItem` **não** faz hard delete. Eventos clínicos permanecem nas tabelas filhas; exclusão de ficha no gestor continua só para **rascunho**. Tombstone completo (`voided_at` / `voided_by` / `void_reason` na UI) fica para quando houver fluxo de cancelamento auditável. `persistClinicalChildren` só faz upsert — não apaga linhas órfãs.
+- `deleteClinicalEventItem` **não** faz hard delete. Eventos clínicos permanecem nas tabelas filhas; exclusão de ficha no gestor continua só para **rascunho**. Cancelamento auditável: RPC `void_clinical_item` (`voided_at` / `voided_by = auth.uid()` / `void_reason`). `save_procedure_atomic` só faz upsert dos filhos — não apaga linhas órfãs.
 
 ## Fase 6 (`revision` de concorrência)
 
@@ -412,6 +412,25 @@ npm run lint:lib
 npx tsx src/tests/run_tests.ts
 npx tsx src/tests/fase07_live.ts
 ```
+
+## Transação clínica (atomicidade, void, encerramento)
+
+Auditoria prévia: `ATOMICITY_AND_RLS_AUDIT.md`. Relatório de validação: `CLINICAL_TRANSACTION_VALIDATION.md`.
+
+O save da ficha deixou de ser pai + cinco upserts HTTP. `saveProcedure` chama a RPC `save_procedure_atomic`: `SELECT … FOR UPDATE`, CAS de `revision`, persistência do pai e dos filhos (`vitals`, `medications`, `fluids`, `infusions`, `events`) **na mesma transação**. O browser envia `p_expected_revision` e **não** escolhe a revision nova. Conflito continua `stale_revision` (sem retry cego da fila; state dirty local não é substituído em silêncio pelo Realtime).
+
+`DELETE` direto nas tabelas clínicas de evento foi removido das policies. Cancelamento: `void_clinical_item` com `voided_by = auth.uid()`. Ficha signed recusa void.
+
+Signing Readiness (cliente `evaluateSigningReadiness` + servidor `assert_signing_readiness`) exige início **e** término da anestesia, cronologia coerente e ausência de `pending_transfer`. Defaults qualitativos (Mallampati, sistemas, checklist, destino SRPA do blank) **não** viram alerta. Quantitativos ausentes continuam ausentes.
+
+A confirmação de encerramento na Review cita a revisão dos campos com valores padrão. Gemini permanece na baseline validada (`gemini-3.5-transcribe` / `gemini-3.6-flash`, prompts v4 / narrativa v2).
+
+```bash
+npx tsx src/tests/fase_atomic_live.ts
+npx tsx src/tests/fase_longcase_live.ts
+```
+
+Sentinelas: `FASE_ATOMIC_LIVE_OK`, `FASE_LONGCASE_LIVE_OK`.
 
 
 

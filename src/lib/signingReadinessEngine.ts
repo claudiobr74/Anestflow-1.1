@@ -77,6 +77,26 @@ export function evaluateSigningReadiness(
       )
     );
   }
+  if (!t.endAnesthesia) {
+    alerts.push(
+      alert(
+        "CRITICAL",
+        "Término de Anestesia Pendente",
+        "O horário de término da anestesia deve ser preenchido antes do encerramento.",
+        "Timing"
+      )
+    );
+  }
+  if (t.startAnesthesia && t.endAnesthesia && new Date(t.endAnesthesia) < new Date(t.startAnesthesia)) {
+    alerts.push(
+      alert(
+        "CRITICAL",
+        "Incongruência de Anestesia",
+        "O término da anestesia não pode ser anterior ao início da mesma.",
+        "Timing"
+      )
+    );
+  }
   if (t.startAnesthesia && t.startSurgery && new Date(t.startSurgery) < new Date(t.startAnesthesia)) {
     alerts.push(
       alert(
@@ -126,6 +146,17 @@ export function evaluateSigningReadiness(
         "CRITICAL",
         "Anestesiologista não cadastrado",
         "O nome e o CRM do anestesiologista principal responsável devem estar preenchidos.",
+        "Team"
+      )
+    );
+  }
+
+  if (ficha.pendingTransfer) {
+    alerts.push(
+      alert(
+        "CRITICAL",
+        "Transferência pendente",
+        "Há uma solicitação de transferência de responsabilidade em aberto. Aceite, recuse ou conclua a transferência antes de selar a ficha.",
         "Team"
       )
     );
