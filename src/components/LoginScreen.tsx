@@ -18,7 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { getSupabase, isSupabaseConfigured } from "../lib/supabase";
+import { getSupabase, ensureSupabaseConfig } from "../lib/supabase";
 import { mapAuthError } from "../lib/authErrors";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
 import { consumeSessionEndMessage } from "../lib/sessionPolicy";
@@ -74,13 +74,8 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setError("Supabase não configurado. Preencha VITE_SUPABASE_PUBLISHABLE_KEY em .env.local.");
-      return;
-    }
-
-    const supabase = getSupabase();
     let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
     const applySessionUser = async (user: SupabaseUser | null) => {
       if (cancelled) return;
@@ -119,17 +114,28 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
       }
     };
 
-    supabase.auth.getSession().then(({ data }) => {
-      void applySessionUser(data.session?.user ?? null);
-    });
+    void (async () => {
+      const configError = await ensureSupabaseConfig();
+      if (cancelled) return;
+      if (configError) {
+        setError(configError);
+        return;
+      }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      void applySessionUser(session?.user ?? null);
-    });
+      const supabase = getSupabase();
+      supabase.auth.getSession().then(({ data }) => {
+        void applySessionUser(data.session?.user ?? null);
+      });
+
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+        void applySessionUser(session?.user ?? null);
+      });
+      unsubscribe = () => sub.subscription.unsubscribe();
+    })();
 
     return () => {
       cancelled = true;
-      sub.subscription.unsubscribe();
+      unsubscribe?.();
     };
   }, []);
 
@@ -152,6 +158,11 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
 
     setIsSubmitting(true);
     try {
+      const configError = await ensureSupabaseConfig();
+      if (configError) {
+        setError(configError);
+        return;
+      }
       const supabase = getSupabase();
       if (isRegistering) {
         const { data, error: signUpError } = await supabase.auth.signUp({
@@ -188,6 +199,11 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
     }
     setIsSubmitting(true);
     try {
+      const configError = await ensureSupabaseConfig();
+      if (configError) {
+        setError(configError);
+        return;
+      }
       const { error: resendError } = await getSupabase().auth.resend({
         type: "signup",
         email: target

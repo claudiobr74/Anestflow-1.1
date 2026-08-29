@@ -3,9 +3,13 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { applySupabaseEnvFromFiles } from './src/lib/supabaseEnvFiles';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  applySupabaseEnvFromFiles(process.cwd(), mode);
   return {
+    envDir: process.cwd(),
+    envPrefix: 'VITE_',
     plugins: [
       react(),
       tailwindcss(),

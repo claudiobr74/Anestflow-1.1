@@ -34,3 +34,4 @@ supabase/.branches/
 # Test / coverage
 coverage/
 *.tsbuildinfo
+tmp-env-*/

@@ -263,11 +263,91 @@ try {
   assert(appContent.includes("beginSession"), "Login inicia o relógio de sessão");
   assert(loginContent.includes("consumeSessionEndMessage"), "Tela de login mostra o motivo do encerramento");
   assert(!fs.existsSync(path.join(process.cwd(), "src/lib/api.ts")), "src/lib/api.ts não voltou");
+  assert(appContent.includes("overflowMenuOpen"), "Menu de overflow do cabeçalho abre por clique");
+  assert(!appContent.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
+  assert(appContent.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
 } catch (err) {
   assert(false, `Falha na verificação da onda 7: ${err}`);
 }
 
-// 8. VERIFICAÇÃO FINAL DE RESULTADOS
+console.log("\n8. Verificando injeção das env Vite/Express do Supabase...");
+try {
+  const supabaseLib = fs.readFileSync(path.join(process.cwd(), "src/lib/supabase.ts"), "utf-8");
+  const envFilesLib = fs.readFileSync(path.join(process.cwd(), "src/lib/supabaseEnvFiles.ts"), "utf-8");
+  const loginContent = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
+  const mainContent = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
+  const serverContent = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
+  const viteConfig = fs.readFileSync(path.join(process.cwd(), "vite.config.ts"), "utf-8");
+  const projectDefaults = fs.readFileSync(path.join(process.cwd(), "src/lib/supabaseProject.ts"), "utf-8");
+  const vercelJson = fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf-8");
+  const vercelApi = fs.readFileSync(path.join(process.cwd(), "api/public-config.ts"), "utf-8");
+
+  assert(supabaseLib.includes("import.meta.env.VITE_SUPABASE_URL"), "URL lida com acesso estático import.meta.env.VITE_SUPABASE_URL");
+  assert(
+    supabaseLib.includes("import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"),
+    "Chave lida com acesso estático import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"
+  );
+  assert(!supabaseLib.includes("env?.[name]"), "Cliente não usa acesso dinâmico env[name] (Vite não injeta em produção)");
+  assert(loginContent.includes("ensureSupabaseConfig"), "Login espera o fallback /api/public-config");
+  assert(mainContent.includes("serviceWorker") && mainContent.includes("unregister"), "Dev desregistra SW de um dist antigo");
+  assert(serverContent.includes("/api/public-config"), "Express expõe a config pública do Supabase");
+  assert(!serverContent.includes("service_role"), "public-config não usa service_role");
+  assert(viteConfig.includes("applySupabaseEnvFromFiles"), "vite.config aplica .env.local antes do loadEnv");
+  assert(envFilesLib.includes("usable(fromProc)"), "Arquivo prevalece sobre process.env vazio");
+  assert(projectDefaults.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Deploy Vercel tem fallback da chave publishable");
+  assert(projectDefaults.includes("sb_publishable_") && !projectDefaults.includes("xxxxxxxx"), "Fallback da chave não é placeholder");
+  assert(vercelJson.includes("vite") && vercelJson.includes("dist"), "vercel.json gera o SPA Vite em dist/");
+  assert(vercelApi.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Função Vercel /api/public-config usa o fallback");
+  assert(!vercelApi.includes("service_role"), "Função Vercel não usa service_role");
+
+  const { applySupabaseEnvFromFiles } = await import("../lib/supabaseEnvFiles.ts");
+  const tmp = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-"));
+  fs.writeFileSync(
+    path.join(tmp, ".env.local"),
+    "VITE_SUPABASE_URL=https://envfile.supabase.co\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fromfile\n"
+  );
+  const prevUrl = process.env.VITE_SUPABASE_URL;
+  const prevKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const prevAnon = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = "";
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "";
+  delete process.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    const resolved = applySupabaseEnvFromFiles(tmp, "development");
+    assert(resolved.url === "https://envfile.supabase.co", "URL do .env.local vence process.env vazio");
+    assert(resolved.key === "sb_publishable_fromfile", "Chave do .env.local vence process.env vazio");
+  } finally {
+    if (prevUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+    else process.env.VITE_SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevKey;
+    if (prevAnon === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
+    else process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  const emptyDir = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-"));
+  process.env.VITE_SUPABASE_URL = "";
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "";
+  delete process.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    const fallback = applySupabaseEnvFromFiles(emptyDir, "production");
+    assert(fallback.url.includes("plciototnjsdjzhudptc"), "Sem .env.local, URL canônica do Anestflow entra no build");
+    assert(fallback.key.startsWith("sb_publishable_") && !fallback.key.includes("xxxxxxxx"), "Sem .env.local, chave publishable canônica entra no build");
+  } finally {
+    if (prevUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+    else process.env.VITE_SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevKey;
+    if (prevAnon === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
+    else process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
+} catch (err) {
+  assert(false, `Falha na verificação das env Vite: ${err}`);
+}
+
+// 9. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
