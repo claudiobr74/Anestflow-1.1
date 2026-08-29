@@ -6,6 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
+    envDir: process.cwd(),
+    envPrefix: 'VITE_',
     plugins: [
       react(),
       tailwindcss(),

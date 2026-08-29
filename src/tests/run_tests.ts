@@ -267,7 +267,28 @@ try {
   assert(false, `Falha na verificação da onda 7: ${err}`);
 }
 
-// 8. VERIFICAÇÃO FINAL DE RESULTADOS
+console.log("\n8. Verificando leitura estática das env Vite do Supabase...");
+try {
+  const supabaseLib = fs.readFileSync(path.join(process.cwd(), "src/lib/supabase.ts"), "utf-8");
+  const loginContent = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
+  const mainContent = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
+  const serverContent = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
+  const viteConfig = fs.readFileSync(path.join(process.cwd(), "vite.config.ts"), "utf-8");
+
+  assert(supabaseLib.includes("import.meta.env.VITE_SUPABASE_URL"), "URL lida com acesso estático import.meta.env.VITE_SUPABASE_URL");
+  assert(
+    supabaseLib.includes("import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"),
+    "Chave lida com acesso estático import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"
+  );
+  assert(!supabaseLib.includes("env?.[name]"), "Cliente não usa acesso dinâmico env[name] (Vite não injeta em produção)");
+  assert(loginContent.includes("getSupabaseConfigError"), "Login explica o campo que falta");
+  assert(mainContent.includes("serviceWorker") && mainContent.includes("unregister"), "Dev desregistra SW de um dist antigo");
+  assert(serverContent.includes("envDir") && viteConfig.includes("envDir"), "Vite recebe envDir na raiz do projeto");
+} catch (err) {
+  assert(false, `Falha na verificação das env Vite: ${err}`);
+}
+
+// 9. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

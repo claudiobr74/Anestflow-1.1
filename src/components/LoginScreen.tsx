@@ -18,7 +18,7 @@ import {
   LogOut
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { getSupabase, isSupabaseConfigured } from "../lib/supabase";
+import { getSupabase, getSupabaseConfigError } from "../lib/supabase";
 import { mapAuthError } from "../lib/authErrors";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
 import { consumeSessionEndMessage } from "../lib/sessionPolicy";
@@ -74,8 +74,9 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setError("Supabase não configurado. Preencha VITE_SUPABASE_PUBLISHABLE_KEY em .env.local.");
+    const configError = getSupabaseConfigError();
+    if (configError) {
+      setError(configError);
       return;
     }
 

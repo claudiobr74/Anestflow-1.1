@@ -56,7 +56,9 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 1. `npm install`
 2. `cp .env.example .env.local` e preencha `VITE_SUPABASE_PUBLISHABLE_KEY`
 3. IA (opcional): `npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc`
-4. `npm run dev`
+4. `npm run dev` (reinicie o servidor depois de editar `.env.local` — o Vite lê as chaves na subida)
+
+Se a tela de login ainda disser que o Supabase não está configurado com a chave já preenchida: faça um hard refresh, ou apague o service worker deste origin no DevTools (um `vite build` antigo no `dist/` pode servir JS sem as variáveis). Em deploy (Vercel), as mesmas `VITE_*` precisam existir no ambiente de **build**.
 
 Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Assistentes de IA chamam Edge Functions (onda 5). O SDK Firebase não faz mais parte do app (onda 6). Não copie PHI de produção.
 

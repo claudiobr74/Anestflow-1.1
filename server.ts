@@ -8,8 +8,9 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
-dotenv.config({ path: ".env.local" });
-dotenv.config();
+const projectRoot = process.cwd();
+dotenv.config({ path: path.join(projectRoot, ".env.local") });
+dotenv.config({ path: path.join(projectRoot, ".env") });
 
 const app = express();
 const PORT = 3000;
@@ -52,6 +53,9 @@ app.get("/api/health", (req, res) => {
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
+      root: projectRoot,
+      envDir: projectRoot,
+      envPrefix: "VITE_",
       server: { middlewareMode: true },
       appType: "spa",
     });
