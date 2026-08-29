@@ -1,0 +1,6 @@
+{
+  "name": "AnestFlow",
+  "description": "Aplicativo profissional de Registro Anestésico Digital com avaliação pré-anestésica, ficha intraoperatória, gráfico de sinais vitais, linha do tempo interativa e geração de PDF completo.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,36 @@
+    
+    return `${mlPerHour.toFixed(1)} ml/h`;
+  }, [newInfusion.rate, newInfusion.unit, newInfusion.concValue, newInfusion.concUnit, newInfusion.concentration, patientWeight]);
+
+  return (
+    <div className={`${cardClass} p-5 rounded-xl border space-y-5 shadow-xs`}>
+      <div className={`flex items-center justify-between border-b pb-3 ${borderClass}`}>
+        <h3 className={`font-bold text-xs tracking-wide uppercase flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-800"}`}>
+          <Layers className={`w-4 h-4 ${isDark ? "text-indigo-400" : "text-indigo-600"}`} />
+          Painel de Bombas de Infusão Contínua (BIC)
+        </h3>
+        
+        <button 
+          onClick={() => setShowPresets(!showPresets)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
+            showPresets ? "bg-indigo-600 text-white" : isDark ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          {showPresets ? "Esconder Protocolos" : "Protocolos Rápidos"}
+        </button>
+      </div>
+
+      {showPresets && (
+        <div className={`p-4 rounded-xl border ${isDark ? "bg-indigo-950/20 border-indigo-900/40" : "bg-indigo-50/50 border-indigo-100"} mb-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div className="flex flex-wrap gap-2">
+              {categories.map((cat: any) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition ${
+                    activeCategory === cat
+                      ? "bg-indigo-600 text-white"
+                      : isDark ? "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" : "bg-white text-slate-500 border hover:bg-slate-50"
+                  }`}
