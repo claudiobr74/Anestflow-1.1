@@ -135,6 +135,8 @@ As três rotas Gemini saíram do Express. O cliente chama `getSupabase().functio
 | `voice-command` | `{ audioBase64, mimeType }` → `{ transcription, identifiedActions }` |
 | `generate-description` | `{ document, models }` → `{ description }` |
 
+O microfone fica no cabeçalho da ficha. Depois da Edge Function, o médico **confere a transcrição** e só então lança bolus, bombas, gases, vitais, eventos, timers e identificação. Ficha assinada não aceita voz. Áudio não é persistido.
+
 `verify_jwt` permanece **ligado**. O handler ainda chama `auth.getUser` e recusa e-mail não confirmado. Express só serve o SPA e `GET /api/health`.
 
 Limite de body nas Edge Functions é ~5,5MB (o Express permitia 10MB). Áudio muito longo pode retornar 413.
