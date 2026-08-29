@@ -15,7 +15,7 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**. Senha vazada (HaveIBeenPwned) no cliente é a **onda 8**.
 
 ## Onda 0 (fundação)
 
@@ -160,6 +160,20 @@ O SPA espelha `[auth.sessions]` do `config.toml`: **12 horas** de timebox e **8 
 O wrapper morto `authenticatedFetch` (`src/lib/api.ts`) saiu — não restava rota Express autenticada. `GET /api/health` continua público.
 
 No Dashboard, vale conferir Authentication → Settings com os mesmos 12h / 8h (o CLI não aplica `config.toml` no projeto hospedado).
+
+## Onda 8 (senha vazada)
+
+O advisor de Auth do Anestflow aponta **Leaked Password Protection Disabled**. O CLI ainda **não** versiona `password_hibp_enabled` no `config.toml`.
+
+No cliente, `mapAuthError` reconhece `AuthWeakPasswordError` com `reasons: ["pwned"]` (e o corpo `weak_password.reasons`) e mostra aviso em português. Sem o toggle no Dashboard, o Auth hospedado **não rejeita** senhas do HaveIBeenPwned — só a mensagem do app fica pronta.
+
+Ligar no projeto (plano Pro ou superior):
+
+1. [Authentication → Providers → Email](https://supabase.com/dashboard/project/plciototnjsdjzhudptc/auth/providers?provider=Email)
+2. **Prevent use of leaked passwords** → ON
+3. Salvar
+
+SMTP próprio e Google OAuth continuam fora desta onda (precisam de secret no Dashboard). Storage não entra: áudio de voz não é persistido.
 
 ## Segurança imediata (fora do código)
 

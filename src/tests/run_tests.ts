@@ -9,6 +9,7 @@ import {
 } from "../lib/sessionPolicy.ts";
 import {
   AUTH_ERROR_EMAIL_SEND_RATE,
+  AUTH_ERROR_LEAKED_PASSWORD,
   AUTH_ERROR_TOO_MANY_REQUESTS,
   mapAuthError
 } from "../lib/authErrors.ts";
@@ -157,6 +158,22 @@ try {
   );
   assert(loginContent.includes("mapAuthError"), "LoginScreen usa o mapeamento compartilhado de erros Auth");
   assert(!loginContent.includes("Muitas tentativas. Tente novamente mais tarde."), "LoginScreen não usa mais o aviso genérico de rate limit");
+  assert(
+    mapAuthError({ code: "weak_password", reasons: ["pwned"] }) === AUTH_ERROR_LEAKED_PASSWORD,
+    "AuthWeakPasswordError pwned vira aviso de senha vazada"
+  );
+  assert(
+    mapAuthError({ code: "weak_password", weak_password: { reasons: ["pwned"] } }) === AUTH_ERROR_LEAKED_PASSWORD,
+    "Corpo weak_password.reasons pwned também é reconhecido"
+  );
+  assert(
+    mapAuthError({ code: "weak_password", reasons: ["length"] }).includes("12"),
+    "reasons length cita o mínimo de 12 caracteres"
+  );
+  assert(
+    mapAuthError({ code: "weak_password", reasons: ["characters"] }).includes("maiúscula"),
+    "reasons characters pede maiúscula/minúscula/dígito"
+  );
 } catch (err) {
   assert(false, `Falha na verificação da onda 2: ${err}`);
 }
@@ -401,7 +418,22 @@ try {
   assert(false, `Falha na verificação do escriba por voz: ${err}`);
 }
 
-// 10. VERIFICAÇÃO FINAL DE RESULTADOS
+// 10. ONDA 8 — SENHA VAZADA (HIBP)
+console.log("\n10. Verificando mapeamento de senha vazada (onda 8)...");
+try {
+  const configToml = fs.readFileSync(path.join(process.cwd(), "supabase/config.toml"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  const authErrors = fs.readFileSync(path.join(process.cwd(), "src/lib/authErrors.ts"), "utf-8");
+  assert(authErrors.includes("AUTH_ERROR_LEAKED_PASSWORD"), "Cliente declara mensagem de senha vazada");
+  assert(authErrors.includes("pwned"), "Cliente lê reasons pwned do Auth");
+  assert(configToml.includes("HaveIBeenPwned"), "config.toml aponta o toggle HaveIBeenPwned no Dashboard");
+  assert(!/password_hibp_enabled\s*=/.test(configToml), "config.toml não finge uma chave HIBP que o CLI ainda não aceita");
+  assert(readme.includes("Prevent use of leaked passwords"), "README da onda 8 cita o toggle do Dashboard");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 8: ${err}`);
+}
+
+// 11. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

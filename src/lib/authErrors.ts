@@ -4,15 +4,38 @@
  * (https://supabase.com/docs/guides/auth/rate-limits).
  */
 
+import { MIN_PASSWORD_LENGTH } from "./passwordPolicy";
+
 export const AUTH_ERROR_EMAIL_SEND_RATE =
   "Limite de e-mails de confirmação atingido (SMTP padrão: 2 por hora). Espere cerca de 1 hora. Não clique em Cadastrar nem em Reenviar. Se a conta já existir e o e-mail já estiver confirmado no Dashboard, use Entrar.";
 
 export const AUTH_ERROR_TOO_MANY_REQUESTS =
   "Muitas tentativas de login. Espere alguns minutos.";
 
-export function mapAuthError(err: { message?: string; code?: string } | null | undefined): string {
+export const AUTH_ERROR_LEAKED_PASSWORD =
+  "Esta senha aparece em vazamentos públicos (HaveIBeenPwned). Escolha outra senha longa e exclusiva, de preferência gerada por um gerenciador.";
+
+export type AuthErrorLike = {
+  message?: string;
+  code?: string;
+  name?: string;
+  reasons?: string[];
+  weak_password?: { reasons?: string[] };
+};
+
+function collectReasons(err: AuthErrorLike): string[] {
+  const nested = err.weak_password?.reasons;
+  const raw = [
+    ...(Array.isArray(err.reasons) ? err.reasons : []),
+    ...(Array.isArray(nested) ? nested : []),
+  ];
+  return raw.map((item) => String(item).toLowerCase());
+}
+
+export function mapAuthError(err: AuthErrorLike | null | undefined): string {
   const code = (err?.code || "").toLowerCase();
   const message = (err?.message || "").toLowerCase();
+  const reasons = err ? collectReasons(err) : [];
 
   if (code.includes("email_not_confirmed") || message.includes("email not confirmed")) {
     return "Confirme seu e-mail antes de entrar. Verifique a caixa de entrada e o spam.";
@@ -28,6 +51,20 @@ export function mapAuthError(err: { message?: string; code?: string } | null | u
     (message.includes("email address") && message.includes("invalid"))
   ) {
     return "Este endereço de e-mail não é aceito pelo Auth. Use um e-mail real (Gmail, institucional, etc.).";
+  }
+  if (
+    reasons.includes("pwned") ||
+    message.includes("pwned") ||
+    message.includes("leaked password") ||
+    message.includes("haveibeenpwned")
+  ) {
+    return AUTH_ERROR_LEAKED_PASSWORD;
+  }
+  if (reasons.includes("length")) {
+    return `A senha deve ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
+  }
+  if (reasons.includes("characters")) {
+    return "A senha deve conter letra maiúscula, minúscula e dígito.";
   }
   if (
     code.includes("weak_password") ||
