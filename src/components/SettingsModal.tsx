@@ -310,7 +310,7 @@ export default function SettingsModal({
                 <div className="space-y-1">
                   <h4 className="text-xs font-bold uppercase tracking-wider">Sincronização em Nuvem Nativa e Criptografada</h4>
                   <p className="text-xs leading-relaxed opacity-90">
-                    O sistema de sincronização em tempo real do Firestore está totalmente ativo. Todas as alterações efetuadas na ficha anestésica são salvas e distribuídas instantaneamente com isolamento por usuário.
+                    O sistema de sincronização em tempo real do Supabase está ativo. As alterações da ficha são gravadas em Postgres com RLS e distribuídas via Realtime aos participantes da ficha.
                   </p>
                 </div>
               </div>

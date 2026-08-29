@@ -1,60 +1,48 @@
-import { useState, useEffect, useRef } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from './firebase';
-import { AnesthesiaDocument } from '../types';
+import { useState, useEffect, useRef } from "react";
+import { AnesthesiaDocument } from "../types";
+import { getProcedureById, saveProcedure } from "./proceduresService";
+import { subscribeProcedureRealtime } from "./procedureRealtime";
+import { isUuid } from "./procedureMapper";
 
 export function useMultiplayer(
   documentId: string | null,
-  initialDocument: AnesthesiaDocument,
+  _initialDocument: AnesthesiaDocument,
   onRemoteUpdate: (doc: AnesthesiaDocument) => void
 ) {
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeUsers, setActiveUsers] = useState<string[]>([]);
+  const [activeUsers] = useState<string[]>([]);
   const isLocalUpdate = useRef(false);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!isSyncing || !documentId || !auth.currentUser) return;
+    if (!isSyncing || !documentId || !isUuid(documentId)) return;
 
-    const docRef = doc(db, 'procedures', documentId);
-    
-    // Listen for remote changes
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as AnesthesiaDocument;
-        // Only update if it wasn't our own recent save (optimistic)
-        if (!isLocalUpdate.current) {
-          onRemoteUpdate(data);
-        }
-      }
+    const unsubscribe = subscribeProcedureRealtime(documentId, () => {
+      if (isLocalUpdate.current) return;
+      void getProcedureById(documentId).then((remote) => {
+        if (remote && !isLocalUpdate.current) onRemoteUpdate(remote);
+      });
     });
 
     return () => unsubscribe();
-  }, [documentId, isSyncing]);
+  }, [documentId, isSyncing, onRemoteUpdate]);
 
-  // Call this function whenever local document changes
   const broadcastChange = (newDoc: AnesthesiaDocument) => {
-    if (!isSyncing || !documentId || !auth.currentUser) return;
-
+    if (!isSyncing || !documentId || !isUuid(documentId)) return;
     isLocalUpdate.current = true;
-    
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
       try {
-        const docRef = doc(db, 'procedures', documentId);
-        await setDoc(docRef, {
-          ...newDoc,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+        const { data } = await import("./supabase").then((m) => m.getSupabase().auth.getUser());
+        const uid = data.user?.id;
+        if (!uid) return;
+        await saveProcedure(newDoc, uid);
       } catch (err) {
         console.error("Multiplayer sync error:", err);
       } finally {
         isLocalUpdate.current = false;
       }
-    }, 1500); // Debounce to prevent excessive writes
+    }, 1500);
   };
 
   const toggleSync = () => setIsSyncing(!isSyncing);

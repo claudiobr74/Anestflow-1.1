@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash } from "lucide-react";
 import { authenticatedFetch } from "../lib/api";
-import { auth } from "../lib/firebase";
+import { getSupabase } from "../lib/supabase";
 import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } from "../lib/signatureService";
 import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
 
@@ -322,8 +322,12 @@ export default function ReviewTab({
 
     setSavingAmendment(true);
     try {
-      const currentUid = auth.currentUser?.uid || document.signedBy?.uid || document.currentResponsibleUid || document.createdByUid || "anon-uid";
-      const authorName = document.signedBy?.name || document.team.anesthesiologistLead || auth.currentUser?.displayName || "Anestesiologista Responsável";
+      const { data: sessionData } = await getSupabase().auth.getUser();
+      const currentUid = sessionData.user?.id || document.signedBy?.uid || document.currentResponsibleUid || document.createdByUid || "";
+      if (!currentUid) {
+        throw new Error("Usuário não autenticado.");
+      }
+      const authorName = document.signedBy?.name || document.team.anesthesiologistLead || sessionData.user?.email || "Anestesiologista Responsável";
       const authorCRM = document.signedBy?.crm || document.team.crmLead || "";
       const authorUF = document.signedBy?.uf || document.team.ufLead || "SP";
 
@@ -342,13 +346,13 @@ export default function ReviewTab({
       );
 
       // Write directly to subcollection procedures/{document.id}/amendments/{newAmendment.id}
-      await addProcedureAmendment(document.id, newAmendment);
+      const saved = await addProcedureAmendment(document.id, newAmendment);
 
-      setSubcollectionAmendments(prev => [...prev, newAmendment]);
+      setSubcollectionAmendments(prev => [...prev, saved]);
       setAmendmentText("");
       setAmendmentReason("");
       setShowAmendmentForm(false);
-      alert(`Adendo Retificatório assinado e selado com sucesso!\n\nHash SHA-256 do Adendo:\n${newAmendment.hash}\n\nO documento clínico original assinado permaneceu imutável.`);
+      alert(`Adendo Retificatório assinado e selado com sucesso!\n\nHash SHA-256 do Adendo:\n${saved.hash}\n\nO documento clínico original assinado permaneceu imutável.`);
     } catch (err: any) {
       console.error("Erro ao adicionar adendo:", err);
       alert(err?.message || "Erro ao salvar o adendo retificatório.");

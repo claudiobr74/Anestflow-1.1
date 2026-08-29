@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db, auth } from "./firebase";
 import { AnesthesiaDocument } from "../types";
-import { saveProcedure, isMeaningfulDocument } from "./proceduresService";
-import { 
-  SyncStatus, 
-  SyncEngineState, 
-  SyncQueueManager, 
-  ensureUniqueClinicalEventIds 
+import { getProcedureById, isMeaningfulDocument, saveProcedure } from "./proceduresService";
+import {
+  SyncStatus,
+  SyncQueueManager,
+  ensureUniqueClinicalEventIds
 } from "./syncEngine";
+import { subscribeProcedureRealtime } from "./procedureRealtime";
+import { isUuid } from "./procedureMapper";
 
 export function useSyncEngine(
   document: AnesthesiaDocument,
@@ -50,7 +49,7 @@ export function useSyncEngine(
 
   const statusText = getStatusText(status, isOnline);
 
-  // Function to flush all queued pending documents to Firestore
+  // Function to flush all queued pending documents to Supabase
   const flushPendingQueue = useCallback(async () => {
     if (!userId || !navigator.onLine) {
       if (!navigator.onLine) setStatus("offline");
@@ -222,37 +221,33 @@ export function useSyncEngine(
     };
   }, [document, flushPendingQueue, isResponsible]);
 
-  // Real-time remote snapshot listener for multiplayer / remote changes
+  // Real-time remote listener (Supabase postgres_changes)
   useEffect(() => {
-    if (!userId || !document.id || !isOnline) return;
+    if (!userId || !document.id || !isOnline || !isUuid(document.id)) return;
 
-    const docRef = doc(db, "procedures", document.id);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as AnesthesiaDocument;
-        // Ignore remote update if we are currently saving locally
-        if (!isLocalSavingRef.current && onRemoteUpdate) {
-          // Update last hash ref to prevent loop
-          lastDocStateHashRef.current = JSON.stringify({
-            id: data.id,
-            patient: data.patient,
-            vitalsLen: data.vitals?.length || 0,
-            vitalsLast: data.vitals?.[data.vitals.length - 1],
-            drugsLen: data.bolusDrugs?.length || 0,
-            drugsLast: data.bolusDrugs?.[data.bolusDrugs.length - 1],
-            infusionsLen: data.continuousInfusions?.length || 0,
-            infusionsLast: data.continuousInfusions?.[data.continuousInfusions.length - 1],
-            eventsLen: data.events?.length || 0,
-            eventsLast: data.events?.[data.events.length - 1],
-            preEvaluation: data.preEvaluation,
-            status: data.status,
-            currentResponsibleUid: data.currentResponsibleUid
-          });
-          onRemoteUpdate(data);
-        }
-      }
-    }, (error) => {
-      console.warn("[SyncEngine] Aviso no listener de snapshots remotos:", error);
+    const unsubscribe = subscribeProcedureRealtime(document.id, () => {
+      if (isLocalSavingRef.current || !onRemoteUpdate) return;
+      void getProcedureById(document.id).then((remote) => {
+        if (!remote || isLocalSavingRef.current) return;
+        lastDocStateHashRef.current = JSON.stringify({
+          id: remote.id,
+          patient: remote.patient,
+          vitalsLen: remote.vitals?.length || 0,
+          vitalsLast: remote.vitals?.[remote.vitals.length - 1],
+          drugsLen: remote.bolusDrugs?.length || 0,
+          drugsLast: remote.bolusDrugs?.[remote.bolusDrugs.length - 1],
+          infusionsLen: remote.continuousInfusions?.length || 0,
+          infusionsLast: remote.continuousInfusions?.[remote.continuousInfusions.length - 1],
+          eventsLen: remote.events?.length || 0,
+          eventsLast: remote.events?.[remote.events.length - 1],
+          preEvaluation: remote.preEvaluation,
+          status: remote.status,
+          currentResponsibleUid: remote.currentResponsibleUid
+        });
+        onRemoteUpdate(remote);
+      }).catch((error) => {
+        console.warn("[SyncEngine] Aviso no listener remoto:", error);
+      });
     });
 
     return () => unsubscribe();

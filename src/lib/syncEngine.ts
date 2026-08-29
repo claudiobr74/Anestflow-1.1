@@ -1,7 +1,4 @@
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
-import { db, auth } from "./firebase";
 import { AnesthesiaDocument } from "../types";
-import { saveProcedure } from "./proceduresService";
 
 export type SyncStatus = "saved" | "syncing" | "offline" | "error";
 

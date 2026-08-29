@@ -15,11 +15,11 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. O login do cliente é a **onda 2** (Supabase Auth + `profiles`).
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**.
 
 ## Onda 0 (fundação)
 
-Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth saiu na onda 2; persistência de fichas no Firestore ainda não foi migrada (onda 3+).
+Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth saiu na onda 2; fichas e worklist saíram do Firestore na onda 3.
 
 ### Auth (espelhar no Dashboard)
 
@@ -58,7 +58,7 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 3. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express; opcional)
 4. `npm run dev`
 
-Login e perfil usam Supabase Auth + tabela `profiles`. Fichas intraoperatórias ainda podem sincronizar no Firestore legado até a onda de persistência; não adicione novos documentos Firestore nem copie PHI de produção.
+Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Não adicione documentos Firestore novos nem copie PHI de produção.
 
 ## Onda 1 (schema, RLS, RPCs)
 
@@ -107,7 +107,21 @@ O que fazer quando a tela avisar o limite:
 
 Não desligue a confirmação de e-mail para contornar o limite.
 
-Fora desta onda: migrar fichas/worklist do Firestore, Realtime (onda 3), Edge Functions de IA (onda 5).
+## Onda 3 (fichas, worklist, Realtime)
+
+O cliente grava no schema da onda 1:
+
+- `saveProcedure` → `public.procedures` + tabelas filhas (`procedure_vitals`, `medications`, `fluids`, `infusions`, `events`)
+- Assinatura → RPC `sign_procedure` (hash SHA-256 no servidor). O cliente **não** faz UPDATE para `signed`.
+- Troca / assunção → `transfer_responsibility` / `claim_responsibility`
+- Adendo → `add_procedure_amendment`
+- Participantes → `add_participant_by_email`, `list_procedure_participant_profiles`, `remove_procedure_collaborator`
+- Worklist → `worklist_entries` com `cpf_hash` SHA-256 hex minúsculo (sem índice global de CPF)
+- Autosave + `postgres_changes` (Realtime) na ficha aberta
+
+IDs locais `doc-{timestamp}` viram UUID no primeiro save. Fichas `doc-mock*` não vão para a nuvem.
+
+Fora desta onda: Edge Functions de IA (onda 5). Não copie PHI de produção.
 
 ## Segurança imediata (fora do código)
 

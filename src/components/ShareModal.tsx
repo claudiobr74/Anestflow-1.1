@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { AnesthesiaDocument } from '../types';
 import { X, Users, Mail, Plus, Trash2, ArrowRightLeft, ShieldCheck, AlertCircle, Loader2, UserCheck, ShieldAlert } from 'lucide-react';
 import { lookupProfileByEmail } from '../lib/profileService';
+import {
+  addParticipantByEmail,
+  listProcedureParticipantProfiles,
+  removeProcedureCollaborator
+} from '../lib/proceduresService';
+import { isUuid } from '../lib/procedureMapper';
 
 interface ShareModalProps {
   document: AnesthesiaDocument;
@@ -43,31 +49,33 @@ export default function ShareModal({
   const participantUids = document.participantUids || [];
   const sharedWithEmails = document.sharedWithEmails || [];
 
-  // Fetch profiles for existing participantUids
+  // Fetch profiles for existing participantUids (RPC da ficha; sem SELECT global em profiles)
   useEffect(() => {
-    if (participantUids.length === 0) return;
+    if (!isUuid(document.id) || participantUids.length === 0) return;
 
     let isMounted = true;
     setIsLoadingProfiles(true);
 
     const fetchProfiles = async () => {
-      const profilesMap: Record<string, UserProfileInfo> = { ...userProfiles };
-      let updated = false;
-
-      for (const uid of participantUids) {
-        if (!profilesMap[uid]) {
-          // RLS de profiles só permite SELECT da própria linha.
-          // Participantes de terceiros aparecem pelo UID até a onda de fichas no Supabase.
-          profilesMap[uid] = { uid, name: "Anestesiologista", email: "UID: " + uid };
-          updated = true;
+      try {
+        const rows = await listProcedureParticipantProfiles(document.id);
+        if (!isMounted) return;
+        const profilesMap: Record<string, UserProfileInfo> = {};
+        for (const row of rows) {
+          profilesMap[row.id] = {
+            uid: row.id,
+            name: row.full_name,
+            crm: row.crm,
+            uf: row.uf,
+            email: row.email || undefined,
+            emailVerified: true
+          };
         }
-      }
-
-      if (isMounted && updated) {
         setUserProfiles(profilesMap);
-      }
-      if (isMounted) {
-        setIsLoadingProfiles(false);
+      } catch (err) {
+        console.warn("Não foi possível listar perfis dos participantes:", err);
+      } finally {
+        if (isMounted) setIsLoadingProfiles(false);
       }
     };
 
@@ -76,7 +84,7 @@ export default function ShareModal({
     return () => {
       isMounted = false;
     };
-  }, [participantUids.join(',')]);
+  }, [document.id, participantUids.join(',')]);
 
   const handleSearchAndAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,16 +99,22 @@ export default function ShareModal({
 
     setIsSearching(true);
     try {
+      if (!isUuid(document.id)) {
+        setSearchError("Salve a ficha na nuvem antes de compartilhar com um colega.");
+        return;
+      }
+
       const found = await lookupProfileByEmail(cleanEmail);
 
       if (found) {
         const targetUid = found.id;
 
         if (participantUids.includes(targetUid)) {
-          setSearchError(`Dr(a). ${found.full_name || cleanEmail} já possui acesso concedido via UID.`);
-          setIsSearching(false);
+          setSearchError(`Dr(a). ${found.full_name || cleanEmail} já possui acesso concedido.`);
           return;
         }
+
+        await addParticipantByEmail(document.id, cleanEmail);
 
         const newUids = Array.from(new Set([...participantUids, targetUid]));
         const updatedEmails = sharedWithEmails.filter(e => e.toLowerCase() !== cleanEmail);
@@ -135,15 +149,22 @@ export default function ShareModal({
     }
   };
 
-  const handleRemoveUid = (uidToRemove: string) => {
+  const handleRemoveUid = async (uidToRemove: string) => {
     const isOwnerOrLead = uidToRemove === document.createdByUid || uidToRemove === document.currentResponsibleUid;
     if (isOwnerOrLead) {
       alert("Não é possível remover o criador ou o anestesiologista responsável atual.");
       return;
     }
 
-    const updated = participantUids.filter(u => u !== uidToRemove);
-    onUpdateDocument({ participantUids: updated });
+    try {
+      if (isUuid(document.id)) {
+        await removeProcedureCollaborator(document.id, uidToRemove);
+      }
+      const updated = participantUids.filter(u => u !== uidToRemove);
+      onUpdateDocument({ participantUids: updated });
+    } catch (err: any) {
+      alert(err?.message || "Não foi possível revogar o acesso.");
+    }
   };
 
   const handleRemoveEmail = (emailToRemove: string) => {
@@ -164,10 +185,10 @@ export default function ShareModal({
         <div>
           <h2 className={`text-xl font-bold flex items-center gap-2 ${isDark ? "text-white" : "text-zinc-900"}`}>
             <Users className="w-5 h-5 text-indigo-500" />
-            Compartilhamento por Firebase UID
+            Compartilhamento clínico
           </h2>
           <p className={`text-xs mt-1 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-            A autorização de acesso é vinculada estritamente ao Firebase UID verificado do anestesiologista.
+            A autorização de acesso é a tabela de participantes da ficha no Supabase (RLS). O colega precisa ter perfil confirmado.
           </p>
         </div>
 
@@ -192,7 +213,7 @@ export default function ShareModal({
               Sincronização Nuvem
             </h3>
             <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {isSyncing ? "Ativa (Sincronizando com Firestore)" : "Pausada"}
+              {isSyncing ? "Ativa (Supabase Realtime)" : "Pausada"}
             </p>
           </div>
           <button
@@ -241,7 +262,7 @@ export default function ShareModal({
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
             >
               {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              <span>Localizar UID</span>
+              <span>Adicionar</span>
             </button>
           </form>
 
@@ -261,7 +282,7 @@ export default function ShareModal({
 
           <div className="mt-3">
             <h4 className={`text-xs font-bold uppercase tracking-wider mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-              Profissionais Autorizados (UIDs)
+              Profissionais Autorizados
             </h4>
 
             <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
@@ -298,7 +319,7 @@ export default function ShareModal({
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-emerald-500 font-medium flex items-center gap-1">
                               <ShieldCheck className="w-3 h-3" />
-                              <span>UID Concedido ({uid.substring(0, 8)}...)</span>
+                              <span>Participante</span>
                             </span>
                             {isCreator && (
                               <span className="text-xs px-1 bg-amber-500/10 text-amber-500 font-bold rounded">
