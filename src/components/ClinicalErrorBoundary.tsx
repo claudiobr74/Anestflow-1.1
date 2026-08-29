@@ -1,5 +1,14 @@
 import React from "react";
 
+function storedThemeIsDark(): boolean {
+  try {
+    const theme = localStorage.getItem("anesthesia_theme");
+    return theme === "dark" || theme === "dark-clean";
+  } catch {
+    return false;
+  }
+}
+
 // React 19 neste repo não traz @types/react; a classe precisa declarar props/state.
 export class ClinicalErrorBoundary extends React.Component {
   props: { children?: React.ReactNode };
@@ -22,11 +31,17 @@ export class ClinicalErrorBoundary extends React.Component {
   render() {
     if (!this.state.failed) return this.props.children;
 
+    const isDark = storedThemeIsDark();
+
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 text-slate-900">
-        <div className="max-w-md w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm text-center">
+      <div className={`min-h-screen flex items-center justify-center p-6 ${
+        isDark ? "bg-zinc-950 text-zinc-100" : "bg-slate-50 text-slate-900"
+      }`}>
+        <div className={`max-w-md w-full rounded-2xl border p-6 shadow-sm text-center ${
+          isDark ? "border-zinc-800 bg-zinc-900" : "border-slate-200 bg-white"
+        }`}>
           <h1 className="text-lg font-bold mb-2">Falha inesperada na interface</h1>
-          <p className="text-sm text-slate-600 mb-5">
+          <p className={`text-sm mb-5 ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
             A ficha na nuvem não foi apagada por este erro. Recarregue a página para voltar ao posto.
           </p>
           <button

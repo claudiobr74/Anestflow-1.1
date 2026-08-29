@@ -1182,6 +1182,82 @@ try {
   assert(false, `Falha na verificação da Fase 5: ${err}`);
 }
 
+// 17b. FASE 5 — higiene que reduz acidente
+console.log("\n17b. Verificando Fase 5 (higiene: IDs, resíduos, settings, tema)...");
+try {
+  const { resolveActiveVitalInterval } = await import("../lib/vitalInterval.ts");
+  const { playVitalOverdueBeep } = await import("../lib/vitalAlertSound.ts");
+  const { deleteClinicalEventItem } = await import("../lib/clinicalChildren.ts");
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  const drugsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeDrugsPanel.tsx"), "utf-8");
+  const childrenSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalChildren.ts"), "utf-8");
+  const boundarySrc = fs.readFileSync(path.join(process.cwd(), "src/components/ClinicalErrorBoundary.tsx"), "utf-8");
+  const pdfSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
+  const cssSrc = fs.readFileSync(path.join(process.cwd(), "src/index.css"), "utf-8");
+  const readme5b = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  const rootFiles = fs.readdirSync(process.cwd());
+
+  const drugsIds = [...intraSrc.matchAll(/\bid=["']drugs["']/g), ...drugsSrc.matchAll(/\bid=["']drugs["']/g)];
+  assert(drugsIds.length === 1, "id=drugs aparece uma única vez");
+  assert(!drugsSrc.includes("DraggablePanel"), "painel de fármacos não envolve DraggablePanel interno");
+
+  const panelIds = [...intraSrc.matchAll(/<DraggablePanel[^>]*\bid=["']([^"']+)["']/g)].map((m) => m[1]);
+  assert(panelIds.length === new Set(panelIds).size, "IDs de DraggablePanel no intra são únicos");
+
+  assert(!intraSrc.includes("from \"./VitalsPanel\""), "Intra não importa VitalsPanel");
+  assert(!intraSrc.includes("from \"./BolusDrugsPanel\""), "Intra não importa BolusDrugsPanel");
+  assert(!intraSrc.includes("from \"./SupportPanel\""), "Intra não importa SupportPanel");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/components/VitalsPanel.tsx")), "VitalsPanel.tsx removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/components/BolusDrugsPanel.tsx")), "BolusDrugsPanel.tsx removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/components/SupportPanel.tsx")), "SupportPanel.tsx removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/lib/useMultiplayer.ts")), "useMultiplayer.ts removido");
+
+  assert(!pkg.dependencies?.["react-router-dom"], "package.json sem react-router-dom");
+  assert(!pkg.devDependencies?.["react-router-dom"], "devDependencies sem react-router-dom");
+  assert(!fs.existsSync(path.join(process.cwd(), "bun.lock")), "bun.lock removido");
+  assert(!rootFiles.some((f) => /^(fix_|patch_|rewrite_)/.test(f)), "raiz sem fix_*/patch_*/rewrite_*");
+  assert(!rootFiles.includes("test.js"), "arquivo vazio test.js removido da raiz");
+  assert(!pkg.dependencies?.firebase, "firebase continua fora do runtime");
+
+  assert(resolveActiveVitalInterval({ loggingInterval: 15, isCustomInterval: false, customIntervalVal: "8" }) === 15, "intervalo 15 min entra no alarme");
+  assert(resolveActiveVitalInterval({ loggingInterval: 5, isCustomInterval: true, customIntervalVal: "8" }) === 8, "intervalo customizado entra no alarme");
+  assert(resolveActiveVitalInterval({ loggingInterval: 5, isCustomInterval: true, customIntervalVal: "abc" }) === 5, "custom inválido cai em 5");
+  playVitalOverdueBeep();
+  assert(true, "playVitalOverdueBeep não explode no Node");
+
+  assert(intraSrc.includes("resolveActiveVitalInterval"), "intra usa o intervalo ativo real");
+  assert(intraSrc.includes("playVitalOverdueBeep"), "intra toca beep de atraso");
+  assert(intraSrc.includes("vitalIntervalMinutes"), "intra lê vitalIntervalMinutes das settings");
+  assert(intraSrc.includes("soundAlertsEnabled"), "intra lê soundAlertsEnabled das settings");
+  assert(intraSrc.includes("compactMode"), "intra lê compactMode das settings");
+  assert(appSrc.includes("vitalIntervalMinutes={appSettings.vitalIntervalMinutes}"), "App passa intervalo das settings");
+  assert(appSrc.includes("anestflow-compact"), "App aplica classe compacta");
+  assert(cssSrc.includes(".anestflow-compact"), "CSS define densidade compacta");
+  assert(appSrc.includes("data-compact"), "App expõe data-compact");
+
+  assert(appSrc.includes("supervisorDevLog"), "Supervisor de IA usa logger de DEV");
+  assert(!appSrc.includes("console.log(`[Supervisor de IA]"), "Supervisor não usa console.log direto");
+  assert(boundarySrc.includes("anesthesia_theme"), "Error Boundary lê o tema salvo");
+  assert(pdfSrc.includes("isDark"), "PDF Preview recebe isDark no chrome");
+  assert(pdfSrc.includes("bg-white text-zinc-900"), "folhas do PDF continuam claras para impressão");
+
+  assert(childrenSrc.includes("Eventos clínicos não são apagados"), "deleteClinicalEventItem recusa hard delete");
+  let deleteThrew = false;
+  try {
+    await deleteClinicalEventItem("proc", "vitals", "item");
+  } catch (err) {
+    deleteThrew = err instanceof Error && err.message.includes("não são apagados");
+  }
+  assert(deleteThrew, "deleteClinicalEventItem lança em vez de apagar");
+
+  assert(readme5b.includes("higiene") && readme5b.includes("DraggablePanel"), "README documenta a higiene da Fase 5");
+  assert(readme5b.includes("voided_at") || readme5b.includes("não são apagados"), "README documenta a decisão de auditoria de eventos");
+} catch (err) {
+  assert(false, `Falha na verificação da higiene da Fase 5: ${err}`);
+}
+
 // 18. FASE 6 — revision de concorrência
 console.log("\n18. Verificando Fase 6 (revision de concorrência)...");
 try {
@@ -1486,7 +1562,7 @@ try {
 
   assert(readme.includes("Checkpoint pós-Fase 4"), "README documenta o checkpoint");
   assert(readme.includes("CHECKPOINT_LIVE_OK"), "README aponta o live do checkpoint");
-  assert(readme.includes("não inicia higiene"), "README deixa a higiene da Fase 5 para a etapa seguinte");
+  assert(readme.includes("não fatiar"), "checkpoint ainda não fatiar App/Intra");
 } catch (err) {
   assert(false, `Falha na verificação do checkpoint: ${err}`);
 }

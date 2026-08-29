@@ -11,17 +11,16 @@ import { Syringe, HandHelping, Zap, Info, Settings, FlaskConical, Play, Pause, S
 import { FAVORITE_DRUGS, FAVORITE_FLUIDS, CLINICAL_EVENTS_PRESETS } from "../mockData";
 import ClinicalChart from "./ClinicalChart";
 import AnesthesiaDescriptionDrawer from "./AnesthesiaDescriptionDrawer";
-import VitalsPanel from "./VitalsPanel";
-import BolusDrugsPanel from "./BolusDrugsPanel";
 import IntraoperativeDrugsPanel from "./IntraoperativeDrugsPanel";
 import ContinuousInfusionsPanel from "./ContinuousInfusionsPanel";
 import GasesPanel from "./GasesPanel";
 import HydrationPanel from "./HydrationPanel";
-import SupportPanel from "./SupportPanel";
 import AnesthesiaTemplatesModal from "./AnesthesiaTemplatesModal";
 import { AnesthesiaTemplate } from "../types";
 import { combineDateAndTime, formatToLocalTime, getLocalDateStringNow, getLocalTimeStringNow, getTzParts } from "../utils/timezone";
 import { newClientId } from "../lib/procedureMapper";
+import { resolveActiveVitalInterval } from "../lib/vitalInterval";
+import { playVitalOverdueBeep } from "../lib/vitalAlertSound";
 
 interface IntraoperativeTabProps {
   ficha: AnesthesiaDocument;
@@ -34,6 +33,14 @@ interface IntraoperativeTabProps {
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
   stopAiSupervisor?: (reason: string) => void;
   canEdit?: boolean;
+  vitalIntervalMinutes?: number;
+  soundAlertsEnabled?: boolean;
+  compactMode?: boolean;
+  onPatchAppSettings?: (patch: {
+    vitalIntervalMinutes?: number;
+    soundAlertsEnabled?: boolean;
+    compactMode?: boolean;
+  }) => void;
 }
 
 export default function IntraoperativeTab({
@@ -46,7 +53,11 @@ export default function IntraoperativeTab({
   onClearPendingTemplate,
   startAiSupervisor,
   stopAiSupervisor,
-  canEdit = true
+  canEdit = true,
+  vitalIntervalMinutes = 5,
+  soundAlertsEnabled = true,
+  compactMode = false,
+  onPatchAppSettings
 }: IntraoperativeTabProps) {
   const onUpdateDocument = (updates: AnesthesiaDocumentPatch) => {
     if (!canEdit) return;
@@ -213,13 +224,15 @@ export default function IntraoperativeTab({
   const [outputVal, setOutputVal] = useState("");
   const [outputType, setOutputType] = useState<"Diurese" | "Perda Sanguínea Estimada">("Diurese");
 
-  // Interval & fill alarm state
-  const [loggingInterval, setLoggingInterval] = useState<number>(15);
-  const [isCustomInterval, setIsCustomInterval] = useState<boolean>(false);
-  const [customIntervalVal, setCustomIntervalVal] = useState<string>("8");
+  // Interval & fill alarm state — default from settings (not a second independent clock)
+  const [loggingInterval, setLoggingInterval] = useState<number>(vitalIntervalMinutes);
+  const [isCustomInterval, setIsCustomInterval] = useState<boolean>(
+    vitalIntervalMinutes !== 5 && vitalIntervalMinutes !== 10 && vitalIntervalMinutes !== 15
+  );
+  const [customIntervalVal, setCustomIntervalVal] = useState<string>(String(vitalIntervalMinutes));
   const [nowTime, setNowTime] = useState<number>(Date.now());
   const [simulatedDelayMs, setSimulatedDelayMs] = useState<number>(0);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(soundAlertsEnabled);
 
   // States for the newly named "Lançador de Fármacos" filtering
   const [drugSearchQuery, setDrugSearchQuery] = useState("");
@@ -318,6 +331,20 @@ export default function IntraoperativeTab({
     }, 1000);
     return () => clearInterval(ticker);
   }, []);
+
+  useEffect(() => {
+    setLoggingInterval(vitalIntervalMinutes);
+    if (vitalIntervalMinutes === 5 || vitalIntervalMinutes === 10 || vitalIntervalMinutes === 15) {
+      setIsCustomInterval(false);
+    } else {
+      setIsCustomInterval(true);
+      setCustomIntervalVal(String(vitalIntervalMinutes));
+    }
+  }, [vitalIntervalMinutes]);
+
+  useEffect(() => {
+    setSoundEnabled(soundAlertsEnabled);
+  }, [soundAlertsEnabled]);
 
   // Timer Click Helpers
   const handleTimerClick = (key: keyof typeof timers, label: string) => {
@@ -856,15 +883,26 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
 
   
   // --- RECONSTRUCTED MISSING CODE ---
-  const activeInterval = 5;
+  const activeInterval = resolveActiveVitalInterval({
+    loggingInterval,
+    isCustomInterval,
+    customIntervalVal
+  });
   const lastVital = ficha.vitals && ficha.vitals.length > 0 ? ficha.vitals[ficha.vitals.length - 1] : null;
   const lastVitalTime = lastVital ? new Date(lastVital.timestamp).getTime() : (timers.startAnesthesia ? new Date(timers.startAnesthesia).getTime() : Date.now());
-  const elapsedMs = Date.now() - lastVitalTime;
+  const elapsedMs = nowTime - lastVitalTime + simulatedDelayMs;
   const elapsedMins = elapsedMs / 60000;
   const isOverdue = elapsedMins >= activeInterval;
   const percent = Math.min(100, (elapsedMins / activeInterval) * 100);
   const nextVitalTime = new Date(lastVitalTime + activeInterval * 60000);
   const timeString = nextVitalTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  useEffect(() => {
+    if (!soundEnabled || !isOverdue) return;
+    playVitalOverdueBeep();
+    const timer = window.setInterval(() => playVitalOverdueBeep(), 30000);
+    return () => window.clearInterval(timer);
+  }, [soundEnabled, isOverdue]);
 
   const totalInflow = (fluids || []).reduce((acc: number, f: any) => acc + (f.volume || 0), 0);
   const totalOutflow = (outputs || []).reduce((acc: number, o: any) => acc + (o.volume || 0), 0);
@@ -1517,7 +1555,11 @@ const handleTechniqueOtherTextChange = (text: string) => {
             {/* Sound alert switcher */}
             <button
               type="button"
-              onClick={() => setSoundEnabled(!soundEnabled)}
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                onPatchAppSettings?.({ soundAlertsEnabled: next });
+              }}
               className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition ${
                 soundEnabled 
                   ? isDark ? "bg-emerald-950/40 text-emerald-400 border border-emerald-800/40" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -1540,6 +1582,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
                   onClick={() => {
                     setIsCustomInterval(false);
                     setLoggingInterval(val);
+                    onPatchAppSettings?.({ vitalIntervalMinutes: val });
                   }}
                   className={`py-1.5 px-1.5 text-center rounded-lg text-xs font-bold transition select-none ${
                     isActive 
@@ -1553,7 +1596,13 @@ const handleTechniqueOtherTextChange = (text: string) => {
             })}
             <button
               type="button"
-              onClick={() => setIsCustomInterval(true)}
+              onClick={() => {
+                setIsCustomInterval(true);
+                const parsed = Number(customIntervalVal);
+                if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 120) {
+                  onPatchAppSettings?.({ vitalIntervalMinutes: Math.floor(parsed) });
+                }
+              }}
               className={`py-1.5 px-1.5 text-center rounded-lg text-xs font-bold transition select-none ${
                 isCustomInterval 
                   ? "bg-indigo-600 text-white" 
@@ -1575,7 +1624,13 @@ const handleTechniqueOtherTextChange = (text: string) => {
                   min="1"
                   max="120"
                   value={customIntervalVal}
-                  onChange={(e) => setCustomIntervalVal(e.target.value)}
+                  onChange={(e) => {
+                    setCustomIntervalVal(e.target.value);
+                    const parsed = Number(e.target.value);
+                    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 120) {
+                      onPatchAppSettings?.({ vitalIntervalMinutes: Math.floor(parsed) });
+                    }
+                  }}
                   className={`border text-xs px-2 py-0.5 rounded w-16 text-center focus:outline-none focus:border-indigo-500 tabular-nums ${
                     isDark ? "bg-zinc-900 border-zinc-800 text-white" : "bg-zinc-100 border-zinc-200 text-zinc-900"
                   }`}
@@ -2695,7 +2750,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
   };
 
   return (
-    <div className="space-y-4 w-full">
+    <div className={`${compactMode ? "space-y-2" : "space-y-4"} w-full`} data-compact={compactMode ? "true" : "false"}>
       {/* 1. CRONOLOGIA (TIMERS) ALWAYS OPEN AND FIXED ABOVE THE CHART */}
       <div className={`w-full ${!canEdit ? "pointer-events-none" : ""}`}>
         {renderTimers()}

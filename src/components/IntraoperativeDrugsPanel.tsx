@@ -1,6 +1,5 @@
 import React from "react";
 import { Layers, Syringe, ChevronUp, ChevronDown, Edit2, Minus, Plus, Check, Search, Activity, Trash2 } from "lucide-react";
-import { DraggablePanel } from "./DraggablePanel";
 import { formatToLocalTime, getLocalTimeStringNow } from "../utils/timezone";
 import { BolusDrug, ContinuousInfusion } from "../types";
 
@@ -91,7 +90,6 @@ export default function IntraoperativeDrugsPanel({
   setEditingInfusionData,
 }: IntraoperativeDrugsPanelProps) {
   return (
-    <DraggablePanel key="drugs" id="drugs" isDark={isDark}>
       <div className={`${cardClass} p-5 rounded-lg border space-y-4`}>
         <div className={`flex items-center justify-between border-b pb-3 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
           <div className="flex items-center gap-2">
@@ -673,6 +671,5 @@ export default function IntraoperativeDrugsPanel({
           )}
         </div>
       </div>
-    </DraggablePanel>
   );
 }

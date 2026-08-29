@@ -23,6 +23,11 @@
   --color-mist-900: var(--color-slate-900);
 }
 
+/* Modo compacto: reduz padding do viewport; o layout dos painéis permanece. */
+.anestflow-compact .anestflow-main {
+  padding-top: 0.25rem;
+}
+
 
 @media print {
   /* Setup page size and margins for Landscape A4 */
