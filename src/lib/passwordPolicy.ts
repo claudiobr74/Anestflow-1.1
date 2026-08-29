@@ -1,6 +1,7 @@
 /**
  * Espelha supabase/config.toml (minimum_password_length + required characters).
  * Usado no cadastro do cliente; o Auth rejeita senhas fracas no servidor também.
+ * Senha vazada (HaveIBeenPwned) é checada em `leakedPassword.ts` antes do signUp.
  */
 export const MIN_PASSWORD_LENGTH = 12;
 

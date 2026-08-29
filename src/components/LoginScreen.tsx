@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { getSupabase, ensureSupabaseConfig } from "../lib/supabase";
-import { mapAuthError } from "../lib/authErrors";
+import { AUTH_ERROR_LEAKED_PASSWORD, mapAuthError } from "../lib/authErrors";
+import { checkLeakedPassword } from "../lib/leakedPassword";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
 import { consumeSessionEndMessage } from "../lib/sessionPolicy";
 import {
@@ -165,6 +166,11 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
       }
       const supabase = getSupabase();
       if (isRegistering) {
+        const leak = await checkLeakedPassword(password);
+        if (leak.leaked) {
+          setError(AUTH_ERROR_LEAKED_PASSWORD);
+          return;
+        }
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password
@@ -424,7 +430,7 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
 
                 {isRegistering && (
                   <p className={`text-center text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    O SMTP padrão envia no máximo 2 e-mails de confirmação por hora. Se o cadastro falhar por limite, não tente de novo — use Entrar se a conta já existir.
+                    O cadastro recusa senhas que aparecem em vazamentos públicos (HaveIBeenPwned), sem enviar a senha completa. O SMTP padrão envia no máximo 2 e-mails de confirmação por hora. Se o cadastro falhar por limite, não tente de novo — use Entrar se a conta já existir.
                   </p>
                 )}
                 <p className={`text-center text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
