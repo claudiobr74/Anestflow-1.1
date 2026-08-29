@@ -48,6 +48,31 @@ function assert(condition: boolean, testName: string) {
   }
 }
 
+function readSrc(...relPaths: string[]): string {
+  return relPaths.map((rel) => fs.readFileSync(path.join(process.cwd(), rel), "utf-8")).join("\n");
+}
+
+function clinicalShellSrc(): string {
+  return readSrc(
+    "src/App.tsx",
+    "src/lib/useClinicalDocument.ts",
+    "src/lib/useAiSupervisor.ts",
+    "src/lib/useOverflowMenu.ts",
+    "src/lib/useResponsibilityActions.ts",
+    "src/components/AppHeader.tsx",
+    "src/components/AppNav.tsx",
+    "src/components/AppModalHost.tsx"
+  );
+}
+
+function intraSrcAll(): string {
+  const dir = path.join(process.cwd(), "src/components/intra");
+  const files = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => f.endsWith(".tsx")).sort()
+    : [];
+  return readSrc("src/components/IntraoperativeTab.tsx", ...files.map((f) => `src/components/intra/${f}`));
+}
+
 // 1. TESTE DE IMUTABILIDADE E HASH DE ASSINATURA DIGITALE (SHA-256 CANÔNICO)
 console.log("\n1. Testando Hash Canônico SHA-256 e Integridade de Assinatura...");
 
@@ -257,7 +282,7 @@ try {
   assert(voiceUi.includes('"voice-command"') && !voiceUi.includes("/api/voice-command"), "Voz usa Edge Function, não Express");
   assert(voiceUi.includes("transcription"), "Botão de voz encaminha a transcrição para conferência");
   assert(!voiceUi.includes("console.log(\"Comando de voz processado\""), "Botão de voz não loga o payload clínico");
-  const appVoice = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appVoice = clinicalShellSrc();
   assert(appVoice.includes("<VoiceCommandButton"), "Microfone de voz está montado no App");
   assert(appVoice.includes("VoiceCommandConfirmModal"), "Confirmação da transcrição existe no App");
   assert(appVoice.includes("handleVoiceCommandConfirm"), "Lançamento na ficha só após confirmar");
@@ -304,15 +329,16 @@ try {
   assert(appContent.includes("beginSession"), "Login inicia o relógio de sessão");
   assert(loginContent.includes("consumeSessionEndMessage"), "Tela de login mostra o motivo do encerramento");
   assert(!fs.existsSync(path.join(process.cwd(), "src/lib/api.ts")), "src/lib/api.ts não voltou");
-  assert(appContent.includes("overflowMenuOpen"), "Menu de overflow do cabeçalho abre por clique");
-  assert(!appContent.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
-  assert(appContent.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
+  const shell7 = clinicalShellSrc();
+  assert(shell7.includes("overflowMenuOpen"), "Menu de overflow do cabeçalho abre por clique");
+  assert(!shell7.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
+  assert(shell7.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
   assert(
-    appContent.includes("document.addEventListener"),
+    shell7.includes("document.addEventListener"),
     "Menu overflow escuta o DOM document"
   );
   assert(
-    !appContent.includes("window.document.addEventListener"),
+    !shell7.includes("window.document.addEventListener"),
     "Menu overflow não precisa mais de window.document para desviar da ficha"
   );
 } catch (err) {
@@ -346,7 +372,10 @@ try {
   assert(projectDefaults.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Deploy Vercel tem fallback da chave publishable");
   assert(projectDefaults.includes("sb_publishable_") && !projectDefaults.includes("xxxxxxxx"), "Fallback da chave não é placeholder");
   assert(vercelJson.includes("vite") && vercelJson.includes("dist"), "vercel.json gera o SPA Vite em dist/");
-  assert(vercelApi.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Função Vercel /api/public-config usa o fallback");
+  const publicCfg = fs.readFileSync(path.join(process.cwd(), "src/lib/publicSupabaseConfig.ts"), "utf-8");
+  assert(publicCfg.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "getPublicSupabaseConfig usa o fallback da chave publishable");
+  assert(serverContent.includes("getPublicSupabaseConfig"), "Express lê a config pública de uma função compartilhada");
+  assert(vercelApi.includes("getPublicSupabaseConfig"), "Função Vercel /api/public-config usa a mesma função compartilhada");
   assert(!vercelApi.includes("service_role"), "Função Vercel não usa service_role");
 
   const { applySupabaseEnvFromFiles } = await import("../lib/supabaseEnvFiles.ts");
@@ -645,7 +674,7 @@ try {
   assert(reviewUi.includes("parseAiReviewPayload"), "ReviewTab interpreta payload de auditoria");
   assert(reviewUi.includes("AI_REVIEW_UNAVAILABLE_MESSAGE") || reviewUi.includes("Auditoria de IA indisponível"), "UI distingue parse falho de zero alertas");
 
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   assert(!appSrc.includes("email: user.hospital"), "Assinatura/claim não usa hospital como e-mail");
   assert(appSrc.includes("email: user.email"), "E-mail de assinatura vem do Auth/perfil");
 
@@ -812,7 +841,7 @@ try {
   assert(syncSrc.includes("canEditDocument"), "Autosave usa canEditDocument");
   assert(!syncSrc.includes("!userId || !currentResponsibleUid"), "Autosave não é fail-open sem UID");
 
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   assert(appSrc.includes("isClinicalEditor") && appSrc.includes("canEditDocument"), "App consulta o gate único");
   assert(appSrc.includes("assignNewDocumentOwner"), "Reset/login carimbam o dono da ficha em branco");
 
@@ -954,7 +983,7 @@ try {
   const payload = parentPayloadForWrite(getBlankDocument(), "alice-uid", { includeStatus: true });
   assert(!("pending_transfer" in payload), "autosave não envia pending_transfer");
 
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   assert(appSrc.includes("resolveIncomingDoctorByEmail"), "Transferência resolve o colega por e-mail");
   assert(appSrc.includes("requestTransferAtomic"), "Solicitar transferência usa RPC");
   assert(appSrc.includes("declinePendingTransferAtomic"), "Recusar pendência usa RPC");
@@ -1065,7 +1094,7 @@ console.log("\n16b. Verificando Fase 4B (selo SignedAnesthesiaRecordV1 no servid
 try {
   const { mapClinicalError } = await import("../lib/clinicalErrors.ts");
   const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
   const pdfSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
   const drawerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
@@ -1137,7 +1166,7 @@ try {
 // 17. FASE 5 — ficha não se chama mais document
 console.log("\n17. Verificando Fase 5 (renomear document → ficha)...");
 try {
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
   const drawerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
   const tcleSrc = fs.readFileSync(path.join(process.cwd(), "src/components/TcleModal.tsx"), "utf-8");
@@ -1189,8 +1218,9 @@ try {
   const { playVitalOverdueBeep } = await import("../lib/vitalAlertSound.ts");
   const { deleteClinicalEventItem } = await import("../lib/clinicalChildren.ts");
   const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8"));
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  const intraAll = intraSrcAll();
   const drugsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeDrugsPanel.tsx"), "utf-8");
   const childrenSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalChildren.ts"), "utf-8");
   const boundarySrc = fs.readFileSync(path.join(process.cwd(), "src/components/ClinicalErrorBoundary.tsx"), "utf-8");
@@ -1199,16 +1229,16 @@ try {
   const readme5b = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
   const rootFiles = fs.readdirSync(process.cwd());
 
-  const drugsIds = [...intraSrc.matchAll(/\bid=["']drugs["']/g), ...drugsSrc.matchAll(/\bid=["']drugs["']/g)];
+  const drugsIds = [...intraAll.matchAll(/\bid=["']drugs["']/g), ...drugsSrc.matchAll(/\bid=["']drugs["']/g)];
   assert(drugsIds.length === 1, "id=drugs aparece uma única vez");
   assert(!drugsSrc.includes("DraggablePanel"), "painel de fármacos não envolve DraggablePanel interno");
 
-  const panelIds = [...intraSrc.matchAll(/<DraggablePanel[^>]*\bid=["']([^"']+)["']/g)].map((m) => m[1]);
+  const panelIds = [...intraAll.matchAll(/<DraggablePanel[^>]*\bid=["']([^"']+)["']/g)].map((m) => m[1]);
   assert(panelIds.length === new Set(panelIds).size, "IDs de DraggablePanel no intra são únicos");
 
-  assert(!intraSrc.includes("from \"./VitalsPanel\""), "Intra não importa VitalsPanel");
-  assert(!intraSrc.includes("from \"./BolusDrugsPanel\""), "Intra não importa BolusDrugsPanel");
-  assert(!intraSrc.includes("from \"./SupportPanel\""), "Intra não importa SupportPanel");
+  assert(!intraAll.includes("from \"./VitalsPanel\"") && !intraAll.includes("from \"../VitalsPanel\""), "Intra não importa VitalsPanel");
+  assert(!intraAll.includes("from \"./BolusDrugsPanel\"") && !intraAll.includes("from \"../BolusDrugsPanel\""), "Intra não importa BolusDrugsPanel");
+  assert(!intraAll.includes("from \"./SupportPanel\"") && !intraAll.includes("from \"../SupportPanel\""), "Intra não importa SupportPanel");
   assert(!fs.existsSync(path.join(process.cwd(), "src/components/VitalsPanel.tsx")), "VitalsPanel.tsx removido");
   assert(!fs.existsSync(path.join(process.cwd(), "src/components/BolusDrugsPanel.tsx")), "BolusDrugsPanel.tsx removido");
   assert(!fs.existsSync(path.join(process.cwd(), "src/components/SupportPanel.tsx")), "SupportPanel.tsx removido");
@@ -1320,10 +1350,12 @@ try {
   assert(mig.includes("private.bump_procedure_revision"), "Trigger mora em private");
   assert(mig.includes("set search_path = ''"), "Trigger com search_path vazio");
 
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
-  assert(appSrc.includes("const [ficha, setFicha]"), "App.tsx não foi fatiado");
-  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab.tsx não foi fatiado");
+  assert(appSrc.includes("useClinicalDocument"), "App.tsx orquestra via useClinicalDocument");
+  assert(appSrc.includes("AppHeader"), "App.tsx monta o header extraído");
+  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab continua recebendo ficha");
+  assert(intraSrc.includes("IntraoperativeUiProvider"), "IntraoperativeTab orquestra os painéis extraídos");
 
   const typesSrc = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf-8");
   assert(typesSrc.includes("updatedAtServer?"), "updatedAtServer permanece (sem drive-by)");
@@ -1333,6 +1365,69 @@ try {
   assert(readme6.includes("Fase 6") && readme6.includes("stale_revision"), "README documenta Fase 6");
 } catch (err) {
   assert(false, `Falha na verificação da Fase 6: ${err}`);
+}
+
+// 18b. FASE 6B — fatiar App/Intra
+console.log("\n18b. Verificando Fase 6B (extração App/Intra)...");
+try {
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const shell = clinicalShellSrc();
+  const intraTab = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  const intraAll = intraSrcAll();
+  const publicCfg = fs.readFileSync(path.join(process.cwd(), "src/lib/publicSupabaseConfig.ts"), "utf-8");
+  const serverSrc = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
+  const vercelApi = fs.readFileSync(path.join(process.cwd(), "api/public-config.ts"), "utf-8");
+  const authErr = fs.readFileSync(path.join(process.cwd(), "src/lib/authErrors.ts"), "utf-8");
+  const passPol = fs.readFileSync(path.join(process.cwd(), "src/lib/passwordPolicy.ts"), "utf-8");
+  const readme6b = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+
+  assert(publicCfg.includes("export function getPublicSupabaseConfig"), "getPublicSupabaseConfig existe");
+  assert(serverSrc.includes("getPublicSupabaseConfig"), "Express usa getPublicSupabaseConfig");
+  assert(vercelApi.includes("getPublicSupabaseConfig"), "api/public-config usa getPublicSupabaseConfig");
+  assert(passPol.includes("PASSWORD_ERROR_LENGTH") && passPol.includes("PASSWORD_ERROR_CHARACTERS"), "passwordPolicy exporta strings de erro");
+  assert(authErr.includes("PASSWORD_ERROR_LENGTH") && authErr.includes("PASSWORD_ERROR_CHARACTERS"), "authErrors reusa as strings da política de senha");
+
+  assert(appSrc.includes("useClinicalDocument"), "App importa useClinicalDocument");
+  assert(appSrc.includes("useResponsibilityActions"), "App importa useResponsibilityActions");
+  assert(appSrc.includes("useAiSupervisor"), "App importa useAiSupervisor");
+  assert(appSrc.includes("useOverflowMenu"), "App importa useOverflowMenu");
+  assert(appSrc.includes("AppHeader"), "App importa AppHeader");
+  assert(appSrc.includes("AppNav"), "App importa AppNav");
+  assert(appSrc.includes("AppModalHost"), "App importa AppModalHost");
+  assert(appSrc.includes("ficha={ficha}"), "App continua passando ficha para as abas");
+  assert(shell.includes("const [ficha, setFicha]"), "A ficha viva continua em useState");
+  assert(shell.includes("setFichaWithBroadcast"), "Broadcast da ficha permanece");
+  assert(shell.includes("closeProcedureAtomic"), "Encerramento atômico permanece no hook clínico");
+  assert(shell.includes("supervisorDevLog"), "Logger de supervisor permanece");
+
+  const launches = [
+    "IntraoperativeVitalsLaunch",
+    "IntraoperativeInfusionsLaunch",
+    "IntraoperativeGasesLaunch",
+    "IntraoperativeHydrationLaunch",
+    "IntraoperativeEventsLaunch",
+    "IntraoperativeSupportLaunch",
+    "IntraoperativeDrugsLaunch",
+    "IntraoperativeTimersLaunch",
+    "IntraoperativeChartLaunch"
+  ];
+  for (const name of launches) {
+    assert(fs.existsSync(path.join(process.cwd(), `src/components/intra/${name}.tsx`)), `${name} extraído`);
+    assert(intraTab.includes(name), `IntraoperativeTab monta ${name}`);
+  }
+  assert(intraTab.includes("IntraoperativeUiProvider"), "IntraoperativeTab envolve os painéis no provider");
+  assert(intraTab.includes("ficha: AnesthesiaDocument"), "Contrato da aba intra não mudou");
+  assert(!intraTab.includes("const renderVitals"), "renderVitals saiu do orquestrador");
+  assert(!intraTab.includes("const renderSupport"), "renderSupport saiu do orquestrador");
+  assert(!intraAll.includes("from \"./VitalsPanel\"") && !intraAll.includes("from \"../VitalsPanel\""), "6B não reintroduz VitalsPanel");
+  assert(!intraAll.includes("from \"./BolusDrugsPanel\"") && !intraAll.includes("from \"../BolusDrugsPanel\""), "6B não reintroduz BolusDrugsPanel");
+  assert(!intraAll.includes("from \"./SupportPanel\"") && !intraAll.includes("from \"../SupportPanel\""), "6B não reintroduz SupportPanel");
+  const drugsIds = [...intraAll.matchAll(/\bid=["']drugs["']/g)];
+  assert(drugsIds.length === 1, "id=drugs continua único depois do fatiar");
+
+  assert(readme6b.includes("6B") && readme6b.includes("useClinicalDocument"), "README documenta a extração 6B");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 6B: ${err}`);
 }
 
 // 19. FASE 7 — tipos, PWA, headers, lock, IA, PDF, CORS
@@ -1408,7 +1503,7 @@ try {
   const guardSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSessionGuard.ts"), "utf-8");
   assert(guardSrc.includes("onLock") && guardSrc.includes("lockedRef"), "useSessionGuard tem onLock e respeita locked");
   assert(guardSrc.includes("if (lockIfNeeded()) return"), "Clique que dispara o lock não renova o relógio");
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   assert(appSrc.includes("WorkstationLockScreen"), "App monta o overlay de lock");
   assert(appSrc.includes("needsSignatureStepUp"), "Encerramento pede step-up de senha");
   assert(appSrc.includes("setWorkstationLocked(true)"), "Lock não faz logout");
@@ -1470,8 +1565,9 @@ try {
   assert(configToml.includes("verify_jwt = true"), "verify_jwt permanece ligado");
 
   const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
-  assert(appSrc.includes("const [ficha, setFicha]"), "App.tsx não foi fatiado");
-  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab.tsx não foi fatiado");
+  assert(appSrc.includes("useClinicalDocument"), "App.tsx permanece orquestrador após 6B");
+  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab.tsx permanece o contrato da aba");
+  assert(intraSrc.includes("IntraoperativeUiProvider"), "IntraoperativeTab.tsx orquestra os painéis extraídos");
 
   const readme7 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
   assert(readme7.includes("Fase 7") && readme7.includes("toAIClinicalContext"), "README documenta Fase 7");
@@ -1538,7 +1634,7 @@ try {
   localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
 
   const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
-  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const appSrc = clinicalShellSrc();
   const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
   const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
 

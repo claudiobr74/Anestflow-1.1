@@ -4,23 +4,27 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { DraggablePanel } from "./DraggablePanel";
 
 import { AnesthesiaDocument, VitalRecord, BolusDrug, ContinuousInfusion, FluidRecord, OutputRecord, ClinicalEvent, VascularAccess, EquipmentConfig, InhalationAgent, AirwayDetails, AnesthesiaDocumentPatch } from "../types";
 import { Syringe, HandHelping, Zap, Info, Settings, FlaskConical, Play, Pause, Square, Plus, Minus, Check, RefreshCw, Layers, Droplets, Trash2, ShieldAlert, CheckCircle, Clock, AlertTriangle, Sliders, Bell, BellOff, Search, FileText, Wind, ChevronDown, ChevronUp, Activity, Edit2, ChevronLeft, ChevronRight, Smartphone } from "lucide-react";
 import { FAVORITE_DRUGS, FAVORITE_FLUIDS, CLINICAL_EVENTS_PRESETS } from "../mockData";
-import ClinicalChart from "./ClinicalChart";
 import AnesthesiaDescriptionDrawer from "./AnesthesiaDescriptionDrawer";
-import IntraoperativeDrugsPanel from "./IntraoperativeDrugsPanel";
-import ContinuousInfusionsPanel from "./ContinuousInfusionsPanel";
-import GasesPanel from "./GasesPanel";
-import HydrationPanel from "./HydrationPanel";
 import AnesthesiaTemplatesModal from "./AnesthesiaTemplatesModal";
 import { AnesthesiaTemplate } from "../types";
 import { combineDateAndTime, formatToLocalTime, getLocalDateStringNow, getLocalTimeStringNow, getTzParts } from "../utils/timezone";
 import { newClientId } from "../lib/procedureMapper";
 import { resolveActiveVitalInterval } from "../lib/vitalInterval";
 import { playVitalOverdueBeep } from "../lib/vitalAlertSound";
+import { IntraoperativeUiProvider } from "./intra/IntraoperativeUiContext";
+import IntraoperativeVitalsLaunch from "./intra/IntraoperativeVitalsLaunch";
+import IntraoperativeInfusionsLaunch from "./intra/IntraoperativeInfusionsLaunch";
+import IntraoperativeGasesLaunch from "./intra/IntraoperativeGasesLaunch";
+import IntraoperativeHydrationLaunch from "./intra/IntraoperativeHydrationLaunch";
+import IntraoperativeEventsLaunch from "./intra/IntraoperativeEventsLaunch";
+import IntraoperativeSupportLaunch from "./intra/IntraoperativeSupportLaunch";
+import IntraoperativeDrugsLaunch from "./intra/IntraoperativeDrugsLaunch";
+import IntraoperativeTimersLaunch from "./intra/IntraoperativeTimersLaunch";
+import IntraoperativeChartLaunch from "./intra/IntraoperativeChartLaunch";
 
 interface IntraoperativeTabProps {
   ficha: AnesthesiaDocument;
@@ -374,7 +378,7 @@ export default function IntraoperativeTab({
     }
   };
 
-const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeString: string) => {
+  const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeString: string) => {
     if (!timeString) {
       onUpdateDocument((prev) => {
         const updatedTimers = { ...prev.timers };
@@ -1264,7 +1268,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
   };
   // --- END RECONSTRUCTED MISSING CODE ---
 
-const handleTechniqueOtherTextChange = (text: string) => {
+  const handleTechniqueOtherTextChange = (text: string) => {
     onUpdateDocument((prev) => ({
       technique: {
         ...prev.technique,
@@ -1501,1264 +1505,232 @@ const handleTechniqueOtherTextChange = (text: string) => {
     ? `${notesCount} registro${notesCount > 1 ? "s" : ""} lançado${notesCount > 1 ? "s" : ""}`
     : "Sem registros";
 
-  const renderCollapsedSquare = (panelId: string, icon: React.ReactNode, title: string) => {
-    return (
-      <DraggablePanel key={panelId} id={panelId} isDark={isDark} className="w-[calc(50%-0.625rem)] xl:w-full max-w-full">
-        <div 
-          onClick={() => togglePanel(panelId)}
-          className={`w-full aspect-square rounded-lg flex flex-col items-center justify-center p-3 gap-2 cursor-pointer border hover:scale-[1.02] active:scale-95 transition-all ${
-            isDark ? "bg-[#1C1C1E] border-zinc-800 text-zinc-300 hover:bg-zinc-800" : "bg-white border-zinc-200/80 text-zinc-700 hover:bg-slate-50 shadow-xs"
-          }`}
-        >
-          <div className={`p-3 rounded-full ${isDark ? "bg-zinc-800/80 text-indigo-400" : "bg-indigo-50 text-indigo-600"}`}>
-            {icon}
-          </div>
-          <span className="text-xs sm:text-xs font-bold text-center leading-tight">
-            {title}
-          </span>
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-  const renderVitals = () => {
-    if (!getIsExpanded('vitals')) return renderCollapsedSquare('vitals', <Activity className="w-6 h-6" />, 'Sinais Vitais');
-    return (
-      /* TOUCHKEYPAD VITALS INTAKE (NÍVEL 1) */
-      <DraggablePanel key="vitals" id="vitals" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className={`p-5 rounded-lg shadow-xs border space-y-4 transition-all duration-300 relative ${
-        isDark 
-          ? isOverdue ? "bg-[#1C1C1E] border-rose-500 shadow-sm text-white" : "bg-[#1C1C1E] border-zinc-800 text-zinc-100"
-          : isOverdue ? "bg-white border-rose-400 shadow-sm text-zinc-900" : "bg-white border-zinc-200/80 text-zinc-900"
-      }`}>
-        <button onClick={() => togglePanel('vitals')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-        <div className={`flex justify-between items-center border-b pb-3 pr-8 ${isDark ? "border-zinc-800" : "border-zinc-100"}`}>
-          <h3 className={`text-xs font-bold tracking-widest uppercase flex items-center gap-1.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-            <Activity className={`w-3.5 h-3.5 ${isOverdue ? "text-rose-500 animate-ping" : "text-emerald-500"}`} />
-            Lançador de Sinais Vitais
-          </h3>
-          <span className={`text-xs tabular-nums font-bold px-2 py-0.5 rounded ${isDark ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600"}`}>
-            {selectedMinutes !== null ? `Ajustando ${selectedMinutes}'` : "Hora Atual"}
-          </span>
-        </div>
-
-        {/* Configuração do Intervalo de Registro */}
-        <div className={`p-3 rounded-lg space-y-2 border transition ${
-          isDark ? "bg-[#000000] border-zinc-800" : "bg-[#F2F2F7] border-zinc-200/60"
-        }`}>
-          <div className="flex items-center justify-between text-xs font-bold">
-            <span className={`flex items-center gap-1.5 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              <Sliders className="w-3.5 h-3.5 text-indigo-500" />
-              INTERVALO DE REGISTRO
-            </span>
-            
-            {/* Sound alert switcher */}
-            <button
-              type="button"
-              onClick={() => {
-                const next = !soundEnabled;
-                setSoundEnabled(next);
-                onPatchAppSettings?.({ soundAlertsEnabled: next });
-              }}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition ${
-                soundEnabled 
-                  ? isDark ? "bg-emerald-950/40 text-emerald-400 border border-emerald-800/40" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : isDark ? "bg-zinc-800 text-zinc-500 hover:text-zinc-400" : "bg-zinc-200/60 text-zinc-500 hover:text-zinc-700"
-              }`}
-              title={soundEnabled ? "Desativar aviso sonoro" : "Ativar aviso sonoro"}
-            >
-              {soundEnabled ? <Bell className="w-3 h-3 text-emerald-500" /> : <BellOff className="w-3 h-3" />}
-              <span className="text-xs uppercase font-bold">{soundEnabled ? "Bipe ON" : "Mudo"}</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-4 gap-1">
-            {[5, 10, 15].map((val) => {
-              const isActive = !isCustomInterval && loggingInterval === val;
-              return (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => {
-                    setIsCustomInterval(false);
-                    setLoggingInterval(val);
-                    onPatchAppSettings?.({ vitalIntervalMinutes: val });
-                  }}
-                  className={`py-1.5 px-1.5 text-center rounded-lg text-xs font-bold transition select-none ${
-                    isActive 
-                      ? "bg-indigo-600 text-white" 
-                      : isDark ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200" : "bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 border border-zinc-200/40 shadow-xs"
-                  }`}
-                >
-                  {val} min
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => {
-                setIsCustomInterval(true);
-                const parsed = Number(customIntervalVal);
-                if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 120) {
-                  onPatchAppSettings?.({ vitalIntervalMinutes: Math.floor(parsed) });
-                }
-              }}
-              className={`py-1.5 px-1.5 text-center rounded-lg text-xs font-bold transition select-none ${
-                isCustomInterval 
-                  ? "bg-indigo-600 text-white" 
-                  : isDark ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-white text-zinc-500 hover:bg-zinc-100 border border-zinc-200/40 shadow-xs"
-              }`}
-            >
-              Outro
-            </button>
-          </div>
-
-          {isCustomInterval && (
-            <div className={`flex items-center justify-between gap-2 mt-1.5 p-2 rounded-lg border ${
-              isDark ? "bg-[#000000] border-zinc-800" : "bg-white border-zinc-200/50"
-            }`}>
-              <span className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>Minutos personalizados:</span>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min="1"
-                  max="120"
-                  value={customIntervalVal}
-                  onChange={(e) => {
-                    setCustomIntervalVal(e.target.value);
-                    const parsed = Number(e.target.value);
-                    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 120) {
-                      onPatchAppSettings?.({ vitalIntervalMinutes: Math.floor(parsed) });
-                    }
-                  }}
-                  className={`border text-xs px-2 py-0.5 rounded w-16 text-center focus:outline-none focus:border-indigo-500 tabular-nums ${
-                    isDark ? "bg-zinc-900 border-zinc-800 text-white" : "bg-zinc-100 border-zinc-200 text-zinc-900"
-                  }`}
-                />
-                <span className="text-xs text-zinc-400">min</span>
-              </div>
-            </div>
-          )}
-
-          {/* Test alert tools */}
-          <div className={`flex items-center justify-between pt-2 border-t ${isDark ? "border-zinc-800/60" : "border-zinc-200/40"}`}>
-            <button
-              type="button"
-              onClick={() => {
-                const msToAdd = (activeInterval * 60000) + 120000; // Overdue by 2 mins
-                setSimulatedDelayMs(msToAdd);
-              }}
-              className={`text-xs transition font-semibold flex items-center gap-1 ${isDark ? "text-indigo-400 hover:text-indigo-300" : "text-indigo-600 hover:text-indigo-500"}`}
-            >
-              <Zap className="w-3 h-3" /> Simular Atraso (+{activeInterval + 2}m)
-            </button>
-            {simulatedDelayMs > 0 && (
-              <button
-                type="button"
-                onClick={() => setSimulatedDelayMs(0)}
-                className="text-xs text-rose-500 hover:text-rose-600 transition font-semibold"
-              >
-                Resetar
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Alarm / Fill Ticker bar */}
-        {timers.startAnesthesia ? (
-          <div className={`p-3 rounded-lg border transition ${
-            isOverdue 
-              ? isDark ? "bg-rose-950/20 border-rose-500/40 animate-pulse text-white" : "bg-rose-50 border-rose-200/60 animate-pulse text-rose-950"
-              : isDark ? "bg-[#000000] border-zinc-800" : "bg-[#F2F2F7] border-zinc-200/60"
-          }`}>
-            <div className="flex justify-between items-center text-xs mb-2 font-bold">
-              <span className={`flex items-center gap-1 ${isOverdue ? "text-rose-500" : isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                {isOverdue ? (
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                ) : (
-                  <Clock className="w-3.5 h-3.5" />
-                )}
-                {isOverdue ? <><AlertTriangle className="w-3.5 h-3.5" /> ALERTA: REGISTRO ATRASADO!</> : "PRÓXIMO REGISTRO EM:"}
-              </span>
-              <span className={`tabular-nums font-bold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
-                {timeString} / {activeInterval}:00
-              </span>
-            </div>
-            
-            <div className={`w-full h-2 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-zinc-200/60"}`}>
-              <div
-                className={`h-full transition-all duration-1000 ${isOverdue ? "bg-rose-500" : percent > 80 ? "bg-amber-500" : "bg-indigo-500"}`}
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-
-            {isOverdue ? (
-              <p className={`text-xs font-semibold mt-1 text-center ${isDark ? "text-rose-300" : "text-rose-600"}`}>
-                Sinais vitais não registrados há {Math.floor(elapsedMins)} min. Lance e clique em Registrar Agora!
-              </p>
-            ) : (
-              <p className="text-xs text-zinc-400 mt-1 text-center">
-                Preencha novos dados antes do temporizador esgotar.
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className={`border p-3 rounded-lg text-center text-xs font-medium ${
-            isDark ? "bg-[#000000] border-zinc-800/80 text-zinc-500" : "bg-zinc-50 border-zinc-200/55 text-zinc-400"
-          }`}>
-            <Info className="w-3.5 h-3.5" /> Inicie a anestesia no painel cronológico para ativar o temporizador de registros.
-          </div>
-        )}
-
-        {/* Readout Panels */}
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { key: "pas", label: "PAS", color: "text-rose-500", unit: "mmHg" },
-            { key: "pad", label: "PAD", color: "text-rose-500", unit: "mmHg" },
-            { key: "fc", label: "FC", color: "text-blue-500", unit: "bpm" },
-            { key: "spo2", label: "SpO₂", color: "text-emerald-500", unit: "%" },
-            { key: "etco2", label: "ETCO₂", color: "text-teal-500", unit: "mmHg" },
-            { key: "temp", label: "TEMP", color: "text-orange-500", unit: "°C" },
-            { key: "pai", label: "PAI (Média)", color: "text-red-500", unit: "mmHg" },
-            { key: "bis", label: "BIS", color: "text-purple-500", unit: "" }
-          ].map((field) => {
-            const active = activeField === field.key;
-            const val = activeVitalsInput[field.key as keyof typeof activeVitalsInput] || "—";
-            return (
-              <button
-                key={field.key}
-                onClick={() => setActiveField(field.key as any)}
-                className={`p-2 rounded-lg text-left transition select-none flex flex-col justify-between h-14 border ${
-                  active 
-                    ? "bg-indigo-50/50 border-indigo-500 ring-1 ring-indigo-500/20 text-indigo-950" 
-                    : isDark ? "bg-zinc-900/60 border-zinc-800/70 text-zinc-300" : "bg-zinc-50/40 border-zinc-200/50 text-zinc-800"
-                }`}
-              >
-                <span className={`text-xs font-bold ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{field.label}</span>
-                <div className="flex items-baseline justify-between w-full">
-                  <span className={`text-base font-bold tabular-nums ${field.color}`}>{val}</span>
-                  <span className="text-xs text-zinc-400 tabular-nums font-medium">{field.unit}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Physical numeric keypad */}
-        <div className="grid grid-cols-3 gap-1.5 pt-1">
-          {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "BKSP"].map((key) => {
-            const isAction = key === "BKSP" || key === ".";
-            return (
-              <button
-                key={key}
-                onClick={() => {
-                  if (key === "BKSP") handleKeyBackspace();
-                  else handleKeyPress(key);
-                }}
-                className={`py-3 rounded-lg text-sm font-bold tabular-nums transition select-none ${
-                  isAction 
-                    ? isDark ? "bg-zinc-700 hover:bg-zinc-650 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-zinc-600 shadow-xs" 
-                    : isDark ? "bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700/50" : "bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-900 shadow-xs active:scale-95"
-                }`}
-              >
-                {key}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action buttons footer */}
-        <div className={`grid grid-cols-2 gap-2 pt-2 border-t ${isDark ? "border-zinc-800" : "border-zinc-150"}`}>
-          <button
-            onClick={repeatLastVitals}
-            className={`py-2 px-3 transition font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 ${
-              isDark ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 border border-zinc-250 text-zinc-600"
-            }`}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Repetir Último
-          </button>
-          <button
-            onClick={handleRegisterVitals}
-            className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 transition font-bold text-xs text-white rounded-lg flex items-center justify-center gap-1 shadow-xs"
-          >
-            <CheckCircle className="w-3.5 h-3.5" />
-            Registrar Agora
-          </button>
-        </div>
-      </div></DraggablePanel>
-    );
-  };
-
-  const renderInfusions = () => {
-    if (!getIsExpanded('infusions')) return renderCollapsedSquare('infusions', <Droplets className="w-6 h-6" />, 'Bombas de Infusão');
-    return (
-      /* CONTINUOUS INFUSION PUMPS CONTROL (NÍVEL 1) */
-      <DraggablePanel key="infusions" id="infusions" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className="relative">
-          <button onClick={() => togglePanel('infusions')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <ContinuousInfusionsPanel 
-        isDark={isDark}
-        borderClass={borderClass}
-        cardClass={cardClass}
-        continuousInfusions={continuousInfusions}
-        newInfusion={newInfusion}
-        setNewInfusion={setNewInfusion}
-        handleStartInfusion={handleStartInfusion}
-        handleUpdateInfusionStatus={handleUpdateInfusionStatus}
-        handleUpdateInfusion={handleUpdateInfusion}
-        handleRemoveInfusion={handleRemoveInfusion}
-        patientWeight={ficha.patient?.weight}
-      /></div></DraggablePanel>
-    );
-  };
-
-      const renderGases = () => {
-    if (!getIsExpanded('gases')) return renderCollapsedSquare('gases', <Wind className="w-6 h-6" />, 'Gases');
-    return (
-      <DraggablePanel key="gases" id="gases" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className="relative">
-          <button onClick={() => togglePanel('gases')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <GasesPanel 
-            isDark={isDark}
-            borderClass={borderClass}
-            cardClass={cardClass}
-            inhalationAgents={inhalationAgents}
-            newAgent={newAgent}
-            setNewAgent={setNewAgent}
-            handleStartInhalationAgent={handleStartInhalationAgent}
-            handleStopInhalationAgent={handleStopInhalationAgent}
-            handleRemoveInhalationAgent={handleRemoveInhalationAgent}
-            handleUpdateAgent={handleUpdateInhalationAgent}
-          />
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-      const renderHydration = () => {
-    if (!getIsExpanded('hydration')) return renderCollapsedSquare('hydration', <Droplets className="w-6 h-6 text-blue-500" />, 'Líquidos');
-    return (
-      <DraggablePanel key="hydration" id="hydration" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className="relative">
-          <button onClick={() => togglePanel('hydration')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <HydrationPanel 
-            isDark={isDark}
-            borderClass={borderClass}
-            cardClass={cardClass}
-            newFluid={newFluid}
-            setNewFluid={setNewFluid}
-            fluidTimeMode={fluidTimeMode}
-            setFluidTimeMode={setFluidTimeMode}
-            customFluidTime={customFluidTime}
-            setCustomFluidTime={setCustomFluidTime}
-            handleAddFluid={handleAddFluid}
-            fluids={fluids}
-            handleRemoveFluid={handleRemoveFluid}
-            getTimeString={getTimeString}
-            outputType={outputType}
-            setOutputType={setOutputType}
-            outputVal={outputVal}
-            setOutputVal={setOutputVal}
-            handleAddOutput={handleAddOutput}
-            outputs={outputs}
-            handleRemoveOutput={handleRemoveOutput}
-            totalInflow={totalInflow}
-            totalOutflow={totalOutflow}
-            netBalance={netBalance}
-          />
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-      const renderEvents = () => {
-    if (!getIsExpanded('events')) return renderCollapsedSquare('events', <FileText className="w-6 h-6" />, 'Descrição e Eventos');
-    return (
-      <DraggablePanel key="events" id="events" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className={`${cardClass} p-5 rounded-lg border space-y-4 relative`}>
-          <button onClick={() => togglePanel('events')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <div className={`flex items-center justify-between pb-2 border-b pr-8 ${borderClass}`}>
-            <div className="flex items-center gap-2">
-              <FileText className={`w-5 h-5 ${isDark ? "text-orange-400" : "text-orange-600"}`} />
-              <div>
-                <h3 className={`font-bold text-sm ${textHeadingClass}`}>
-                  Descrição e Eventos Clínicos
-                </h3>
-                <p className={`text-xs ${textMutedClass}`}>
-                  Registro de intercorrências, tempos cirúrgicos adicionais e notas de evolução
-                </p>
-              </div>
-            </div>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${isDark ? "bg-orange-500/20 text-orange-400" : "bg-orange-100 text-orange-700"}`}>
-              {descriptionSummary}
-            </span>
-          </div>
-          <button
-             onClick={() => setIsNarrativeDrawerOpen(true)}
-             className={`w-full py-4 rounded-lg border flex items-center justify-center gap-2 transition active:scale-[0.98] ${isDark ? "bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20" : "bg-orange-50 border-orange-200 text-orange-600 hover:bg-orange-100"}`}
-           >
-             <FileText className="w-5 h-5" />
-             <span className="font-bold">Abrir Painel de Descrições e Eventos</span>
-           </button>
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-  const renderSupport = () => {
-    if (!getIsExpanded('support')) return renderCollapsedSquare('support', <HandHelping className="w-6 h-6" />, 'Suporte');
-    return (
-      <DraggablePanel key="support" id="support" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className={`${cardClass} p-5 rounded-lg border space-y-4 relative`}>
-          <button onClick={() => togglePanel('support')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <div className={`flex items-center gap-2 pb-2 border-b pr-8 ${borderClass}`}>
-            <HandHelping className={`w-5 h-5 ${isDark ? "text-teal-400" : "text-teal-600"}`} />
-            <div>
-              <h3 className={`font-bold text-sm ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
-                Suporte, Acessos e Técnica Anestésica
-              </h3>
-              <p className={`text-xs ${isDark ? "text-zinc-400" : "text-slate-400 dark:text-zinc-500"}`}>
-                Registre as técnicas, os equipamentos de apoio e os acessos vasculares utilizados no intraoperatório
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-            {/* TIPO DE ANESTESIA */}
-            <div className={`p-4 rounded-lg border transition-all duration-200 ${
-              expandedSupportPanels['tipo']
-                ? isDark
-                  ? "bg-teal-950/20 border-teal-900/60 shadow-xs"
-                  : "bg-teal-50/40 border-teal-200 shadow-sm"
-                : isDark
-                  ? "bg-zinc-900/40 border-zinc-800"
-                  : "bg-white border-slate-200 shadow-sm"
-            }`}>
-              <button 
-                onClick={() => setExpandedSupportPanels(prev => ({ ...prev, 'tipo': !prev['tipo'] }))}
-                className="w-full flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                  <h4 className={`text-xs font-bold uppercase tracking-wide ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                    Tipo de Anestesia
-                  </h4>
-                </div>
-                {expandedSupportPanels['tipo'] ? <ChevronUp className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" /> : <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" />}
-              </button>
-              
-              {expandedSupportPanels['tipo'] && (
-                <div className={`mt-4 pt-4 border-t animate-in fade-in slide-in-from-top-2 duration-200 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
-                  <div className="space-y-2">
-                    <select
-                      value={getSelectedTechnique()}
-                      onChange={(e) => handleTechniqueChange(e.target.value)}
-                      className={`w-full text-xs px-3 py-2.5 rounded-lg border outline-none font-semibold transition ${selectClass}`}
-                    >
-                      <option value="Geral Balanceada">Geral Balanceada</option>
-                      <option value="Geral Venosa">Geral Venosa</option>
-                      <option value="Geral Inalatória">Geral Inalatória</option>
-                      <option value="Sedação">Sedação</option>
-                      <option value="Local">Local</option>
-                      <option value="Raquianestesia">Raquianestesia</option>
-                      <option value="Peridural">Peridural</option>
-                      <option value="Bloqueio Regional de Plexo/Nervo">Bloqueio Regional de Plexo/Nervo</option>
-                      <option value="Combinada Geral + Regional">Combinada Geral + Regional</option>
-                      <option value="Outra">Outra técnica...</option>
-                    </select>
-
-                    {(getSelectedTechnique() as string) === "Outra" && (
-                      <input
-                        type="text"
-                        value={technique.other}
-                        onChange={(e) => handleTechniqueOtherTextChange(e.target.value)}
-                        placeholder="Descreva a técnica..."
-                        className={`w-full text-xs px-3 py-2.5 border rounded-lg outline-none font-semibold transition ${inputClass}`}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* VIA AÉREA & VENTILAÇÃO */}
-            <div className={`p-4 rounded-lg border transition-all duration-200 ${
-              expandedSupportPanels['via']
-                ? isDark
-                  ? "bg-cyan-950/20 border-cyan-900/60 shadow-xs"
-                  : "bg-cyan-50/40 border-cyan-200 shadow-sm"
-                : isDark
-                  ? "bg-zinc-900/40 border-zinc-800"
-                  : "bg-white border-slate-200 shadow-sm"
-            }`}>
-              <button 
-                onClick={() => setExpandedSupportPanels(prev => ({ ...prev, 'via': !prev['via'] }))}
-                className="w-full flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
-                  <h4 className={`text-xs font-bold uppercase tracking-wide ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                    Via Aérea & Ventilação
-                  </h4>
-                </div>
-                {expandedSupportPanels['via'] ? <ChevronUp className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" /> : <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" />}
-              </button>
-              
-              {expandedSupportPanels['via'] && (
-                <div className={`mt-4 pt-4 border-t animate-in fade-in slide-in-from-top-2 duration-200 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
-                  <div className="space-y-2 text-xs">
-                    {/* Modo de Ventilação */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-1.5`}>
-                      <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase block">Modo de Ventilação</span>
-                      <div className="grid grid-cols-2 gap-1 text-xs">
-                        {[
-                          { value: "Espontânea", label: "Espontânea" },
-                          { value: "VCM", label: "VCM" },
-                          { value: "VCV", label: "VCV" },
-                          { value: "PCV", label: "PCV" }
-                        ].map((m) => {
-                          const active = (airway.ventilationMode === m.value) || (!airway.ventilationMode && m.value === "Espontânea");
-                          return (
-                            <button
-                              key={m.value}
-                              type="button"
-                              onClick={() => handleAirwayUpdate({ ventilationMode: m.value as any })}
-                              className={`px-2 py-1 rounded text-center font-bold transition ${
-                                active
-                                  ? isDark
-                                    ? "bg-cyan-950/40 border border-cyan-500 text-cyan-300"
-                                    : "bg-cyan-50 border border-cyan-400 text-cyan-800"
-                                  : isDark
-                                    ? "bg-zinc-950 border border-zinc-850 text-zinc-500 hover:border-zinc-700"
-                                    : "bg-white border border-slate-200 text-slate-500 dark:text-zinc-400 hover:border-slate-300"
-                              }`}
-                            >
-                              {m.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Dispositivo de Via Aérea */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-2`}>
-                      <div>
-                        <label className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase block mb-1">Dispositivo</label>
-                        <select
-                          value={airway.ventilationType || "Espontânea"}
-                          onChange={(e) => {
-                            const newType = e.target.value as any;
-                            // Clear device size when changing type, as sizes are different
-                            handleAirwayUpdate({ ventilationType: newType, deviceSize: "" });
-                          }}
-                          className={`w-full text-xs px-2 py-1.5 rounded border outline-none font-semibold ${selectClass}`}
-                        >
-                          <option value="Espontânea">Espontânea (Nenhum)</option>
-                          <option value="Máscara Facial">Máscara Facial / Cateter O₂</option>
-                          <option value="Cânula Nasal">Cânula Nasal / Óculos O₂</option>
-                          <option value="Cânula Orofaríngea">Cânula Orofaríngea (Guedel)</option>
-                          <option value="Dispositivo Supraglótico">Máscara Laríngea</option>
-                          <option value="Intubação Orotraqueal">Intubação Orotraqueal</option>
-                          <option value="Intubação Nasotraqueal">Intubação Nasotraqueal</option>
-                          <option value="Tubo Duplo Lúmen">Tubo Duplo Lúmen</option>
-                          <option value="Traqueostomia">Traqueostomia</option>
-                          <option value="Outros">Outros</option>
-                        </select>
-                      </div>
-
-                      {/* Detalhes do Dispositivo */}
-                      {airway.ventilationType !== "Espontânea" && (
-                        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-dashed border-slate-200/40">
-                          <div>
-                            <label className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase block">Calibre / Nº</label>
-                            <input
-                              type="text"
-                              list="airway-device-sizes"
-                              value={airway.deviceSize || ""}
-                              onChange={(e) => handleAirwayUpdate({ deviceSize: e.target.value })}
-                              placeholder="Selecione ou digite"
-                              className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                            />
-                            <datalist id="airway-device-sizes">
-                              {(airway.ventilationType === "Máscara Facial" ? ["0", "1", "2", "3", "4", "5", "6"] :
-                                airway.ventilationType === "Cânula Nasal" ? ["Recém-nascido", "Infantil", "Pediátrico", "Adulto", "P", "M", "G"] :
-                                airway.ventilationType === "Cânula Orofaríngea" ? ["000", "00", "0", "1", "2", "3", "4", "5", "6"] :
-                                airway.ventilationType === "Dispositivo Supraglótico" ? ["1", "1.5", "2", "2.5", "3", "4", "5", "6"] :
-                                (airway.ventilationType?.includes("Intubação") || airway.ventilationType === "Intubação Orotraqueal") ? ["2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5", "6.0", "6.5", "7.0", "7.5", "8.0", "8.5", "9.0"] :
-                                airway.ventilationType === "Tubo Duplo Lúmen" ? ["26", "28", "32", "35", "37", "39", "41"] :
-                                airway.ventilationType === "Traqueostomia" ? ["4", "5", "6", "7", "8", "9", "10"] : []).map(size => (
-                                <option key={size} value={size} />
-                              ))}
-                            </datalist>
-                          </div>
-                          
-                          {/* Depth / Fixação - Only for tube intubations */}
-                          {(airway.ventilationType?.includes("Intubação") || airway.ventilationType?.includes("Tubo") || airway.ventilationType === "Intubação Orotraqueal") ? (
-                            <div>
-                              <label className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase block">Fixação (cm)</label>
-                              <input
-                                type="text"
-                                value={airway.fixationDepth || ""}
-                                onChange={(e) => handleAirwayUpdate({ fixationDepth: e.target.value })}
-                                placeholder="Ex: 22"
-                                className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex items-end">
-                              <span className="text-xs text-slate-400 dark:text-zinc-500 italic">Dispositivo supraglótico/facial</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Cuff details for tubes */}
-                      {(airway.ventilationType?.includes("Intubação") || airway.ventilationType?.includes("Tubo") || airway.ventilationType === "Traqueostomia" || airway.ventilationType === "Intubação Orotraqueal") && (
-                        <div className="flex items-center gap-3 pt-1">
-                          <label className="flex items-center gap-1.5 text-xs text-zinc-500 font-semibold">
-                            <input
-                              type="checkbox"
-                              checked={!!airway.hasCuff}
-                              onChange={(e) => handleAirwayUpdate({ hasCuff: e.target.checked })}
-                              className="rounded border-zinc-300 accent-indigo-600"
-                            />
-                            Com Cuff
-                          </label>
-                          {airway.hasCuff && (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={airway.cuffPressure ?? 20}
-                                onChange={(e) => handleAirwayUpdate({ cuffPressure: parseInt(e.target.value) || 0 })}
-                                className={`w-14 text-xs px-1 py-0.5 border rounded text-center outline-none ${inputClass}`}
-                              />
-                              <span className="text-xs text-zinc-400 font-bold uppercase">cmH₂O</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Facilidade / Predição de Dificuldade */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-1.5`}>
-                      <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase block">Facilidade de Intubação</span>
-                      <div className="flex gap-2">
-                        {[
-                          { value: "Fácil", label: "Fácil" },
-                          { value: "Difícil", label: "Difícil" }
-                        ].map((opt) => {
-                          const active = airway.predictionEasy === opt.value;
-                          return (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => handleAirwayUpdate({ predictionEasy: opt.value as any })}
-                              className={`flex-1 py-1 rounded text-xs font-bold text-center transition ${
-                                active
-                                  ? opt.value === "Fácil"
-                                    ? "bg-emerald-500 text-white"
-                                    : "bg-rose-500 text-white animate-pulse"
-                                  : isDark
-                                    ? "bg-zinc-800 text-zinc-400 border border-zinc-800"
-                                    : "bg-slate-200 text-slate-600"
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Intercorrências de Via Aérea */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-1.5`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase">Intercorrências (V.A.)</span>
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleAirwayUpdate({ incidents: "" })}
-                            className={`px-2 py-0.5 rounded text-xs font-bold ${
-                              !airway.incidents
-                                ? "bg-emerald-500 text-white"
-                                : isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-200 text-slate-500 dark:text-zinc-400"
-                            }`}
-                          >
-                            Não
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!airway.incidents) {
-                                handleAirwayUpdate({ incidents: "Sim" });
-                              }
-                            }}
-                            className={`px-2 py-0.5 rounded text-xs font-bold ${
-                              airway.incidents
-                                ? "bg-rose-500 text-white animate-pulse"
-                                : isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-200 text-slate-500 dark:text-zinc-400"
-                            }`}
-                          >
-                            Sim
-                          </button>
-                        </div>
-                      </div>
-
-                      {airway.incidents && (
-                        <input
-                          type="text"
-                          value={airway.incidents === "Sim" ? "" : airway.incidents}
-                          onChange={(e) => handleAirwayUpdate({ incidents: e.target.value })}
-                          placeholder="Quais intercorrências ocorreram?"
-                          className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* EQUIPAMENTOS E MATERIAIS */}
-            <div className={`p-4 rounded-lg border transition-all duration-200 ${
-              expandedSupportPanels['equipamentos']
-                ? isDark
-                  ? "bg-indigo-950/20 border-indigo-900/60 shadow-xs"
-                  : "bg-indigo-50/40 border-indigo-200 shadow-sm"
-                : isDark
-                  ? "bg-zinc-900/40 border-zinc-800"
-                  : "bg-white border-slate-200 shadow-sm"
-            }`}>
-              <button 
-                onClick={() => setExpandedSupportPanels(prev => ({ ...prev, 'equipamentos': !prev['equipamentos'] }))}
-                className="w-full flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                  <h4 className={`text-xs font-bold uppercase tracking-wide ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                    Equipamentos e Materiais
-                  </h4>
-                </div>
-                {expandedSupportPanels['equipamentos'] ? <ChevronUp className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" /> : <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" />}
-              </button>
-              
-              {expandedSupportPanels['equipamentos'] && (
-                <div className={`mt-4 pt-4 border-t animate-in fade-in slide-in-from-top-2 duration-200 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {[
-                      { key: "infusionPump", label: "Bomba Infusão" },
-                      { key: "urinaryCatheter", label: "Sonda Vesical" },
-                      { key: "gastricTube", label: "Sonda Gástrica" },
-                      { key: "thermalBlanket", label: "Manta Térmica" },
-                      { key: "thermalMattress", label: "Colchão Térmico" },
-                      { key: "defibrillator", label: "Desfibrilador" }
-                    ].map((item) => {
-                      const active = !!(equipmentConfig as any)[item.key];
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => handleEquipmentToggle(item.key as keyof EquipmentConfig)}
-                          className={`px-2.5 py-1.5 rounded-lg border text-left font-semibold transition ${
-                            active
-                              ? isDark
-                                ? "bg-indigo-950/40 border-indigo-500 text-indigo-300"
-                                : "bg-indigo-50 border-indigo-400 text-indigo-800"
-                              : isDark
-                                ? "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700"
-                                : "bg-slate-50 border-slate-200 text-slate-500 dark:text-zinc-400 hover:border-slate-300"
-                          }`}
-                        >
-                          {item.label} {active ? "✓" : ""}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <input
-                    type="text"
-                    value={equipmentConfig.other || ""}
-                    onChange={(e) => handleEquipmentOtherTextChange(e.target.value)}
-                    placeholder="Outro material (ex: manta, etc)..."
-                    className={`w-full text-xs px-3 py-1.5 border rounded-lg outline-none font-semibold transition ${inputClass}`}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* ACESSO VENOSO */}
-            <div className={`p-4 rounded-lg border transition-all duration-200 ${
-              expandedSupportPanels['acessos']
-                ? isDark
-                  ? "bg-violet-950/20 border-violet-900/60 shadow-xs"
-                  : "bg-violet-50/40 border-violet-200 shadow-sm"
-                : isDark
-                  ? "bg-zinc-900/40 border-zinc-800"
-                  : "bg-white border-slate-200 shadow-sm"
-            }`}>
-              <button 
-                onClick={() => setExpandedSupportPanels(prev => ({ ...prev, 'acessos': !prev['acessos'] }))}
-                className="w-full flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-violet-500"></span>
-                  <h4 className={`text-xs font-bold uppercase tracking-wide ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-                    Acesso Venoso
-                  </h4>
-                </div>
-                {expandedSupportPanels['acessos'] ? <ChevronUp className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" /> : <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-zinc-300" />}
-              </button>
-              
-              {expandedSupportPanels['acessos'] && (
-                <div className={`mt-4 pt-4 border-t animate-in fade-in slide-in-from-top-2 duration-200 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
-                  <div className="space-y-2 text-xs">
-                    {/* Peripheral Access Block */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-2`}>
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase">Acesso Periférico</span>
-                        <div className="flex items-center gap-1.5">
-                          <select
-                            value={currentPeripheralCount}
-                            onChange={(e) => handlePeripheralCountChange(parseInt(e.target.value))}
-                            className={`text-xs px-1.5 py-0.5 rounded border font-semibold ${selectClass}`}
-                          >
-                            <option value={0}>0 acessos</option>
-                            <option value={1}>1 acesso</option>
-                            <option value={2}>2 acessos</option>
-                            <option value={3}>3 acessos</option>
-                            <option value={4}>4 acessos</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {peripheralAccesses.map((acc, index) => (
-                        <div key={acc.id} className="space-y-1.5 border-t border-dashed border-slate-200/60 pt-2 first:border-0 first:pt-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-indigo-500 uppercase">Linha #{index + 1}</span>
-                          </div>
-                          <div className="grid grid-cols-1 gap-1.5">
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {/* Tipo */}
-                              <div className="space-y-0.5">
-                                <label className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase block">Tipo</label>
-                                <input
-                                  type="text"
-                                  value={acc.type}
-                                  onChange={(e) => handleUpdatePeripheralAccessItem(acc.id, { type: e.target.value })}
-                                  placeholder="Ex: Venoso Periférico"
-                                  className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                                />
-                              </div>
-                              {/* Calibre */}
-                              <div className="space-y-0.5">
-                                <label className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase block">Calibre</label>
-                                <input
-                                  type="text"
-                                  value={acc.gauge}
-                                  onChange={(e) => handleUpdatePeripheralAccessItem(acc.id, { gauge: e.target.value })}
-                                  placeholder="Ex: 18G, 16G"
-                                  className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                                />
-                              </div>
-                            </div>
-                            {/* Local */}
-                            <div className="space-y-0.5">
-                              <label className="text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase block">Local da Punção</label>
-                              <input
-                                type="text"
-                                value={acc.site}
-                                onChange={(e) => handleUpdatePeripheralAccessItem(acc.id, { site: e.target.value })}
-                                placeholder="Ex: Fossa Cubital"
-                                className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Central Access Block */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-1.5`}>
-                      <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase block">Via Central</span>
-                      <select
-                        value={currentCentralSite === "Nenhum" ? "Nenhum" : currentCentralSite}
-                        onChange={(e) => handleVascularAccessUpdate({ centralSite: e.target.value })}
-                        className={`w-full text-xs px-2 py-1 rounded border font-semibold ${selectClass}`}
-                      >
-                        <option value="Nenhum">Sem acesso central</option>
-                        <option value="Veia Jugular Interna Direita (VJI D)">VJI Direita</option>
-                        <option value="Veia Jugular Interna Esquerda (VJI E)">VJI Esquerda</option>
-                        <option value="Veia Subclávia Direita (VSC D)">Subclávia Direita</option>
-                        <option value="Veia Subclávia Esquerda (VSC E)">Subclávia Esquerda</option>
-                        <option value="Veia Femoral Direita">Femoral Direita</option>
-                        <option value="Veia Femoral Esquerda">Femoral Esquerda</option>
-                        <option value="Outra via">Outra via central</option>
-                      </select>
-                      {currentCentralSite !== "Nenhum" && currentCentralSite !== "Veia Jugular Interna Direita (VJI D)" && currentCentralSite !== "Veia Jugular Interna Esquerda (VJI E)" && currentCentralSite !== "Veia Subclávia Direita (VSC D)" && currentCentralSite !== "Veia Subclávia Esquerda (VSC E)" && currentCentralSite !== "Veia Femoral Direita" && currentCentralSite !== "Veia Femoral Esquerda" && (
-                        <input
-                          type="text"
-                          value={currentCentralSite}
-                          onChange={(e) => handleVascularAccessUpdate({ centralSite: e.target.value })}
-                          placeholder="Especifique a via central..."
-                          className={`w-full text-xs px-2 py-1 border rounded outline-none font-semibold ${inputClass}`}
-                        />
-                      )}
-                    </div>
-
-                    {/* Intercorrências de Acesso */}
-                    <div className={`p-2.5 rounded-lg border ${isDark ? "bg-zinc-900/50 border-zinc-800" : "bg-slate-50/55 border-slate-100"} space-y-1.5`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-400 dark:text-zinc-500 uppercase">Intercorrências de Acesso</span>
-                        <div className="flex gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleVascularAccessUpdate({ hasIncidents: false })}
-                            className={`px-2 py-0.5 rounded text-xs font-bold ${
-                              !currentHasIncidents
-                                ? "bg-emerald-500 text-white"
-                                : isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-200 text-slate-500 dark:text-zinc-400"
-                            }`}
-                          >
-                            Não
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleVascularAccessUpdate({ hasIncidents: true })}
-                            className={`px-2 py-0.5 rounded text-xs font-bold ${
-                              currentHasIncidents
-                                ? "bg-rose-500 text-white animate-pulse"
-                                : isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-200 text-slate-500 dark:text-zinc-400"
-                            }`}
-                          >
-                            Sim
-                          </button>
-                        </div>
-                      </div>
-
-                      {currentHasIncidents && (
-                        <input
-                          type="text"
-                          value={currentIncidentsText}
-                          onChange={(e) => handleVascularAccessUpdate({ incidentsText: e.target.value })}
-                          placeholder="Quais intercorrências ocorreram?"
-                          className={`w-full text-xs px-2 py-1.5 border rounded outline-none font-semibold ${inputClass}`}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-    const renderDrugs = () => {
-    if (!getIsExpanded('drugs')) return renderCollapsedSquare('drugs', <Syringe className="w-6 h-6 text-rose-500" />, 'Fármacos');
-    return (
-      <DraggablePanel key="drugs" id="drugs" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className="relative">
-          <button onClick={() => togglePanel('drugs')} className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors z-10"><ChevronUp className="w-4 h-4" /></button>
-          <IntraoperativeDrugsPanel
-            isDark={isDark}
-            cardClass={cardClass}
-            borderClass={borderClass}
-            inputClass={inputClass}
-            selectClass={selectClass}
-            ficha={ficha}
-            onUpdateDocument={onUpdateDocument}
-            patient={patient}
-            allAvailableDrugs={allAvailableDrugs}
-            bolusDrugs={bolusDrugs}
-            continuousInfusions={continuousInfusions}
-            selectedDrug={selectedDrug}
-            setSelectedDrug={setSelectedDrug}
-            customDose={customDose}
-            setCustomDose={setCustomDose}
-            customRoute={customRoute}
-            setCustomRoute={setCustomRoute}
-            customTime={customTime}
-            setCustomTime={setCustomTime}
-            timeMode={timeMode}
-            setTimeMode={setTimeMode}
-            isDrugListExpanded={isDrugListExpanded}
-            setIsDrugListExpanded={setIsDrugListExpanded}
-            drugSearchQuery={drugSearchQuery}
-            setDrugSearchQuery={setDrugSearchQuery}
-            selectedDrugCategory={selectedDrugCategory}
-            setSelectedDrugCategory={setSelectedDrugCategory}
-            showDrugEditor={showDrugEditor}
-            setShowDrugEditor={setShowDrugEditor}
-            drugEditorMode={drugEditorMode}
-            setDrugEditorMode={setDrugEditorMode}
-            drugEditorData={drugEditorData}
-            setDrugEditorData={setDrugEditorData}
-            handleConfirmLaunch={handleConfirmLaunch}
-            handleRemoveBolusDrugByName={handleRemoveBolusDrugByName}
-            setEditingBolusDrugName={setEditingBolusDrugName}
-            setEditingBolusDrugsList={setEditingBolusDrugsList}
-            handleRemoveInfusion={handleRemoveInfusion}
-            setEditingInfusionId={setEditingInfusionId}
-            setEditingInfusionData={setEditingInfusionData}
-          />
-        </div>
-      </DraggablePanel>
-    );
-  };
-
-  const renderTimers = () => {
-    return (
-      /* TIMING CONTROL BUTTONS (BARRA DE EVENTOS) */
-      <DraggablePanel key="timers" id="timers" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className={`${cardClass} p-5 rounded-lg border space-y-4`}>
-          <div className={`flex items-center gap-2 pb-2 border-b ${borderClass}`}>
-            <Clock className={`w-5 h-5 ${isDark ? "text-indigo-400" : "text-indigo-600"}`} />
-            <div>
-              <h3 className={`font-bold text-sm ${isDark ? "text-zinc-100" : "text-slate-800"}`}>Cronologia Intraoperatória</h3>
-              <p className={`text-xs ${isDark ? "text-zinc-400" : "text-slate-400 dark:text-zinc-500"}`}>Preencha digitando o horário ou clique em "Agora" para registrar o momento atual</p>
-            </div>
-            <div className="flex-1"></div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowTemplatesModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${isDark ? "bg-indigo-900/40 text-indigo-300 hover:bg-indigo-900/60" : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"}`}
-              >
-                <Layers className="w-4 h-4" />
-                Usar Template Clínico
-              </button>
-            </div>
-
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Início Anestesia */}
-            <div className={`p-3 rounded-lg border transition flex flex-col justify-between ${
-              timers.startAnesthesia 
-                ? isDark ? "bg-indigo-950/20 border-indigo-900/50" : "bg-indigo-50/45 border-indigo-200" 
-                : isDark ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-50/50 border-zinc-200/50"
-            }`}>
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className={`text-xs font-bold flex items-center gap-1 ${isDark ? "text-indigo-300" : "text-indigo-950"}`}>
-                  <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                  Início Anestesia
-                </span>
-                {timers.startAnesthesia && (
-                  <button
-                    onClick={() => handleUpdateTimerValue("startAnesthesia", "Início da Anestesia", "")}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline transition"
-                    title="Limpar horário"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={getTimeString(timers.startAnesthesia)}
-                  onChange={(e) => handleUpdateTimerValue("startAnesthesia", "Início da Anestesia", e.target.value)}
-                  className={`${inputClass} border rounded-lg px-2 py-1.5 text-xs text-center font-semibold focus:outline-none shadow-xs w-full`}
-                />
-                <button
-                  onClick={() => {
-                    const nowStr = getLocalTimeStringNow("America/Sao_Paulo");
-                    handleUpdateTimerValue("startAnesthesia", "Início da Anestesia", nowStr);
-                  }}
-                  className={`${isDark ? "bg-indigo-950 text-indigo-300 hover:bg-indigo-900/85 border border-indigo-900/50" : "bg-indigo-600 hover:bg-indigo-500 text-white"} font-bold text-xs uppercase px-2.5 py-2.5 rounded-lg transition shadow-xs whitespace-nowrap`}
-                >
-                  Agora
-                </button>
-              </div>
-            </div>
-
-            {/* Início Cirurgia */}
-            <div className={`p-3 rounded-lg border transition flex flex-col justify-between ${
-              timers.startSurgery 
-                ? isDark ? "bg-amber-950/20 border-amber-900/50" : "bg-amber-50/45 border-amber-200" 
-                : isDark ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-50/50 border-zinc-200/50"
-            }`}>
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className={`text-xs font-bold flex items-center gap-1 ${isDark ? "text-amber-300" : "text-amber-950"}`}>
-                  <Play className="w-3.5 h-3.5 text-amber-500" />
-                  Início Cirurgia
-                </span>
-                {timers.startSurgery && (
-                  <button
-                    onClick={() => handleUpdateTimerValue("startSurgery", "Início da Cirurgia", "")}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline transition"
-                    title="Limpar horário"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={getTimeString(timers.startSurgery)}
-                  onChange={(e) => handleUpdateTimerValue("startSurgery", "Início da Cirurgia", e.target.value)}
-                  className={`${inputClass} border rounded-lg px-2 py-1.5 text-xs text-center font-semibold focus:outline-none shadow-xs w-full`}
-                />
-                <button
-                  onClick={() => {
-                    const nowStr = getLocalTimeStringNow("America/Sao_Paulo");
-                    handleUpdateTimerValue("startSurgery", "Início da Cirurgia", nowStr);
-                  }}
-                  className={`${isDark ? "bg-amber-950 text-amber-300 hover:bg-amber-900/85 border border-amber-900/50" : "bg-amber-600 hover:bg-amber-500 text-white"} font-bold text-xs uppercase px-2.5 py-2.5 rounded-lg transition shadow-xs whitespace-nowrap`}
-                >
-                  Agora
-                </button>
-              </div>
-            </div>
-
-            {/* Fim Cirurgia */}
-            <div className={`p-3 rounded-lg border transition flex flex-col justify-between ${
-              timers.endSurgery 
-                ? isDark ? "bg-rose-950/20 border-rose-900/50" : "bg-rose-50/45 border-rose-200" 
-                : isDark ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-50/50 border-zinc-200/50"
-            }`}>
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className={`text-xs font-bold flex items-center gap-1 ${isDark ? "text-rose-300" : "text-rose-950"}`}>
-                  <Square className="w-3.5 h-3.5 text-rose-500" />
-                  Fim Cirurgia
-                </span>
-                {timers.endSurgery && (
-                  <button
-                    onClick={() => handleUpdateTimerValue("endSurgery", "Fim da Cirurgia", "")}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline transition"
-                    title="Limpar horário"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={getTimeString(timers.endSurgery)}
-                  onChange={(e) => handleUpdateTimerValue("endSurgery", "Fim da Cirurgia", e.target.value)}
-                  className={`${inputClass} border rounded-lg px-2 py-1.5 text-xs text-center font-semibold focus:outline-none shadow-xs w-full`}
-                />
-                <button
-                  onClick={() => {
-                    const nowStr = getLocalTimeStringNow("America/Sao_Paulo");
-                    handleUpdateTimerValue("endSurgery", "Fim da Cirurgia", nowStr);
-                  }}
-                  className={`${isDark ? "bg-rose-950 text-rose-300 hover:bg-rose-900/85 border border-rose-900/50" : "bg-rose-600 hover:bg-rose-500 text-white"} font-bold text-xs uppercase px-2.5 py-2.5 rounded-lg transition shadow-xs whitespace-nowrap`}
-                >
-                  Agora
-                </button>
-              </div>
-            </div>
-
-            {/* Fim Anestesia */}
-            <div className={`p-3 rounded-lg border transition flex flex-col justify-between ${
-              timers.endAnesthesia 
-                ? isDark ? "bg-zinc-800 border-zinc-700 text-white" : "bg-slate-100 dark:bg-zinc-900/80 border-slate-300" 
-                : isDark ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-50/50 border-zinc-200/50"
-            }`}>
-              <div className="flex items-center justify-between gap-1.5 mb-2">
-                <span className={`text-xs font-bold flex items-center gap-1 ${isDark ? "text-zinc-300" : "text-slate-900"}`}>
-                  <CheckCircle className="w-3.5 h-3.5 text-zinc-400" />
-                  Fim Anestesia
-                </span>
-                {timers.endAnesthesia && (
-                  <button
-                    onClick={() => handleUpdateTimerValue("endAnesthesia", "Fim da Anestesia", "")}
-                    className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline transition"
-                    title="Limpar horário"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={getTimeString(timers.endAnesthesia)}
-                  onChange={(e) => handleUpdateTimerValue("endAnesthesia", "Fim da Anestesia", e.target.value)}
-                  className={`${inputClass} border rounded-lg px-2 py-1.5 text-xs text-center font-semibold focus:outline-none shadow-xs w-full`}
-                />
-                <button
-                  onClick={() => {
-                    const nowStr = getLocalTimeStringNow("America/Sao_Paulo");
-                    handleUpdateTimerValue("endAnesthesia", "Fim da Anestesia", nowStr);
-                  }}
-                  className={`${isDark ? "bg-zinc-700 text-zinc-200 hover:bg-zinc-650" : "bg-slate-700 hover:bg-slate-800 text-white"} font-bold text-xs uppercase px-2.5 py-2.5 rounded-lg transition shadow-xs whitespace-nowrap`}
-                >
-                  Agora
-                </button>
-              </div>
-            </div>
-          </div>
-        </div></DraggablePanel>
-    );
-  };
-
-  const renderChart = () => {
-    return (
-      /* INTEGRATED VITAL PLOTTER */
-      <DraggablePanel key="chart" id="chart" isDark={isDark} className="w-full max-w-full min-w-0">
-        <div className="flex-1 min-h-[420px]">
-          <ClinicalChart
-            ficha={ficha}
-            onTimeSelect={onTimeSelect}
-            selectedMinutes={selectedMinutes}
-            theme={theme}
-            onAddVitalRecord={(record) => {
-              onUpdateDocument((prev) => ({ vitals: [...(prev.vitals || []), record] }));
-            }}
-            onUpdateVitalRecord={(id, updates) => {
-              onUpdateDocument((prev) => ({
-                vitals: (prev.vitals || []).map(v => v.id === id ? { ...v, ...updates } : v)
-              }));
-            }}
-            onRemoveVitalRecord={(id) => {
-              onUpdateDocument((prev) => ({
-                vitals: (prev.vitals || []).filter(v => v.id !== id)
-              }));
-            }}
-            onUpdateVitalsList={(newVitals) => {
-              onUpdateDocument(() => ({ vitals: newVitals }));
-            }}
-          />
-        </div></DraggablePanel>
-    );
+  const intraUi = {
+    onUpdateDocument,
+    isDark,
+    cardClass,
+    textHeadingClass,
+    textMutedClass,
+    borderClass,
+    selectClass,
+    inputClass,
+    activeVitalsInput,
+    setActiveVitalsInput,
+    activeField,
+    setActiveField,
+    showTemplatesModal,
+    setShowTemplatesModal,
+    activeClinicalTabs,
+    setActiveClinicalTabs,
+    CLINICAL_TABS,
+    PANEL_LABELS,
+    isInfusionsActive,
+    isGasesActive,
+    manuallyExpanded,
+    setManuallyExpanded,
+    getIsExpanded,
+    togglePanel,
+    editingBolusDrugName,
+    setEditingBolusDrugName,
+    editingBolusDrugsList,
+    setEditingBolusDrugsList,
+    editingInfusionId,
+    setEditingInfusionId,
+    editingInfusionData,
+    setEditingInfusionData,
+    newInfusion,
+    setNewInfusion,
+    newAgent,
+    setNewAgent,
+    newFluid,
+    setNewFluid,
+    outputVal,
+    setOutputVal,
+    outputType,
+    setOutputType,
+    loggingInterval,
+    setLoggingInterval,
+    isCustomInterval,
+    setIsCustomInterval,
+    customIntervalVal,
+    setCustomIntervalVal,
+    nowTime,
+    setNowTime,
+    simulatedDelayMs,
+    setSimulatedDelayMs,
+    soundEnabled,
+    setSoundEnabled,
+    drugSearchQuery,
+    setDrugSearchQuery,
+    selectedDrugCategory,
+    setSelectedDrugCategory,
+    expandedSupportPanels,
+    setExpandedSupportPanels,
+    expandedMainPanels,
+    setExpandedMainPanels,
+    isDrugListExpanded,
+    setIsDrugListExpanded,
+    showDrugEditor,
+    setShowDrugEditor,
+    drugEditorMode,
+    setDrugEditorMode,
+    drugEditorData,
+    setDrugEditorData,
+    allAvailableDrugs,
+    setAllAvailableDrugs,
+    selectedDrug,
+    setSelectedDrug,
+    customDose,
+    setCustomDose,
+    customAmpoules,
+    setCustomAmpoules,
+    customRoute,
+    setCustomRoute,
+    timeMode,
+    setTimeMode,
+    customTime,
+    setCustomTime,
+    fluidTimeMode,
+    setFluidTimeMode,
+    customFluidTime,
+    setCustomFluidTime,
+    isNarrativeDrawerOpen,
+    setIsNarrativeDrawerOpen,
+    expandedSections,
+    setExpandedSections,
+    toggleSection,
+    handleTimerClick,
+    getTimeString,
+    handleKeyPress,
+    handleKeyBackspace,
+    handleKeyClear,
+    handleRegisterVitals,
+    repeatLastVitals,
+    handleSelectDrugForLaunch,
+    handleSaveDrug,
+    handleConfirmLaunch,
+    handleStartInfusion,
+    handleRemoveInfusion,
+    handleRemoveBolusDrugByName,
+    handleUpdateInfusionStatus,
+    handleUpdateInfusion,
+    handleStartInhalationAgent,
+    handleRemoveInhalationAgent,
+    handleStopInhalationAgent,
+    handleUpdateInhalationAgent,
+    activeInterval,
+    lastVital,
+    lastVitalTime,
+    elapsedMs,
+    elapsedMins,
+    isOverdue,
+    percent,
+    nextVitalTime,
+    timeString,
+    totalInflow,
+    totalOutflow,
+    netBalance,
+    handleAddFluid,
+    handleRemoveFluid,
+    handleAddOutput,
+    handleRemoveOutput,
+    getSelectedTechnique,
+    handleTechniqueChange,
+    currentPeripheralCount,
+    setCurrentPeripheralCount,
+    currentPeripheralSite,
+    setCurrentPeripheralSite,
+    currentPeripheralGauge,
+    setCurrentPeripheralGauge,
+    currentCentralSite,
+    setCurrentCentralSite,
+    currentHasIncidents,
+    setCurrentHasIncidents,
+    currentIncidentsText,
+    setCurrentIncidentsText,
+    handleApplyTemplate,
+    airway,
+    handleAirwayUpdate,
+    handleEquipmentToggle,
+    handleEquipmentOtherTextChange,
+    handleTechniqueOtherTextChange,
+    handleUpdateTimerValue,
+    handlePeripheralCountChange,
+    handleUpdatePeripheralAccessItem,
+    handleVascularAccessUpdate,
+    startAnesthStr,
+    endAnesthStr,
+    chronologySummary,
+    latestVital,
+    vitalsSummary,
+    drugsSummary,
+    activeInfusionsCount,
+    infusionsSummary,
+    activeGasesCount,
+    gasesSummary,
+    getSelectedTechniqueName,
+    peripheralAccesses,
+    centralAccesses,
+    hasCentral,
+    supportSummary,
+    hydrationSummary,
+    notesCount,
+    descriptionSummary,
+    vitals,
+    bolusDrugs,
+    continuousInfusions,
+    fluids,
+    outputs,
+    events,
+    timers,
+    patient,
+    inhalationAgents,
+    technique,
+    equipmentConfig,
+    vascularAccesses,
+    narrativeLaunches,
+    ficha,
+    applyDocument,
+    selectedMinutes,
+    onTimeSelect,
+    theme,
+    pendingTemplateForReview,
+    onClearPendingTemplate,
+    startAiSupervisor,
+    stopAiSupervisor,
+    canEdit,
+    vitalIntervalMinutes,
+    soundAlertsEnabled,
+    compactMode,
+    onPatchAppSettings
   };
 
   const renderPanelById = (panelId: string) => {
     switch (panelId) {
-      case 'vitals': return renderVitals();
-      case 'timers': return renderTimers();
-      case 'chart': return renderChart();
-      case 'support': return renderSupport();
-      case 'infusions': return renderInfusions();
-      case 'gases': return renderGases();
-      case 'hydration': return renderHydration();
-      case 'events': return renderEvents();
-      case 'drugs': return renderDrugs();
+      case 'vitals': return <IntraoperativeVitalsLaunch />;
+      case 'timers': return <IntraoperativeTimersLaunch />;
+      case 'chart': return <IntraoperativeChartLaunch />;
+      case 'support': return <IntraoperativeSupportLaunch />;
+      case 'infusions': return <IntraoperativeInfusionsLaunch />;
+      case 'gases': return <IntraoperativeGasesLaunch />;
+      case 'hydration': return <IntraoperativeHydrationLaunch />;
+      case 'events': return <IntraoperativeEventsLaunch />;
+      case 'drugs': return <IntraoperativeDrugsLaunch />;
       default: return null;
     }
   };
 
   return (
+    <IntraoperativeUiProvider value={intraUi}>
     <div className={`${compactMode ? "space-y-2" : "space-y-4"} w-full`} data-compact={compactMode ? "true" : "false"}>
       {/* 1. CRONOLOGIA (TIMERS) ALWAYS OPEN AND FIXED ABOVE THE CHART */}
       <div className={`w-full ${!canEdit ? "pointer-events-none" : ""}`}>
-        {renderTimers()}
+        <IntraoperativeTimersLaunch />
       </div>
 
       {/* 2. CLINICAL CHART ALWAYS FIXED */}
       <div className={`w-full ${!canEdit ? "pointer-events-none" : ""}`}>
-        {renderChart()}
+        <IntraoperativeChartLaunch />
       </div>
 
       {/* 3. COMPACT AND ELEGANT CLINICAL TABS ROW (RESPONSIVE GRID) */}
@@ -3376,5 +2348,6 @@ const handleTechniqueOtherTextChange = (text: string) => {
       )}
 
   </div>
+    </IntraoperativeUiProvider>
   );
 }

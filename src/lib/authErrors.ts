@@ -4,7 +4,7 @@
  * (https://supabase.com/docs/guides/auth/rate-limits).
  */
 
-import { MIN_PASSWORD_LENGTH } from "./passwordPolicy";
+import { PASSWORD_ERROR_CHARACTERS, PASSWORD_ERROR_LENGTH } from "./passwordPolicy";
 
 export const AUTH_ERROR_EMAIL_SEND_RATE =
   "Limite de e-mails de confirmação atingido (SMTP padrão: 2 por hora). Espere cerca de 1 hora. Não clique em Cadastrar nem em Reenviar. Se a conta já existir e o e-mail já estiver confirmado no Dashboard, use Entrar.";
@@ -61,10 +61,10 @@ export function mapAuthError(err: AuthErrorLike | null | undefined): string {
     return AUTH_ERROR_LEAKED_PASSWORD;
   }
   if (reasons.includes("length")) {
-    return `A senha deve ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
+    return PASSWORD_ERROR_LENGTH;
   }
   if (reasons.includes("characters")) {
-    return "A senha deve conter letra maiúscula, minúscula e dígito.";
+    return PASSWORD_ERROR_CHARACTERS;
   }
   if (
     code.includes("weak_password") ||

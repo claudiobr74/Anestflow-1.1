@@ -323,7 +323,7 @@ Live condensado (persistir → selar → A+B → imutável):
 npx tsx src/tests/checkpoint_live.ts
 ```
 
-Sentinela: `CHECKPOINT_LIVE_OK`. Ainda fora deste checkpoint: fatiar App/Intra (6B), PDF final completo (7F) e `transcript_original`.
+Sentinela: `CHECKPOINT_LIVE_OK`. Ainda fora deste checkpoint (feitas depois): fatiar App/Intra (6B), PDF final completo (7F) e `transcript_original`.
 
 ## Fase 5 (renomear `document` → `ficha` + higiene)
 
@@ -331,7 +331,7 @@ A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava
 
 O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument` e `canEditDocument` não mudam. `signAndLockDocument` permanece só para testes locais de hash — o encerramento real é `closeProcedureAtomic`. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: toAIClinicalContext(ficha), models }`).
 
-Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` **não** foram fatiados (isso é 6B).
+Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` foram fatiados na **Fase 6B**.
 
 ### Higiene (IDs, resíduos, settings reais)
 
@@ -353,9 +353,19 @@ Mudar só `revision` / `updatedAt` **não** altera `clinicalChangeFingerprint` �
 
 Com um único usuário de teste o conflito é reproduzido gravando de novo com `revision` velha; duas abas reais ou um segundo médico não são necessários para validar o token.
 
+### 6B — fatiar App / Intra
+
+Extração **sem mudar comportamento**. `App.tsx` orquestra: `useClinicalDocument`, `useResponsibilityActions`, `useAiSupervisor`, `useOverflowMenu`, `AppHeader`, `AppNav`, `AppModalHost`. A ficha viva continua em `const [ficha, setFicha]` no hook clínico; as abas ainda recebem `ficha={ficha}`.
+
+`IntraoperativeTab` vira orquestrador de layout. Cada painel vivo mora em `src/components/intra/` (`IntraoperativeVitalsLaunch`, bombas, gases, líquidos, eventos, suporte, fármacos, cronologia, gráfico) atrás de `IntraoperativeUiProvider`. Painéis mortos da Fase 5 (`VitalsPanel`, `BolusDrugsPanel`, `SupportPanel`) **não** voltam. Um `DraggablePanel id="drugs"`.
+
+`getPublicSupabaseConfig()` é a única fonte de URL + chave publishable para o Express e `api/public-config.ts`. `passwordPolicy` e `authErrors` compartilham `PASSWORD_ERROR_LENGTH` / `PASSWORD_ERROR_CHARACTERS`.
+
+A extração não altera merge de estado, fingerprint, `assertCanEdit`, responsabilidade nem selo.
+
 ## Fase 7 (tipos, PWA, IA e hardening)
 
-Última fase do plano consolidado. `App.tsx` e `IntraoperativeTab.tsx` **não** foram fatiados. `strict` **não** foi ligado no `tsconfig.json` principal.
+Última fase do plano consolidado. `App.tsx` e `IntraoperativeTab.tsx` já foram fatiados na 6B. `strict` **não** foi ligado no `tsconfig.json` principal.
 
 ### 7A — TypeScript em `src/lib`
 

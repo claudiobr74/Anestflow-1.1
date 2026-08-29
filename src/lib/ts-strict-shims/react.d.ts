@@ -9,6 +9,7 @@ declare module "react" {
   export interface MutableRefObject<T> {
     current: T;
   }
+  export type SetStateAction<S> = S | ((prev: S) => S);
   export function useState<S>(
     initial: S | (() => S)
   ): [S, (next: S | ((prev: S) => S)) => void];
