@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { ClinicalErrorBoundary } from './components/ClinicalErrorBoundary.tsx';
 import './index.css';
 
 // A leftover production PWA SW on localhost serves dist/ JS, where dynamic
@@ -15,6 +16,8 @@ if (import.meta.env.DEV && typeof navigator !== "undefined" && "serviceWorker" i
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ClinicalErrorBoundary>
+      <App />
+    </ClinicalErrorBoundary>
   </StrictMode>,
 );

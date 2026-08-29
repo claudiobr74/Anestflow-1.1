@@ -441,7 +441,23 @@ try {
   assert(false, `Falha na verificação da onda 8: ${err}`);
 }
 
-// 11. VERIFICAÇÃO FINAL DE RESULTADOS
+// 11. ONDA 9 — ERROR BOUNDARY E FECHAMENTO
+console.log("\n11. Verificando fechamento da onda 9 (error boundary)...");
+try {
+  const mainContent = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
+  const boundary = fs.readFileSync(path.join(process.cwd(), "src/components/ClinicalErrorBoundary.tsx"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(mainContent.includes("ClinicalErrorBoundary"), "main.tsx envolve o App com ClinicalErrorBoundary");
+  assert(boundary.includes("getDerivedStateFromError"), "Boundary captura throw de render");
+  assert(boundary.includes("Recarregar"), "Boundary oferece recarregar a página");
+  assert(!boundary.includes("error.message"), "Boundary não mostra mensagem crua (risco de PHI)");
+  assert(readme.includes("Onda 9"), "README documenta a onda 9");
+  assert(readme.includes("Prevent use of leaked passwords"), "README da onda 9 ainda aponta o toggle HIBP");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 9: ${err}`);
+}
+
+// 12. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
