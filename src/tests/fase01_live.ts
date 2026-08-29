@@ -30,14 +30,15 @@ if (authError || !session.user) fail(authError?.message || "login falhou");
 const uid = session.user.id;
 console.log("login ok", uid);
 
+const stamp = Date.now();
 const doc = getBlankDocument();
 doc.createdByUid = uid;
 doc.currentResponsibleUid = uid;
 doc.participantUids = [uid];
 doc.userId = uid;
 doc.status = "Draft";
-doc.patient.fullName = "Paciente Teste Fase Zero Um";
-doc.patient.recordNumber = "FASE01-001";
+doc.patient.fullName = `Paciente Teste Fase Zero Um ${stamp}`;
+doc.patient.recordNumber = `FASE01-${stamp}`;
 doc.patient.hospital = "Hospital Teste Fase 01";
 doc.timers = { startAnesthesia: "2026-08-29T12:00:00.000Z" };
 doc.inhalationAgents = [

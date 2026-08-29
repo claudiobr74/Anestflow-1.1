@@ -1406,7 +1406,92 @@ try {
   assert(false, `Falha na verificação da Fase 7: ${err}${extra ? `\n${extra}` : ""}`);
 }
 
-// 20. VERIFICAÇÃO FINAL DE RESULTADOS
+// 20. CHECKPOINT PÓS-FASE 4
+console.log("\n20. Verificando checkpoint pós-Fase 4 (auditoria antes da higiene)...");
+try {
+  const { isProcedureIntegrityIntact } = await import("../lib/proceduresService.ts");
+  const { CLINICAL_FINGERPRINT_FIELDS } = await import("../lib/clinicalChangeFingerprint.ts");
+  const { canEditDocument } = await import("../lib/assertCanEdit.ts");
+  const { evaluateSigningReadiness } = await import("../lib/signingReadinessEngine.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { UNREGISTERED, displayBloodPressure } = await import("../lib/clinicalDisplay.ts");
+  const { localStorageHoldsClinicalPhi, CLINICAL_STORAGE_KEYS } = await import("../lib/clinicalStorageKeys.ts");
+
+  const intact = {
+    snapshotOk: true,
+    persistedOk: true as boolean | null,
+    storedHash: "aa",
+    snapshotHash: "aa",
+    schema: "SignedAnesthesiaRecordV1",
+    legacy: false
+  };
+  assert(isProcedureIntegrityIntact(intact) === true, "A+B é íntegro");
+  assert(isProcedureIntegrityIntact({ ...intact, persistedOk: false }) === false, "A sem B não é íntegro");
+  assert(isProcedureIntegrityIntact({ ...intact, persistedOk: null, legacy: true }) === false, "legado A-only não é íntegro");
+  assert(isProcedureIntegrityIntact({ ...intact, snapshotOk: false }) === false, "B sem A não é íntegro");
+
+  const fp = CLINICAL_FINGERPRINT_FIELDS as readonly string[];
+  for (const field of ["timers", "inhalationAgents", "fluids", "recovery", "airway", "checklist"]) {
+    assert(fp.includes(field), `fingerprint cobre ${field}`);
+  }
+
+  const blank = getBlankDocument();
+  const emptyBp = displayBloodPressure(undefined, undefined);
+  assert(emptyBp === UNREGISTERED, "PA ausente permanece Não registrado");
+  assert(!emptyBp.includes("120"), "PA ausente não vira 120");
+
+  const unsigned = evaluateSigningReadiness(blank);
+  assert(unsigned.canClose === false, "ficha em branco não encerra");
+  assert(!unsigned.alerts.some((a) => /capno|EtCO/i.test(`${a.title} ${a.description}`)), "capnografia não é bloqueio");
+
+  const creatorBlocked = canEditDocument(
+    { status: "Draft", currentResponsibleUid: "alice-uid", team: { anesthesiologistLead: "Alice" } },
+    "creator-uid"
+  );
+  assert(creatorBlocked.ok === false, "criador que não é responsável não edita");
+  const signedBlocked = canEditDocument(
+    { status: "Signed", currentResponsibleUid: "alice-uid", team: { anesthesiologistLead: "Alice" } },
+    "alice-uid"
+  );
+  assert(signedBlocked.ok === false, "ficha assinada bloqueia o responsável");
+
+  localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify({ patient: { fullName: "PHI_CHKPT" } }));
+  assert(localStorageHoldsClinicalPhi() === true, "detector de PHI legado ainda funciona");
+  localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
+
+  const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+
+  assert(procSrc.includes("closeProcedureAtomic") && !procSrc.includes("p_canonical"), "encerramento não envia canonical");
+  assert(appSrc.includes("closeProcedureAtomic") && !appSrc.includes("signAndLockDocument"), "App sela no servidor");
+  assert(reviewSrc.includes("isProcedureIntegrityIntact"), "ReviewTab exige A e B");
+  assert(procSrc.includes("rpc(\"assume_responsibility\""), "assunção excepcional continua RPC próprio");
+  assert(procSrc.includes("rpc(\"claim_responsibility\""), "aceite continua claim RPC");
+
+  const lives = [
+    "fase01_live.ts",
+    "fase03_live.ts",
+    "fase04_live.ts",
+    "fase04b_live.ts",
+    "fase04_handover_live.ts",
+    "fase06_live.ts",
+    "onda3_live.ts",
+    "checkpoint_live.ts"
+  ];
+  for (const live of lives) {
+    assert(fs.existsSync(path.join(process.cwd(), "src/tests", live)), `live ${live} existe`);
+  }
+
+  assert(readme.includes("Checkpoint pós-Fase 4"), "README documenta o checkpoint");
+  assert(readme.includes("CHECKPOINT_LIVE_OK"), "README aponta o live do checkpoint");
+  assert(readme.includes("não inicia higiene"), "README deixa a higiene da Fase 5 para a etapa seguinte");
+} catch (err) {
+  assert(false, `Falha na verificação do checkpoint: ${err}`);
+}
+
+// 21. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
