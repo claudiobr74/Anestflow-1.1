@@ -186,6 +186,7 @@ try {
   const pkg = fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8");
 
   assert(aiLib.includes('functions.invoke'), "Cliente chama Edge Functions via functions.invoke");
+  assert(aiLib.includes("auth.getUser"), "Cliente revalida a sessão antes do invoke");
   assert(reviewUi.includes('invokeAiFunction') && reviewUi.includes('"review"'), "ReviewTab invoca a função review");
   assert(!reviewUi.includes("/api/review"), "ReviewTab não chama /api/review");
   assert(voiceUi.includes('"voice-command"') && !voiceUi.includes("/api/voice-command"), "Voz usa Edge Function, não Express");

@@ -50,7 +50,16 @@ export async function invokeAiFunction<T>(
 ): Promise<T> {
   if (signal?.aborted) throw abortError();
 
-  const invokePromise = getSupabase().functions.invoke<T>(name, { body });
+  const client = getSupabase();
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData.user) {
+    throw new Error("Usuário não autenticado. Faça login para utilizar os recursos de IA do AnestFlow.");
+  }
+  if (!userData.user.email_confirmed_at) {
+    throw new Error("E-mail ainda não confirmado.");
+  }
+
+  const invokePromise = client.functions.invoke<T>(name, { body });
   const { data, error } = signal
     ? await Promise.race([invokePromise, waitForAbort(signal)])
     : await invokePromise;
