@@ -275,6 +275,9 @@ try {
   const mainContent = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
   const serverContent = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
   const viteConfig = fs.readFileSync(path.join(process.cwd(), "vite.config.ts"), "utf-8");
+  const projectDefaults = fs.readFileSync(path.join(process.cwd(), "src/lib/supabaseProject.ts"), "utf-8");
+  const vercelJson = fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf-8");
+  const vercelApi = fs.readFileSync(path.join(process.cwd(), "api/public-config.ts"), "utf-8");
 
   assert(supabaseLib.includes("import.meta.env.VITE_SUPABASE_URL"), "URL lida com acesso estático import.meta.env.VITE_SUPABASE_URL");
   assert(
@@ -288,6 +291,11 @@ try {
   assert(!serverContent.includes("service_role"), "public-config não usa service_role");
   assert(viteConfig.includes("applySupabaseEnvFromFiles"), "vite.config aplica .env.local antes do loadEnv");
   assert(envFilesLib.includes("usable(fromProc)"), "Arquivo prevalece sobre process.env vazio");
+  assert(projectDefaults.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Deploy Vercel tem fallback da chave publishable");
+  assert(projectDefaults.includes("sb_publishable_") && !projectDefaults.includes("xxxxxxxx"), "Fallback da chave não é placeholder");
+  assert(vercelJson.includes("vite") && vercelJson.includes("dist"), "vercel.json gera o SPA Vite em dist/");
+  assert(vercelApi.includes("CANONICAL_SUPABASE_PUBLISHABLE_KEY"), "Função Vercel /api/public-config usa o fallback");
+  assert(!vercelApi.includes("service_role"), "Função Vercel não usa service_role");
 
   const { applySupabaseEnvFromFiles } = await import("../lib/supabaseEnvFiles.ts");
   const tmp = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-"));
@@ -313,6 +321,24 @@ try {
     if (prevAnon === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
     else process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  const emptyDir = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-"));
+  process.env.VITE_SUPABASE_URL = "";
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "";
+  delete process.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    const fallback = applySupabaseEnvFromFiles(emptyDir, "production");
+    assert(fallback.url.includes("plciototnjsdjzhudptc"), "Sem .env.local, URL canônica do Anestflow entra no build");
+    assert(fallback.key.startsWith("sb_publishable_") && !fallback.key.includes("xxxxxxxx"), "Sem .env.local, chave publishable canônica entra no build");
+  } finally {
+    if (prevUrl === undefined) delete process.env.VITE_SUPABASE_URL;
+    else process.env.VITE_SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    else process.env.VITE_SUPABASE_PUBLISHABLE_KEY = prevKey;
+    if (prevAnon === undefined) delete process.env.VITE_SUPABASE_ANON_KEY;
+    else process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
+    fs.rmSync(emptyDir, { recursive: true, force: true });
   }
 } catch (err) {
   assert(false, `Falha na verificação das env Vite: ${err}`);

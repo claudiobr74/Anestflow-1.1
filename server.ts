@@ -8,7 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { applySupabaseEnvFromFiles, describeSupabaseEnvPresence } from "./src/lib/supabaseEnvFiles";
-import { CANONICAL_SUPABASE_URL } from "./src/lib/supabaseProject";
+import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./src/lib/supabaseProject";
 
 const projectRoot = process.cwd();
 dotenv.config({ path: path.join(projectRoot, ".env.local") });
@@ -62,6 +62,7 @@ app.get("/api/public-config", (_req, res) => {
   const key = (
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
+    CANONICAL_SUPABASE_PUBLISHABLE_KEY ||
     ""
   ).trim();
   res.json({

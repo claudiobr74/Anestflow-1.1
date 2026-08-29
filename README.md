@@ -58,9 +58,9 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 3. IA (opcional): `npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc`
 4. `npm run dev` (reinicie o servidor depois de editar `.env.local` — o Vite lê as chaves na subida)
 
-O aviso “Supabase não configurado” no login significa que o **JavaScript do browser** está sem URL/chave. O `.env.local` não vai sozinho para o cliente: o Vite só injeta `VITE_*` no `import.meta.env` na subida do servidor (e no `vite build`). `process.env` vazio no shell também esconde um `.env.local` preenchido. O Express publica as mesmas chaves em `/api/public-config` (só a publishable) para o login não depender só do bundle.
+O aviso “Supabase não configurado” no login significa que o **JavaScript do browser** está sem URL/chave. O `.env.local` não vai sozinho para o cliente: o Vite só injeta `VITE_*` no `import.meta.env` na subida do servidor (e no `vite build`). `process.env` vazio no shell também esconde um `.env.local` preenchido. O Express (local) e `api/public-config.ts` (Vercel) publicam as mesmas chaves em `/api/public-config` (só a publishable).
 
-Em deploy (Vercel), `.env.local` não sobe no git. As mesmas `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` precisam existir no ambiente de **build** (e de runtime) do projeto.
+Na **Vercel** o `.env.local` não entra no git. O app usa a URL e a chave **publishable** canônicas do Anestflow (`src/lib/supabaseProject.ts`) quando o ambiente de build não tem `VITE_*`. Ainda assim, o ideal é definir `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` em Settings → Environment Variables (Production, Preview e Development) para poder rotacionar sem commit. Nunca coloque `service_role` no Vite nem na Vercel como `VITE_*`.
 
 Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Assistentes de IA chamam Edge Functions (onda 5). O SDK Firebase não faz mais parte do app (onda 6). Não copie PHI de produção.
 

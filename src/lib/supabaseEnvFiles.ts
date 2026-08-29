@@ -1,9 +1,9 @@
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import { CANONICAL_SUPABASE_URL } from "./supabaseProject";
+import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./supabaseProject";
 
-export { CANONICAL_SUPABASE_URL };
+export { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY };
 
 const KEYS = [
   "VITE_SUPABASE_URL",
@@ -50,6 +50,9 @@ export function applySupabaseEnvFromFiles(
 
   if (!usable(process.env.VITE_SUPABASE_URL) && !(process.env.VITE_SUPABASE_URL || "").trim()) {
     process.env.VITE_SUPABASE_URL = CANONICAL_SUPABASE_URL;
+  }
+  if (!usable(process.env.VITE_SUPABASE_PUBLISHABLE_KEY) && !usable(process.env.VITE_SUPABASE_ANON_KEY)) {
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY = CANONICAL_SUPABASE_PUBLISHABLE_KEY;
   }
 
   const url = (process.env.VITE_SUPABASE_URL || "").trim();

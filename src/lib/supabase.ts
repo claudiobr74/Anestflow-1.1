@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { CANONICAL_SUPABASE_URL } from "./supabaseProject";
+import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./supabaseProject";
 
 function trimEnv(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -48,24 +48,36 @@ export function getSupabasePublishableKey(): string {
   if (runtimeOverride?.key) return runtimeOverride.key;
   return (
     fromVite(() => import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "VITE_SUPABASE_PUBLISHABLE_KEY") ||
-    fromVite(() => import.meta.env.VITE_SUPABASE_ANON_KEY, "VITE_SUPABASE_ANON_KEY")
+    fromVite(() => import.meta.env.VITE_SUPABASE_ANON_KEY, "VITE_SUPABASE_ANON_KEY") ||
+    CANONICAL_SUPABASE_PUBLISHABLE_KEY
   );
+}
+
+function configHint(): string {
+  try {
+    if (import.meta.env.PROD) {
+      return " No projeto Vercel, defina VITE_SUPABASE_PUBLISHABLE_KEY em Settings → Environment Variables e faça um novo deploy.";
+    }
+  } catch {
+    /* Node/tsx */
+  }
+  return " Preencha VITE_SUPABASE_PUBLISHABLE_KEY em .env.local e reinicie o servidor (npm run dev).";
 }
 
 export function getSupabaseConfigError(): string | null {
   const url = getSupabaseUrl();
   const key = getSupabasePublishableKey();
   if (!url && !key) {
-    return "Supabase não configurado. Confira VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY em .env.local e reinicie o servidor (npm run dev).";
+    return "Supabase não configurado. Faltam URL e chave publishable." + configHint();
   }
   if (!url) {
-    return "Supabase não configurado. Preencha VITE_SUPABASE_URL em .env.local e reinicie o servidor.";
+    return "Supabase não configurado. Falta VITE_SUPABASE_URL." + configHint();
   }
   if (!key) {
-    return "Supabase não configurado. Preencha VITE_SUPABASE_PUBLISHABLE_KEY em .env.local e reinicie o servidor.";
+    return "Supabase não configurado. Falta VITE_SUPABASE_PUBLISHABLE_KEY." + configHint();
   }
   if (key.includes("xxxxxxxx")) {
-    return "Supabase não configurado. Substitua o placeholder da chave em .env.local pela chave sb_publishable_ do Dashboard e reinicie o servidor.";
+    return "Supabase não configurado. A chave ainda é o placeholder sb_publishable_xxxxxxxx." + configHint();
   }
   return null;
 }
