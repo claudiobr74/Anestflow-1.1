@@ -115,3 +115,25 @@ export function consumeSessionEndMessage(): string | null {
 export function clearSessionEndReason(): void {
   removeKey(SESSION_END_REASON_KEY);
 }
+
+/** Remove PHI de rascunho/fila. Não apaga tema, presets nem o motivo do encerramento. */
+export function clearClinicalBrowserCache(): void {
+  try {
+    localStorage.removeItem("anesthesia_user");
+    localStorage.removeItem("anesthesia_doc");
+    localStorage.removeItem("anestflow_pending_sync_queue");
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("anestflow_doc_local_")) stale.push(key);
+    }
+    stale.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    /* ignore */
+  }
+  try {
+    sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
+}

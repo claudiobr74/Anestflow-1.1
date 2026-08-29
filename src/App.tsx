@@ -27,6 +27,7 @@ import { claimResponsibilityAtomic, transferResponsibilityAtomic } from "./lib/p
 import { useSessionGuard } from "./lib/useSessionGuard";
 import {
   beginSession,
+  clearClinicalBrowserCache,
   clearSessionClock,
   clearSessionEndReason,
   persistSessionEndReason,
@@ -157,9 +158,7 @@ export default function App() {
       const { data } = supabase.auth.onAuthStateChange((event, session) => {
         const supabaseUser = session?.user;
         if (event === "SIGNED_OUT" || (event === "INITIAL_SESSION" && !supabaseUser)) {
-          localStorage.removeItem("anesthesia_user");
-          localStorage.removeItem("anesthesia_doc");
-          try { sessionStorage.clear(); } catch (e) {}
+          clearClinicalBrowserCache();
           setUser(null);
           setDocument(getBlankDocument());
           setIsEmailVerified(true);
@@ -332,15 +331,7 @@ export default function App() {
     if (policyReason) persistSessionEndReason(policyReason);
     else clearSessionEndReason();
     clearSessionClock();
-
-    // Completely purge all session and local storage containing clinical records or user state
-    localStorage.removeItem("anesthesia_user");
-    localStorage.removeItem("anesthesia_doc");
-    try {
-      sessionStorage.clear();
-    } catch(e) {
-      console.error("Error clearing session storage on logout:", e);
-    }
+    clearClinicalBrowserCache();
 
     try {
       const { getSupabase } = await import("./lib/supabase");

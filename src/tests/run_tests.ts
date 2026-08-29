@@ -108,8 +108,10 @@ try {
 console.log("\n3. Verificando sanitização no Logout...");
 try {
   const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
-  assert(appContent.includes("localStorage.removeItem(\"anesthesia_user\")"), "Remoção de credenciais locais executada no logout para evitar vazamento");
-  assert(appContent.includes("sessionStorage.clear()"), "sessionStorage.clear() executado na troca de conta/logout");
+  const policy = fs.readFileSync(path.join(process.cwd(), "src/lib/sessionPolicy.ts"), "utf-8");
+  assert(appContent.includes("clearClinicalBrowserCache"), "Logout remove rascunhos clínicos do localStorage");
+  assert(policy.includes("anestflow_doc_local_"), "Cache local de ficha é apagado no encerramento");
+  assert(policy.includes("anestflow_pending_sync_queue"), "Fila de sync pendente é apagada no encerramento");
 } catch (err) {
   assert(false, `Falha na verificação de logout: ${err}`);
 }
