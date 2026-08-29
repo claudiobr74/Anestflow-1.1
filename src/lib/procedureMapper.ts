@@ -79,7 +79,16 @@ export type ProcedureRow = {
   pending_transfer: AnesthesiaDocument["pendingTransfer"] | null;
   created_at: string;
   updated_at: string;
+  revision?: number | null;
 };
+
+export function expectedProcedureRevision(
+  doc: { revision?: number | null } | null | undefined
+): number {
+  const n = doc?.revision;
+  if (typeof n === "number" && Number.isInteger(n) && n >= 1) return n;
+  return 1;
+}
 
 export function isMeaningfulDocument(docObj: Partial<AnesthesiaDocument>): boolean {
   if (!docObj) return false;
@@ -139,6 +148,7 @@ export function parentPayloadForWrite(
     schema_version: doc.docVersion || "2.0.0"
   };
   // pending_transfer e responsible_id só mudam via RPC de handover.
+  // revision só incrementa no trigger do servidor — o cliente não manda o valor.
   if (options.includeStatus) {
     const writeStatus = doc.status === "Signed" ? "in_progress" : toDbStatus(doc.status);
     payload.status = writeStatus === "signed" ? "in_progress" : writeStatus;
@@ -161,6 +171,7 @@ export function rowToDocumentBase(
     status: fromDbStatus(row.status),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+    revision: expectedProcedureRevision(row),
     signedAt: row.signed_at ? toIso(row.signed_at) : undefined,
     signedBy: row.signed_by || undefined,
     hash: row.content_hash || undefined,

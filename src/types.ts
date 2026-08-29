@@ -503,6 +503,8 @@ export interface AnesthesiaDocument {
   createdAt: string;
   updatedAt: string;
   updatedAtServer?: any;
+  /** Token de concorrência da linha em procedures (não é schema_version). */
+  revision?: number;
   signedAt?: string;
   signedBy?: {
     uid?: string;

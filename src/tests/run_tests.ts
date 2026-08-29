@@ -938,7 +938,82 @@ try {
   assert(false, `Falha na verificação da Fase 5: ${err}`);
 }
 
-// 18. VERIFICAÇÃO FINAL DE RESULTADOS
+// 18. FASE 6 — revision de concorrência
+console.log("\n18. Verificando Fase 6 (revision de concorrência)...");
+try {
+  const { expectedProcedureRevision, parentPayloadForWrite } = await import("../lib/procedureMapper.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { mapClinicalError, isStaleRevisionError, STALE_REVISION_MESSAGE } = await import("../lib/clinicalErrors.ts");
+  const { clinicalChangeFingerprint, CLINICAL_FINGERPRINT_FIELDS } = await import("../lib/clinicalChangeFingerprint.ts");
+
+  assert(expectedProcedureRevision(undefined) === 1, "Revision ausente vira 1");
+  assert(expectedProcedureRevision({}) === 1, "Objeto sem revision vira 1");
+  assert(expectedProcedureRevision({ revision: 0 }) === 1, "Revision 0 é inválida e vira 1");
+  assert(expectedProcedureRevision({ revision: 4 }) === 4, "Revision positiva é preservada");
+
+  const blank = getBlankDocument();
+  assert(blank.revision === 1, "Ficha em branco nasce com revision 1");
+  const payload = parentPayloadForWrite(blank, "alice-uid", { includeStatus: true });
+  assert(!("revision" in payload), "autosave não envia revision");
+  assert(!("pending_transfer" in payload), "autosave ainda não envia pending_transfer");
+
+  const hash0 = clinicalChangeFingerprint(blank);
+  assert(
+    clinicalChangeFingerprint({ ...blank, revision: 99 }) === hash0,
+    "Mudar só revision não muda o fingerprint"
+  );
+  assert(
+    !(CLINICAL_FINGERPRINT_FIELDS as readonly string[]).includes("revision"),
+    "revision não entra no fingerprint clínico"
+  );
+
+  const staleMapped = mapClinicalError({ message: "stale_revision" });
+  assert(staleMapped.message === STALE_REVISION_MESSAGE, "stale_revision tem mensagem específica");
+  assert(staleMapped.message.includes("outro lugar"), "mensagem de conflito fala em outro lugar");
+  assert(isStaleRevisionError({ message: "stale_revision" }), "isStaleRevisionError reconhece o token");
+  assert(isStaleRevisionError(staleMapped), "isStaleRevisionError reconhece a mensagem mapeada");
+
+  const saveSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  assert(saveSrc.includes('.eq("revision"'), "saveProcedure condiciona o UPDATE à revision esperada");
+  assert(saveSrc.includes("stale_revision"), "saveProcedure lança stale_revision");
+  assert(saveSrc.includes("applyRevisionMeta"), "saveProcedure devolve revision/updated_at ao cliente");
+  assert(saveSrc.includes("insertProcedureParent"), "INSERT da ficha não usa RETURNING (RLS de participante)");
+  assert(saveSrc.includes("INSERT ... RETURNING cai no RLS"), "Comentário explica por que o INSERT não faz select encadeado");
+
+  const mapperSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/procedureMapper.ts"), "utf-8");
+  assert(mapperSrc.includes("expectedProcedureRevision"), "Mapper expõe expectedProcedureRevision");
+  assert(mapperSrc.includes("revision: expectedProcedureRevision(row)"), "Hydrate lê revision da linha");
+
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  assert(syncSrc.includes("isStaleRevisionError"), "Autosave trata conflito de revision");
+  assert(syncSrc.includes("staleConflict"), "Conflito de revision não entra no retry de 5s");
+  assert(syncSrc.includes("revision: cleanedDoc.revision"), "Após save o autosave mescla revision na ficha viva");
+
+  const migDir = path.join(process.cwd(), "supabase/migrations");
+  const migFiles = fs.readdirSync(migDir).filter((f) => f.includes("fase_6"));
+  assert(migFiles.length >= 1, "Migration Fase 6 existe");
+  const mig = fs.readFileSync(path.join(migDir, migFiles[0]), "utf-8");
+  assert(mig.includes("add column") && mig.includes("revision"), "Migration cria a coluna revision");
+  assert(mig.includes("new.revision := coalesce(old.revision, 1) + 1"), "Trigger incrementa revision no servidor");
+  assert(mig.includes("private.bump_procedure_revision"), "Trigger mora em private");
+  assert(mig.includes("set search_path = ''"), "Trigger com search_path vazio");
+
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  assert(appSrc.includes("const [ficha, setFicha]"), "App.tsx não foi fatiado");
+  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab.tsx não foi fatiado");
+
+  const typesSrc = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf-8");
+  assert(typesSrc.includes("updatedAtServer?"), "updatedAtServer permanece (sem drive-by)");
+  assert(typesSrc.includes("revision?: number"), "AnesthesiaDocument ganha revision");
+
+  const readme6 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme6.includes("Fase 6") && readme6.includes("stale_revision"), "README documenta Fase 6");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 6: ${err}`);
+}
+
+// 19. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
