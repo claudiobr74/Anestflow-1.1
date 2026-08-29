@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabase";
+import { mapAuthError } from "../lib/authErrors";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
 import {
   fetchOwnProfile,
@@ -47,28 +48,6 @@ const ESTADOS_BRASIL = [
   "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
   "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"
 ];
-
-function mapAuthError(err: { message?: string; code?: string }): string {
-  const code = (err.code || "").toLowerCase();
-  const message = (err.message || "").toLowerCase();
-
-  if (code.includes("email_not_confirmed") || message.includes("email not confirmed")) {
-    return "Confirme seu e-mail antes de entrar. Verifique a caixa de entrada e o spam.";
-  }
-  if (code.includes("invalid_credentials") || message.includes("invalid login")) {
-    return "Email ou senha incorretos.";
-  }
-  if (code.includes("user_already_exists") || message.includes("already registered")) {
-    return "Este email já está em uso.";
-  }
-  if (code.includes("weak_password") || message.includes("password")) {
-    return err.message || "Senha não atende à política de segurança.";
-  }
-  if (message.includes("rate") || code.includes("over_request")) {
-    return "Muitas tentativas. Tente novamente mais tarde.";
-  }
-  return err.message || "Erro na autenticação.";
-}
 
 export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScreenProps) {
   const [email, setEmail] = useState("");
@@ -414,6 +393,11 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
                   </button>
                 </div>
 
+                {isRegistering && (
+                  <p className={`text-center text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    O SMTP padrão envia no máximo 2 e-mails de confirmação por hora. Se o cadastro falhar por limite, não tente de novo — use Entrar se a conta já existir.
+                  </p>
+                )}
                 <p className={`text-center text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   Google OAuth está preparado no Auth, mas permanece desligado até existirem Client ID e Secret no Dashboard.
                 </p>

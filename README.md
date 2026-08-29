@@ -94,6 +94,19 @@ Advisors de segurança no projeto: **0 lints** depois da onda 1.
 - Rotas `/api/*` validam o access token do Supabase (`auth.getUser`)
 - Busca de colega em `ShareModal` usa `lookup_profile_by_email`
 
+### Limite de e-mail no cadastro (`over_email_send_rate_limit`)
+
+O Auth hospedado usa o SMTP embutido do Supabase, limitado a **2 e-mails por hora** no projeto inteiro (cadastro, reenvio e recuperação). Esse teto só aumenta com SMTP próprio (Resend, SendGrid, etc.) em Authentication → SMTP. Documentação: [Rate limits](https://supabase.com/docs/guides/auth/rate-limits).
+
+O que fazer quando a tela avisar o limite:
+
+1. **Não** clique de novo em Cadastrar nem em Reenviar — cada clique consome a cota.
+2. Espere cerca de **1 hora**.
+3. Se o usuário já aparecer em Authentication → Users, confirme o e-mail no Dashboard e use **Entrar** (não Cadastrar). O 429 no signup muitas vezes **não cria** a conta.
+4. Se você já tem um usuário confirmado neste projeto, entre com esse e-mail.
+
+Não desligue a confirmação de e-mail para contornar o limite.
+
 Fora desta onda: migrar fichas/worklist do Firestore, Realtime (onda 3), Edge Functions de IA (onda 5).
 
 ## Segurança imediata (fora do código)

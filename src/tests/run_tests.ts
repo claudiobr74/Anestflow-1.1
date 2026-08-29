@@ -1,6 +1,11 @@
 import { buildCanonicalDocumentRepresentation, verifyDocumentIntegrity } from "../lib/signatureService.js";
 import { AnesthesiaDocument } from "../types.js";
 import { validateClinicalPassword, MIN_PASSWORD_LENGTH } from "../lib/passwordPolicy.ts";
+import {
+  AUTH_ERROR_EMAIL_SEND_RATE,
+  AUTH_ERROR_TOO_MANY_REQUESTS,
+  mapAuthError
+} from "../lib/authErrors.ts";
 import fs from "fs";
 import path from "path";
 
@@ -100,6 +105,24 @@ try {
   assert(validateClinicalPassword("NoDigitsHere") !== null, "Senha sem dígito é rejeitada");
   assert(validateClinicalPassword("ValidPassw0rd") === null, "Senha com 12+ chars, maiúscula, minúscula e dígito é aceita");
   assert(MIN_PASSWORD_LENGTH === 12, "Política mínima alinhada ao config.toml (12)");
+  assert(
+    mapAuthError({ code: "over_email_send_rate_limit", message: "email rate limit exceeded" }) === AUTH_ERROR_EMAIL_SEND_RATE,
+    "429 de SMTP embutido explica limite de e-mail, não 'muitas tentativas'"
+  );
+  assert(
+    mapAuthError({ message: "429: email rate limit exceeded" }) === AUTH_ERROR_EMAIL_SEND_RATE,
+    "Mensagem crua de email rate limit é reconhecida sem code"
+  );
+  assert(
+    mapAuthError({ code: "over_request", message: "too many requests" }) === AUTH_ERROR_TOO_MANY_REQUESTS,
+    "over_request continua mapeado para excesso de login"
+  );
+  assert(
+    !mapAuthError({ message: "corporate directory unavailable" }).includes("Limite de e-mails"),
+    "A substring 'rate' isolada não dispara o aviso de SMTP"
+  );
+  assert(loginContent.includes("mapAuthError"), "LoginScreen usa o mapeamento compartilhado de erros Auth");
+  assert(!loginContent.includes("Muitas tentativas. Tente novamente mais tarde."), "LoginScreen não usa mais o aviso genérico de rate limit");
 } catch (err) {
   assert(false, `Falha na verificação da onda 2: ${err}`);
 }
