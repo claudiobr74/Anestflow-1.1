@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, X, Building2, UserCheck, Activity, Clock, 
   Volume2, VolumeX, Moon, Sun, LayoutGrid, Cloud, 
@@ -49,6 +49,10 @@ export default function SettingsModal({
   const [activeTab, setActiveTab] = useState<'general' | 'vitals' | 'appearance' | 'sync'>('general');
   const [formData, setFormData] = useState<AppSettings>(settings);
   const [showClearSuccess, setShowClearSuccess] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setFormData(settings);
+  }, [isOpen, settings]);
 
   if (!isOpen) return null;
 

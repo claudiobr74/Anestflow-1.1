@@ -297,7 +297,7 @@ O PDF final fino da Fase 7 (`pdfFinal.ts`) continua sendo um recorte para golden
 
 ## Checkpoint pós-Fase 4
 
-Auditoria técnica obrigatória **antes** da higiene que ainda falta na Fase 5 e do fatiar App/Intra (6B). Este checkpoint **não inicia higiene**, não apaga `fix_*`, não unifica painéis `id="drugs"` e não fatiar componentes.
+Auditoria técnica obrigatória **antes** da higiene da Fase 5 e do fatiar App/Intra (6B). Este checkpoint **não fatiar** componentes.
 
 Nesse ponto precisam estar comprovadamente estáveis: persistência, segurança clínica básica, cache, permissões, responsabilidade, encerramento e integridade documental.
 
@@ -323,15 +323,25 @@ Live condensado (persistir → selar → A+B → imutável):
 npx tsx src/tests/checkpoint_live.ts
 ```
 
-Sentinela: `CHECKPOINT_LIVE_OK`. Fora deste checkpoint: settings decorativos, `voided_at`, resíduos `useMultiplayer` / painéis não montados, `fix_*` na raiz, PDF final completo (7F) e `transcript_original`.
+Sentinela: `CHECKPOINT_LIVE_OK`. Ainda fora deste checkpoint: fatiar App/Intra (6B), PDF final completo (7F) e `transcript_original`.
 
-## Fase 5 (renomear `document` → `ficha`)
+## Fase 5 (renomear `document` → `ficha` + higiene)
 
 A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava o `document` do DOM: o menu overflow e o download de modelos precisavam de `window.document` para não bater na ficha.
 
 O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument` e `canEditDocument` não mudam. `signAndLockDocument` permanece só para testes locais de hash — o encerramento real é `closeProcedureAtomic`. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: toAIClinicalContext(ficha), models }`).
 
-Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` não foram fatiados.
+Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` **não** foram fatiados (isso é 6B).
+
+### Higiene (IDs, resíduos, settings reais)
+
+- Um `DraggablePanel` por ID. O lançador de fármacos não envolve um segundo painel `id="drugs"`.
+- Removidos módulos importados e não montados: `VitalsPanel`, `BolusDrugsPanel`, `SupportPanel`, `useMultiplayer`.
+- Removidos `react-router-dom` (zero rotas), `bun.lock` (npm é o oficial) e scripts históricos `fix_*` / `patch_*` / `rewrite_*` da raiz.
+- Settings deixam de ser decorativas: `vitalIntervalMinutes` e `soundAlertsEnabled` alimentam o intra (intervalo do alarme + beep). `compactMode` reduz padding (`anestflow-compact`). Dark já existia (`anesthesia_theme`).
+- Error Boundary e o **chrome** do PDF Preview seguem o tema. As folhas do PDF continuam brancas para impressão.
+- Supervisor de IA não usa `console.log` em produção (`supervisorDevLog` só em DEV).
+- `deleteClinicalEventItem` **não** faz hard delete. Eventos clínicos permanecem nas tabelas filhas; exclusão de ficha no gestor continua só para **rascunho**. Tombstone completo (`voided_at` / `voided_by` / `void_reason` na UI) fica para quando houver fluxo de cancelamento auditável. `persistClinicalChildren` só faz upsert — não apaga linhas órfãs.
 
 ## Fase 6 (`revision` de concorrência)
 

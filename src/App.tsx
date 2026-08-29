@@ -72,6 +72,12 @@ import ResponsibilityBanner from "./components/ResponsibilityBanner";
 
 type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
 
+function supervisorDevLog(message: string) {
+  if (import.meta.env.DEV) {
+    console.log(message);
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(() => {
     const saved = localStorage.getItem("anesthesia_user");
@@ -323,7 +329,7 @@ export default function App() {
       aiSupervisorTimerRef.current = null;
     }
     const totalElapsed = aiSupervisorStartRef.current ? Math.floor((Date.now() - aiSupervisorStartRef.current) / 1000) : 0;
-    console.log(`[Supervisor de IA] <<< PARANDO monitoramento. Motivo: "${reason}". Tempo total monitorado: ${totalElapsed}s.`);
+    supervisorDevLog(`[Supervisor de IA] <<< PARANDO monitoramento. Motivo: "${reason}". Tempo total monitorado: ${totalElapsed}s.`);
     setAiSupervisorActive(false);
     setAiSupervisorTask("");
     setAiSupervisorElapsed(0);
@@ -331,7 +337,7 @@ export default function App() {
   }, []);
 
   const startAiSupervisor = useCallback((taskName: string, onTimeout: () => void) => {
-    console.log(`[Supervisor de IA] >>> INICIANDO monitoramento para a tarefa: "${taskName}"`);
+    supervisorDevLog(`[Supervisor de IA] >>> INICIANDO monitoramento para a tarefa: "${taskName}"`);
     setAiSupervisorActive(true);
     setAiSupervisorTask(taskName);
     setAiSupervisorElapsed(0);
@@ -345,7 +351,7 @@ export default function App() {
       const elapsedSeconds = Math.floor((Date.now() - (aiSupervisorStartRef.current || Date.now())) / 1000);
       setAiSupervisorElapsed(elapsedSeconds);
       
-      console.log(`[Supervisor de IA - Diagnóstico] Estado: ATIVO | Tarefa: "${taskName}" | Tempo Decorrido: ${elapsedSeconds}s / 60s`);
+      supervisorDevLog(`[Supervisor de IA - Diagnóstico] Estado: ATIVO | Tarefa: "${taskName}" | Tempo Decorrido: ${elapsedSeconds}s / 60s`);
 
       if (elapsedSeconds >= 60) {
         console.warn(`[Supervisor de IA - ALERTA] Limite de tempo de 60 segundos ATINGIDO para a tarefa: "${taskName}". Forçando interrupção do processo!`);
@@ -897,7 +903,11 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans select-none antialiased transition-colors duration-300 ${
+    <div
+      data-compact={appSettings.compactMode ? "true" : "false"}
+      className={`min-h-screen flex flex-col font-sans select-none antialiased transition-colors duration-300 ${
+      appSettings.compactMode ? "anestflow-compact" : ""
+    } ${
       isDark 
         ? "dark bg-[#09090B] text-zinc-100" 
         : "bg-slate-50 text-slate-900"
@@ -1114,7 +1124,9 @@ export default function App() {
       </nav>
 
       {/* 4. MAIN ACTION SCREEN VIEWPORT */}
-      <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 pb-6">
+      <main className={`anestflow-main flex-1 overflow-y-auto pb-6 ${
+        appSettings.compactMode ? "p-1 sm:p-2" : "p-2 sm:p-4 md:p-6"
+      }`}>
         <div className="max-w-7xl mx-auto space-y-4">
           {ficha.pendingTransfer && (
             <div className={`p-4 rounded-xl border shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
@@ -1204,6 +1216,10 @@ export default function App() {
               startAiSupervisor={startAiSupervisor}
               stopAiSupervisor={stopAiSupervisor}
               canEdit={canEdit}
+              vitalIntervalMinutes={appSettings.vitalIntervalMinutes}
+              soundAlertsEnabled={appSettings.soundAlertsEnabled}
+              compactMode={appSettings.compactMode}
+              onPatchAppSettings={(patch) => setAppSettings((prev) => ({ ...prev, ...patch }))}
             />
           )}
 
@@ -1248,6 +1264,7 @@ export default function App() {
         isOpen={showPrintModal}
         onClose={() => setShowPrintModal(false)}
         ficha={ficha}
+        isDark={isDark}
       />
 
       {/* CLOUD PROCEDURES PERSISTENCE MANAGER MODAL */}

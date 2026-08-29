@@ -184,13 +184,13 @@ export async function addClinicalEventItem(
 }
 
 export async function deleteClinicalEventItem(
-  procedureId: string,
-  subcollectionName: ClinicalSubcollectionName,
-  itemId: string
+  _procedureId: string,
+  _subcollectionName: ClinicalSubcollectionName,
+  _itemId: string
 ): Promise<void> {
-  const table = TABLE_BY_SUB[subcollectionName];
-  const { error } = await getSupabase().from(table).delete().eq("procedure_id", procedureId).eq("id", itemId);
-  if (error) throwClinical(error);
+  throw new Error(
+    "Eventos clínicos não são apagados. Corrija com adendo ou cancele de forma auditável; exclusão de ficha vale só para rascunho."
+  );
 }
 
 export async function getClinicalEventItems<T extends { id?: string }>(
