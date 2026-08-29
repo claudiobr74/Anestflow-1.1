@@ -670,8 +670,8 @@ export function applyVoiceActionsToDocument(
 
     const existingVitals = [...(newDoc.vitals || [])];
     const existingIndex = existingVitals.findIndex((row) => row.minutesFromStart === mins);
-    let finalPas = vitalsUpdate.pas;
-    let finalPad = vitalsUpdate.pad;
+    let finalPas: number | undefined = vitalsUpdate.pas;
+    let finalPad: number | undefined = vitalsUpdate.pad;
     if (existingIndex >= 0) {
       if (finalPas === undefined) finalPas = existingVitals[existingIndex].pas;
       if (finalPad === undefined) finalPad = existingVitals[existingIndex].pad;

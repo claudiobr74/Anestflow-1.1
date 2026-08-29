@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { jsonResponse } from "../_shared/cors.ts";
 import { generateJsonWithRetry } from "../_shared/gemini.ts";
 import { serveAiFunction } from "../_shared/serve.ts";
+import { stripClinicalIdentifiers } from "../_shared/aiStrip.ts";
 
 const DESCRIPTION_SCHEMA = {
   type: "OBJECT",
@@ -15,6 +16,7 @@ serveAiFunction("generate-description", async (_user, body) => {
   if (!payload?.document) {
     return jsonResponse({ error: "Documento inválido ou ausente." }, 400);
   }
+  const document = stripClinicalIdentifiers(payload.document);
 
   const prompt = `Gere uma "Descrição do Ato Anestésico" técnica, formal e narrativa baseada EXCLUSIVAMENTE nos dados da ficha anestésica anexada em formato JSON.
 O texto deve ser fluido e legível, descrevendo cronologicamente: monitorização, acessos (venosos, arteriais), técnica anestésica (indução, manutenção, bloqueios), vias aéreas, fluidos administrados e evolução clínica (estabilidade, intercorrências) com base APENAS no que está documentado.
@@ -28,18 +30,20 @@ Modelos Disponíveis:
 ${JSON.stringify(payload.models || [], null, 2)}
 
 Documento JSON da Anestesia (Preencha o modelo com esses dados):
-${JSON.stringify(payload.document, null, 2)}
+${JSON.stringify(document, null, 2)}
 `;
 
-  const text = await generateJsonWithRetry(
+  const { text, meta } = await generateJsonWithRetry(
     [{ text: prompt }],
     "Você é um especialista em documentação de anestesiologia médica no Brasil. Seu objetivo é ajudar a redigir o ato anestésico com base em dados.",
     DESCRIPTION_SCHEMA,
+    { prompt_version: "description-v1", schema_version: "description-v1" },
   );
 
   try {
-    return jsonResponse(JSON.parse(text || '{"description": ""}'));
+    const parsed = JSON.parse(text || '{"description": ""}') as Record<string, unknown>;
+    return jsonResponse({ ...parsed, ai: meta });
   } catch {
-    return jsonResponse({ description: "" });
+    return jsonResponse({ description: "", ai: { ...meta, success: false } });
   }
 }, "O tempo limite para geração da descrição foi excedido.");

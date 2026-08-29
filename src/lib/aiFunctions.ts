@@ -59,7 +59,9 @@ export async function invokeAiFunction<T>(
     throw new Error("E-mail ainda não confirmado.");
   }
 
-  const invokePromise = client.functions.invoke<T>(name, { body });
+  const invokePromise = client.functions.invoke<T>(name, {
+    body: body as Record<string, unknown>
+  });
   const { data, error } = signal
     ? await Promise.race([invokePromise, waitForAbort(signal)])
     : await invokePromise;

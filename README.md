@@ -267,7 +267,7 @@ Com um único usuário de teste não dá para completar o handover entre dois m�
 
 A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava o `document` do DOM: o menu overflow e o download de modelos precisavam de `window.document` para não bater na ficha.
 
-O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument`, `canEditDocument` e `signAndLockDocument` não mudam. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: ficha, models }`).
+O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument`, `canEditDocument` e `signAndLockDocument` não mudam. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: toAIClinicalContext(ficha), models }`).
 
 Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` não foram fatiados.
 
@@ -280,5 +280,50 @@ A última gravação **não** ganha mais por `id` sozinho. Cada linha em `proced
 Mudar só `revision` / `updatedAt` **não** altera `clinicalChangeFingerprint` — o autosave não entra em loop. `docVersion` / `schema_version` continuam sendo versão de schema, não token de linha. `updatedAtServer` não foi removido.
 
 Com um único usuário de teste o conflito é reproduzido gravando de novo com `revision` velha; duas abas reais ou um segundo médico não são necessários para validar o token.
+
+## Fase 7 (tipos, PWA, IA e hardening)
+
+Última fase do plano consolidado. `App.tsx` e `IntraoperativeTab.tsx` **não** foram fatiados. `strict` **não** foi ligado no `tsconfig.json` principal.
+
+### 7A — TypeScript em `src/lib`
+
+`tsconfig.lib.strict.json` aplica `strict` + `noImplicitAny` só em `src/lib`. Rode `npm run lint:lib`. O app **não** instala `@types/react` no projeto inteiro: isso quebra Intra, templates e TCLE (literais de fármaco e unions). Há um shim mínimo em `src/lib/ts-strict-shims`, excluído do `tsconfig.json` principal. Intra/PDF/chart ficam por último, como o plano pede.
+
+### 7B — PWA
+
+`PWA_CACHE_NAME` (`anestflow-pwa-v7`) vai para o `cacheId` do Workbox. Produção usa `autoUpdate` + `skipWaiting` + `clientsClaim` + `cleanupOutdatedCaches`. Em **dev**, `main.tsx` desregistra service workers de um `dist` antigo — isso **não** roda em produção.
+
+### 7C — Headers no host real
+
+O front em produção é a **Vercel**. `vercel.json` envia CSP, `X-Frame-Options: DENY` (`frame-ancestors 'none'`), `X-Content-Type-Options`, `Referrer-Policy`, HSTS e `Permissions-Policy: microphone=(self), camera=(), geolocation=(), payment=(), usb=()`. O Express local e `/api/public-config` usam a mesma lista em `src/lib/securityHeaders.ts`.
+
+### 7D — Lock do posto vs logout
+
+A onda 7 permanece: **12h** de timebox e **8h** ociosas **encerram a sessão** (logout). Separado disso:
+
+- **20 min** ociosos → tela de bloqueio. A ficha **não** é apagada e **não** há logout. A senha do mesmo e-mail desbloqueia e volta à ficha (`touchSession`).
+- **15 min** ociosos no encerramento/assinatura → o mesmo overlay pede a senha de novo (step-up). Depois de desbloquear, o médico confirma o encerramento outra vez.
+
+### 7E — IA
+
+`toAIClinicalContext(ficha)` omite CPF, nome, prontuário, admissão, leito e UIDs. `ReviewTab` e a descrição enviam esse contexto; a chave `document` da Edge `generate-description` não muda. A Edge ainda stripa na entrada (`_shared/aiStrip.ts`). Parse falho de review continua `AI_REVIEW_PARSE_FAILED` (HTTP 502), **não** `alerts: []`.
+
+Modelo pinado: `gemini-3.1-flash-lite` (sem alias `gemini-flash-latest`). Cada função manda `prompt_version` (`review-v1`, `description-v1`, `voice-v1`) e devolve metadados técnicos (`provider`, `model`, `prompt_version`, `schema_version`, `timestamp`, `latency_ms`, `success`). JWT das Edge Functions permanece (`verify_jwt = true`).
+
+### 7F — PDF final
+
+O preview atual (`html-to-image` / `PdfPreviewModal`) não foi reescrito. O caminho arquitetural testável é `SignedAnesthesiaRecordV1` + `toSignedAnesthesiaRecordV1` + `pdfFinalSearchableText`. Ausência continua ausência (`Não registrado` / `UNREGISTERED`).
+
+### 7G — CORS
+
+Origem de deploy (preview Vercel) não é estável, então o default é `*`. Opcional: secret `ANESTFLOW_CORS_ORIGIN`. Isso **não** desliga o JWT.
+
+```bash
+npx tsc --noEmit
+npm run lint:lib
+npx tsx src/tests/run_tests.ts
+npx tsx src/tests/fase07_live.ts
+```
+
 
 

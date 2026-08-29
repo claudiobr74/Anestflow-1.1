@@ -8,7 +8,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist dist/server.cjs server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "lint:lib": "tsc --noEmit -p tsconfig.lib.strict.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

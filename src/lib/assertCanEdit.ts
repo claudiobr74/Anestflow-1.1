@@ -23,10 +23,10 @@ function isPlaceholderUid(uid: string | undefined | null): boolean {
 }
 
 export function responsibleUidOf(
-  doc: Pick<AnesthesiaDocument, "currentResponsibleUid">
+  doc: { currentResponsibleUid?: string | null }
 ): string | undefined {
   const uid = doc.currentResponsibleUid;
-  if (isPlaceholderUid(uid)) return undefined;
+  if (isPlaceholderUid(uid) || !uid) return undefined;
   return uid;
 }
 

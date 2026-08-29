@@ -4,6 +4,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { applySupabaseEnvFromFiles } from './src/lib/supabaseEnvFiles';
+import { PWA_CACHE_NAME, PWA_REGISTER_TYPE } from './src/lib/pwaPolicy';
 
 export default defineConfig(({ mode }) => {
   applySupabaseEnvFromFiles(process.cwd(), mode);
@@ -14,8 +15,12 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: PWA_REGISTER_TYPE,
         workbox: {
+          cacheId: PWA_CACHE_NAME,
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 5000000
         },
         manifest: {
