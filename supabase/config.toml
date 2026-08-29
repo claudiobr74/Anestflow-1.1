@@ -6,6 +6,7 @@
 #   - Confirm email: ON
 #   - Anonymous sign-ins: OFF
 #   - Minimum password length: 12 + letters/digits mixed case
+#   - Prevent leaked passwords (HaveIBeenPwned): ON in Dashboard (Pro+; not in config.toml)
 #   - Google provider: enable only after Client ID/Secret exist
 #   - JWT expiry: 3600s
 # For detailed configuration reference documentation, visit:
@@ -196,6 +197,9 @@ minimum_password_length = 12
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = "lower_upper_letters_digits"
+# HaveIBeenPwned (password_hibp_enabled) is a hosted Auth toggle, not a config.toml key yet.
+# Dashboard → Authentication → Providers → Email → Prevent use of leaked passwords.
+# Docs: https://supabase.com/docs/guides/auth/password-security
 
 # Configure passkey sign-ins.
 # [auth.passkey]

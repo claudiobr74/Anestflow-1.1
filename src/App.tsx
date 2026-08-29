@@ -120,11 +120,11 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOverflowMenuOpen(false);
     };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    window.document.addEventListener("pointerdown", onPointerDown);
+    window.document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      window.document.removeEventListener("pointerdown", onPointerDown);
+      window.document.removeEventListener("keydown", onKeyDown);
     };
   }, [overflowMenuOpen]);
 
