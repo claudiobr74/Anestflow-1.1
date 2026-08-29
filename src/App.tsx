@@ -24,6 +24,15 @@ import { VoiceCommandButton } from "./components/VoiceCommandButton";
 import { useSyncEngine } from "./lib/useSyncEngine";
 import SyncStatusBadge from "./components/SyncStatusBadge";
 import { claimResponsibilityAtomic, transferResponsibilityAtomic } from "./lib/proceduresService";
+import { useSessionGuard } from "./lib/useSessionGuard";
+import {
+  beginSession,
+  clearClinicalBrowserCache,
+  clearSessionClock,
+  clearSessionEndReason,
+  persistSessionEndReason,
+  type SessionViolation,
+} from "./lib/sessionPolicy";
 
 export default function App() {
   const [user, setUser] = useState<{ name: string; crm: string; uf: string; hospital: string; uid?: string } | null>(() => {
@@ -149,9 +158,7 @@ export default function App() {
       const { data } = supabase.auth.onAuthStateChange((event, session) => {
         const supabaseUser = session?.user;
         if (event === "SIGNED_OUT" || (event === "INITIAL_SESSION" && !supabaseUser)) {
-          localStorage.removeItem("anesthesia_user");
-          localStorage.removeItem("anesthesia_doc");
-          try { sessionStorage.clear(); } catch (e) {}
+          clearClinicalBrowserCache();
           setUser(null);
           setDocument(getBlankDocument());
           setIsEmailVerified(true);
@@ -295,6 +302,7 @@ export default function App() {
     
     setUser(doctor);
     localStorage.setItem("anesthesia_user", JSON.stringify(doctor));
+    beginSession();
     
     if (isNewUser) {
       // Clear all clinical session cache from previous user
@@ -319,15 +327,11 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    // Completely purge all session and local storage containing clinical records or user state
-    localStorage.removeItem("anesthesia_user");
-    localStorage.removeItem("anesthesia_doc");
-    try {
-      sessionStorage.clear();
-    } catch(e) {
-      console.error("Error clearing session storage on logout:", e);
-    }
+  const handleLogout = useCallback(async (policyReason?: SessionViolation) => {
+    if (policyReason) persistSessionEndReason(policyReason);
+    else clearSessionEndReason();
+    clearSessionClock();
+    clearClinicalBrowserCache();
 
     try {
       const { getSupabase } = await import("./lib/supabase");
@@ -339,7 +343,11 @@ export default function App() {
     setUser(null);
     setDocument(getBlankDocument());
     setActiveTab("patient");
-  };
+  }, []);
+
+  useSessionGuard(Boolean(user?.uid), (reason) => {
+    void handleLogout(reason);
+  });
 
   // Calculate dynamic elapsed timing of the surgery
   const getElapsedAnesthesiaString = () => {
@@ -1298,7 +1306,7 @@ export default function App() {
                     <button onClick={toggleTheme} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
                       {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDark ? 'Modo Claro' : 'Modo Escuro'}
                     </button>
-                    <button onClick={handleLogout} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                    <button onClick={() => { void handleLogout(); }} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
                       <LogOut className="w-4 h-4" /> Sair
                     </button>
                   </div>

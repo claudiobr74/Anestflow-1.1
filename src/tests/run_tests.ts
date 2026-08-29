@@ -2,6 +2,12 @@ import { buildCanonicalDocumentRepresentation, verifyDocumentIntegrity } from ".
 import { AnesthesiaDocument } from "../types.js";
 import { validateClinicalPassword, MIN_PASSWORD_LENGTH } from "../lib/passwordPolicy.ts";
 import {
+  evaluateSession,
+  SESSION_INACTIVITY_MS,
+  SESSION_TIMEBOX_MS,
+  sessionEndMessage,
+} from "../lib/sessionPolicy.ts";
+import {
   AUTH_ERROR_EMAIL_SEND_RATE,
   AUTH_ERROR_TOO_MANY_REQUESTS,
   mapAuthError
@@ -102,8 +108,10 @@ try {
 console.log("\n3. Verificando sanitização no Logout...");
 try {
   const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
-  assert(appContent.includes("localStorage.removeItem(\"anesthesia_user\")"), "Remoção de credenciais locais executada no logout para evitar vazamento");
-  assert(appContent.includes("sessionStorage.clear()"), "sessionStorage.clear() executado na troca de conta/logout");
+  const policy = fs.readFileSync(path.join(process.cwd(), "src/lib/sessionPolicy.ts"), "utf-8");
+  assert(appContent.includes("clearClinicalBrowserCache"), "Logout remove rascunhos clínicos do localStorage");
+  assert(policy.includes("anestflow_doc_local_"), "Cache local de ficha é apagado no encerramento");
+  assert(policy.includes("anestflow_pending_sync_queue"), "Fila de sync pendente é apagada no encerramento");
 } catch (err) {
   assert(false, `Falha na verificação de logout: ${err}`);
 }
@@ -112,14 +120,13 @@ try {
 console.log("\n4. Verificando login Supabase (onda 2)...");
 try {
   const loginContent = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
-  const apiContent = fs.readFileSync(path.join(process.cwd(), "src/lib/api.ts"), "utf-8");
   const serverContent = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
   const shareContent = fs.readFileSync(path.join(process.cwd(), "src/components/ShareModal.tsx"), "utf-8");
   const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
 
   assert(!loginContent.includes("firebase/auth"), "LoginScreen não usa mais Firebase Auth");
   assert(loginContent.includes("signInWithPassword"), "Login usa signInWithPassword do Supabase");
-  assert(apiContent.includes("getSession"), "authenticatedFetch lê a sessão Supabase");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/lib/api.ts")), "authenticatedFetch morto foi removido");
   assert(serverContent.includes("/api/health"), "Express continua expondo health público");
   assert(!serverContent.includes("@google/genai"), "Express não importa mais o SDK Gemini");
   assert(!serverContent.includes("/api/review"), "Express não expõe mais /api/review");
@@ -231,7 +238,36 @@ try {
   assert(false, `Falha na verificação da onda 5: ${err}`);
 }
 
-// 7. VERIFICAÇÃO FINAL DE RESULTADOS
+// 7. ONDA 7 — SESSÃO DO POSTO (12h / 8h)
+console.log("\n7. Verificando política de sessão do posto compartilhado (onda 7)...");
+try {
+  const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const loginContent = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
+  const configToml = fs.readFileSync(path.join(process.cwd(), "supabase/config.toml"), "utf-8");
+  const hour = 60 * 60 * 1000;
+  const t0 = 1_000_000;
+
+  assert(SESSION_TIMEBOX_MS === 12 * hour, "Timebox do cliente é 12 horas");
+  assert(SESSION_INACTIVITY_MS === 8 * hour, "Ociosidade do cliente é 8 horas");
+  assert(configToml.includes('timebox = "12h"') && configToml.includes('inactivity_timeout = "8h"'), "config.toml declara 12h / 8h");
+  assert(evaluateSession({ startedAt: t0, lastActivityAt: t0, now: t0 + 7 * hour }) === null, "7h de uso contínuo não encerra");
+  assert(evaluateSession({ startedAt: t0, lastActivityAt: t0, now: t0 + 8 * hour }) === "inactivity", "8h ociosas encerram por inatividade");
+  assert(evaluateSession({ startedAt: t0, lastActivityAt: t0 + 11 * hour, now: t0 + 12 * hour }) === "timebox", "12h absolutas encerram mesmo com atividade recente");
+  assert(
+    evaluateSession({ startedAt: t0, lastActivityAt: t0 + 3 * hour, now: t0 + 11 * hour }) === "inactivity",
+    "8h desde o último toque encerram, mesmo antes das 12h"
+  );
+  assert(sessionEndMessage("timebox").includes("12 horas"), "Mensagem de timebox cita 12 horas");
+  assert(sessionEndMessage("inactivity").includes("8 horas"), "Mensagem de ociosidade cita 8 horas");
+  assert(appContent.includes("useSessionGuard"), "App aplica o guarda de sessão");
+  assert(appContent.includes("beginSession"), "Login inicia o relógio de sessão");
+  assert(loginContent.includes("consumeSessionEndMessage"), "Tela de login mostra o motivo do encerramento");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/lib/api.ts")), "src/lib/api.ts não voltou");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 7: ${err}`);
+}
+
+// 8. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

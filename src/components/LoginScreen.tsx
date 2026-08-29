@@ -21,6 +21,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabase";
 import { mapAuthError } from "../lib/authErrors";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
+import { consumeSessionEndMessage } from "../lib/sessionPolicy";
 import {
   fetchOwnProfile,
   isProfileComplete,
@@ -54,6 +55,7 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [sessionNotice, setSessionNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [needsProfile, setNeedsProfile] = useState(false);
@@ -65,6 +67,11 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   const [hospital, setHospital] = useState(POPULAR_HOSPITALS[0]);
   const onLoginRef = useRef(onLogin);
   onLoginRef.current = onLogin;
+
+  useEffect(() => {
+    const notice = consumeSessionEndMessage();
+    if (notice) setSessionNotice(notice);
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -289,6 +296,12 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
               <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-500 text-xs font-semibold flex items-start gap-2">
                 <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {sessionNotice && (
+              <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-700 dark:text-amber-300 text-xs font-semibold">
+                {sessionNotice}
               </div>
             )}
 
