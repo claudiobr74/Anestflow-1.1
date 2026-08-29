@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Printer,
   RotateCcw,
   ShieldCheck,
   FileText,
@@ -11,7 +10,8 @@ import {
   Users,
   BrainCircuit,
   Settings,
-  MoreHorizontal
+  MoreHorizontal,
+  ChevronLeft
 } from "lucide-react";
 import AnestFlowLogo from "./AnestFlowLogo";
 import { VoiceCommandButton } from "./VoiceCommandButton";
@@ -31,6 +31,68 @@ export function getElapsedAnesthesiaString(ficha: AnesthesiaDocument, now: Date)
   const mins = diffMins % 60;
   return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`;
 }
+
+export function headerAnesthesiaChipLabel(ficha: AnesthesiaDocument, now: Date): string {
+  if (isAnesthesiaInProgress(ficha.timers)) {
+    const elapsed = getElapsedAnesthesiaString(ficha, now);
+    return elapsed === "Não iniciada" ? "Anestesia em andamento" : elapsed;
+  }
+  return anesthesiaProgressLabel(ficha.timers);
+}
+
+function userInitials(name: string): string {
+  const cleaned = name.replace(/^\s*(dra?\.?)\s+/i, "").trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "AF";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function StatusBadge({ ficha }: { ficha: AnesthesiaDocument }) {
+  if (ficha.status === "Signed") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-[3px] text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+        <ShieldCheck className="h-3 w-3" /> Assinado
+      </span>
+    );
+  }
+  if (ficha.status === "InProgress") {
+    return (
+      <span className="rounded-full bg-blue-100 px-2 py-[3px] text-[11px] font-semibold text-blue-800 dark:bg-blue-500/20 dark:text-blue-300">
+        Em andamento
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-[#FEF3C7] px-2 py-[3px] text-[11px] font-semibold text-[#D97706] dark:bg-amber-500/20 dark:text-amber-300">
+      Rascunho
+    </span>
+  );
+}
+
+function PatientIdentity({ ficha }: { ficha: AnesthesiaDocument }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5 xl:gap-2">
+      <div className="flex items-center gap-2 xl:gap-2.5">
+        <span className="text-[11px] font-bold uppercase tracking-[1px] text-[#9CA3AF] dark:text-zinc-500">
+          Paciente
+        </span>
+        <StatusBadge ficha={ficha} />
+      </div>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h1 className="truncate text-2xl font-bold leading-tight text-[#111827] dark:text-zinc-50 xl:text-[28px]">
+          {ficha.patient?.fullName || "Sem Identificação"}
+        </h1>
+        <p className="truncate text-[13px] font-normal text-[#4B5563] dark:text-zinc-400 xl:text-sm">
+          {ficha.patient?.hospital || "—"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const actionBtnClass =
+  "inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-1.5 text-[13px] font-semibold text-[#4B5563] transition hover:bg-white disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 md:gap-1.5 md:px-3 md:py-2 xl:gap-2.5 xl:px-4 xl:py-2.5";
 
 type AppHeaderProps = {
   ficha: AnesthesiaDocument;
@@ -66,6 +128,7 @@ type AppHeaderProps = {
 
 export default function AppHeader({
   ficha,
+  user,
   now,
   isDark,
   canEdit,
@@ -86,62 +149,158 @@ export default function AppHeader({
   onToggleTheme,
   onLogout
 }: AppHeaderProps) {
+  const inProgress = isAnesthesiaInProgress(ficha.timers);
+  const chipLabel = headerAnesthesiaChipLabel(ficha, now);
+  const chipTitle = anesthesiaProgressLabel(ficha.timers);
+
   return (
-    <header className={`relative shrink-0 transition-all duration-300 border-b z-30 backdrop-blur-md bg-white/80 dark:bg-zinc-950/80 ${
-      isDark
-        ? "bg-zinc-950/90 border-zinc-800 text-zinc-100"
-        : "bg-white/95 backdrop-blur-md border-slate-200 text-slate-900"
-    }`}>
-      <div className="relative max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-        <AnestFlowLogo height={28} className="shrink-0 hidden lg:block mr-2" />
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-xs font-semibold text-zinc-500 tracking-wide">PACIENTE</span>
-            {ficha.status === "Signed" ? (
-              <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Assinado
-              </span>
-            ) : ficha.status === "InProgress" ? (
-              <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
-                Em andamento
-              </span>
-            ) : (
-              <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
-                Rascunho
-              </span>
-            )}
-            {aiSupervisorActive && (
-              <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300 flex items-center gap-1 animate-pulse">
-                <BrainCircuit className="w-3 h-3" /> IA
-              </span>
-            )}
-          </div>
-          <h1 className="text-base font-semibold truncate">
-            {ficha.patient?.fullName || "Sem Identificação"}
-          </h1>
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 truncate">
-            <span>{ficha.patient?.age ? `${ficha.patient?.age}a` : "—"}</span>
-            <span>•</span>
-            <span>{ficha.patient?.weight ? `${ficha.patient?.weight}kg` : "—"}</span>
-            <span>•</span>
-            <span className="truncate">{ficha.patient?.hospital || "—"}</span>
-          </div>
+    <header
+      className={`relative z-30 shrink-0 bg-white dark:bg-zinc-950 ${
+        isDark ? "text-zinc-100" : "text-[#111827]"
+      }`}
+    >
+      <div className="flex h-14 items-center justify-between border-b border-[#E5E7EB] bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 md:px-6 xl:h-16 xl:px-10">
+        <div className="flex min-w-0 items-center gap-3 xl:gap-4">
+          <button
+            type="button"
+            onClick={onOpenArchive}
+            aria-label="Voltar ao arquivo de fichas"
+            className="inline-flex shrink-0 items-center justify-center p-2 -m-2 text-[#7C3AED] transition hover:opacity-80"
+          >
+            <ChevronLeft className="h-5 w-5 xl:h-[22px] xl:w-[22px]" strokeWidth={2.25} />
+          </button>
+          <AnestFlowLogo
+            className="shrink-0"
+            imgClassName="h-[26px] w-[87px] md:h-7 md:w-24 xl:h-8 xl:w-[110px]"
+          />
         </div>
 
-        <div className="flex flex-col items-end shrink-0">
-          <div className="text-lg font-semibold tabular-nums leading-none mb-1">
-            {getElapsedAnesthesiaString(ficha, now)}
+        <div className="flex min-w-0 items-center gap-3 xl:gap-4">
+          <span className="min-w-0 flex-1 truncate text-right text-xs font-medium text-[#4B5563] dark:text-zinc-400 md:text-sm">
+            {user.name} (Anestesiologista)
+          </span>
+          <div
+            aria-hidden
+            className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F3E8FF] text-xs font-semibold text-[#7C3AED] xl:flex dark:bg-violet-500/20 dark:text-violet-300"
+          >
+            {userInitials(user.name)}
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-medium">
-            <div className={`w-2 h-2 rounded-full ${isAnesthesiaInProgress(ficha.timers) ? "bg-emerald-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600"}`}></div>
-            <span className="text-zinc-600 dark:text-zinc-400">
-              {anesthesiaProgressLabel(ficha.timers)}
+          <div className="relative shrink-0" ref={overflowMenuRef}>
+            <button
+              type="button"
+              aria-label="Mais opções"
+              aria-haspopup="menu"
+              aria-expanded={overflowMenuOpen}
+              onClick={() => setOverflowMenuOpen((open) => !open)}
+              className="inline-flex items-center justify-center p-2 -m-2 text-[#7C3AED] transition hover:opacity-80"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+            {overflowMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-[80] mt-3 w-48 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="flex flex-col py-1 text-sm text-[#4B5563] dark:text-zinc-300">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOverflowMenuOpen(false);
+                      onOpenArchive();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[#F9FAFB] dark:hover:bg-zinc-800"
+                  >
+                    <Database className="h-4 w-4" /> Arquivo
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!canEdit}
+                    onClick={() => {
+                      if (!canEdit) return;
+                      setOverflowMenuOpen(false);
+                      onReloadExample();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[#F9FAFB] disabled:opacity-50 dark:hover:bg-zinc-800"
+                  >
+                    <FileText className="h-4 w-4" /> Modelo Exemplo
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!canEdit}
+                    onClick={() => {
+                      if (!canEdit) return;
+                      setOverflowMenuOpen(false);
+                      onResetBlank();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left text-rose-600 hover:bg-[#F9FAFB] disabled:opacity-50 dark:text-rose-400 dark:hover:bg-zinc-800"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Limpar Tudo
+                  </button>
+                  <div className="my-1 h-px bg-[#E5E7EB] dark:bg-zinc-800" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOverflowMenuOpen(false);
+                      onOpenSettings();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[#F9FAFB] dark:hover:bg-zinc-800"
+                  >
+                    <Settings className="h-4 w-4" /> Configurações
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOverflowMenuOpen(false);
+                      onToggleTheme();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[#F9FAFB] dark:hover:bg-zinc-800"
+                  >
+                    {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}{" "}
+                    {isDark ? "Modo Claro" : "Modo Escuro"}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOverflowMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-left text-rose-600 hover:bg-[#F9FAFB] dark:text-rose-400 dark:hover:bg-zinc-800"
+                  >
+                    <LogOut className="h-4 w-4" /> Sair
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col bg-white dark:bg-zinc-950 xl:flex-row xl:items-center xl:justify-between xl:gap-6 xl:border-b xl:border-[#E5E7EB] xl:px-10 xl:py-6 dark:xl:border-zinc-800">
+        <div className="px-4 py-4 md:border-b md:border-[#E5E7EB] md:px-6 md:py-4 xl:border-0 xl:p-0 dark:md:border-zinc-800">
+          <PatientIdentity ficha={ficha} />
+        </div>
+
+        <div className="flex items-center justify-between gap-1.5 border-b border-[#E5E7EB] px-3 py-3 dark:border-zinc-800 md:gap-4 md:px-6 xl:border-0 xl:p-0">
+          <div className="flex min-w-0 items-center gap-2 md:gap-4">
+            <span
+              title={chipTitle}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900 md:px-3 md:py-1.5"
+            >
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  inProgress ? "bg-[#10B981] animate-pulse" : "bg-[#9CA3AF]"
+                }`}
+              />
+              <span className="truncate text-xs font-medium text-[#4B5563] dark:text-zinc-300">
+                {chipLabel}
+              </span>
             </span>
-          </div>
-        </div>
-
-        <div className="w-full flex items-center justify-between sm:w-auto sm:justify-end gap-3 mt-2 sm:mt-0">
-          <div className="flex items-center">
             <SyncStatusBadge
               status={syncEngine.status}
               statusText={syncEngine.statusText}
@@ -152,74 +311,43 @@ export default function AppHeader({
               onRetry={syncEngine.retrySyncNow}
               isDark={isDark}
               compact
+              variant="plain"
             />
+            {aiSupervisorActive && (
+              <span className="hidden items-center gap-1 rounded-full bg-indigo-100 px-2 py-[3px] text-[11px] font-semibold text-indigo-700 animate-pulse sm:inline-flex dark:bg-indigo-500/20 dark:text-indigo-300">
+                <BrainCircuit className="h-3 w-3" /> IA
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <VoiceCommandButton
-              isDark={isDark}
-              disabled={!canEdit}
-              startAiSupervisor={startAiSupervisor}
-              stopAiSupervisor={stopAiSupervisor}
-              onCommandProcessed={({ transcription, identifiedActions }) => {
-                onVoiceProcessed({ transcription, identifiedActions });
-              }}
-            />
-            <button
-              onClick={onOpenPdf}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-sm font-medium transition-colors flex items-center gap-1.5"
-            >
-              <Printer className="w-4 h-4" />
-              <span className="hidden sm:inline">PDF</span>
-            </button>
-            <button
-              onClick={onOpenShare}
-              disabled={!ficha.userId}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Equipe</span>
-            </button>
-
-            <div className="relative" ref={overflowMenuRef}>
+          <div className="flex items-center gap-1 md:gap-2 xl:gap-6">
+            <div aria-hidden className="hidden h-8 w-px bg-[#E5E7EB] xl:block dark:bg-zinc-700" />
+            <div className="flex items-center gap-1 md:gap-2 xl:gap-2.5">
+              <VoiceCommandButton
+                variant="header"
+                isDark={isDark}
+                disabled={!canEdit}
+                startAiSupervisor={startAiSupervisor}
+                stopAiSupervisor={stopAiSupervisor}
+                onCommandProcessed={({ transcription, identifiedActions }) => {
+                  onVoiceProcessed({ transcription, identifiedActions });
+                }}
+              />
+              <button type="button" onClick={onOpenPdf} className={actionBtnClass}>
+                <FileText className="h-4 w-4" />
+                <span className="xl:hidden">PDF</span>
+                <span className="hidden xl:inline">Visualizar PDF</span>
+              </button>
               <button
                 type="button"
-                aria-label="Mais opções"
-                aria-haspopup="menu"
-                aria-expanded={overflowMenuOpen}
-                onClick={() => setOverflowMenuOpen((open) => !open)}
-                className="p-2.5 min-h-11 min-w-11 rounded-lg border border-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center"
+                onClick={onOpenShare}
+                disabled={!ficha.userId}
+                className={actionBtnClass}
               >
-                <MoreHorizontal className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
+                <Users className="h-4 w-4" />
+                <span className="xl:hidden">Equipe</span>
+                <span className="hidden xl:inline">Equipe Médica</span>
               </button>
-              {overflowMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-lg border border-slate-200 dark:border-zinc-800 z-[80] overflow-hidden"
-                >
-                  <div className="py-1 flex flex-col text-sm text-zinc-700 dark:text-zinc-300">
-                    <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); onOpenArchive(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      <Database className="w-4 h-4" /> Arquivo
-                    </button>
-                    <button type="button" role="menuitem" disabled={!canEdit} onClick={() => { if (!canEdit) return; setOverflowMenuOpen(false); onReloadExample(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 disabled:opacity-50">
-                      <FileText className="w-4 h-4" /> Modelo Exemplo
-                    </button>
-                    <button type="button" role="menuitem" disabled={!canEdit} onClick={() => { if (!canEdit) return; setOverflowMenuOpen(false); onResetBlank(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400 disabled:opacity-50">
-                      <RotateCcw className="w-4 h-4" /> Limpar Tudo
-                    </button>
-                    <div className="h-px bg-slate-200 dark:bg-zinc-800 my-1"></div>
-                    <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); onOpenSettings(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      <Settings className="w-4 h-4" /> Configurações
-                    </button>
-                    <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); onToggleTheme(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDark ? "Modo Claro" : "Modo Escuro"}
-                    </button>
-                    <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); onLogout(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
-                      <LogOut className="w-4 h-4" /> Sair
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>

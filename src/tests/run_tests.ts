@@ -1745,7 +1745,77 @@ try {
   assert(false, `Falha na verificação do checkpoint: ${err}`);
 }
 
-// 21. VERIFICAÇÃO FINAL DE RESULTADOS
+// 21. HEADER RESPONSIVO
+console.log("\n21. Verificando redesign responsivo do header...");
+try {
+  const headerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AppHeader.tsx"), "utf-8");
+  const navSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AppNav.tsx"), "utf-8");
+  const voiceSrc = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandButton.tsx"), "utf-8");
+  const badgeSrc = fs.readFileSync(path.join(process.cwd(), "src/components/SyncStatusBadge.tsx"), "utf-8");
+  const logoSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AnestFlowLogo.tsx"), "utf-8");
+  const shell = clinicalShellSrc();
+
+  assert(headerSrc.includes("ChevronLeft"), "Top bar tem chevron de voltar");
+  assert(logoSrc.includes("/logo.png"), "Logo do app é a imagem /logo.png");
+  assert(headerSrc.includes("imgClassName"), "Header dimensiona a logo por breakpoint");
+  assert(headerSrc.includes("h-[26px]"), "Logo mobile 26px de altura");
+  assert(headerSrc.includes("xl:h-16"), "Top bar desktop tem 64px");
+  assert(headerSrc.includes("(Anestesiologista)"), "Top bar mostra o médico com especialidade");
+  assert(headerSrc.includes("xl:flex"), "Avatar do médico só no desktop");
+  assert(headerSrc.includes('variant="header"'), "Microfone do header usa variante discreta");
+  assert(headerSrc.includes('variant="plain"'), "Indicador Salvo do header é sutil");
+  assert(headerSrc.includes("Visualizar PDF"), "Desktop usa rótulo Visualizar PDF");
+  assert(headerSrc.includes("Equipe Médica"), "Desktop usa rótulo Equipe Médica");
+  assert(headerSrc.includes("xl:hidden"), "PDF/Equipe abreviados abaixo do desktop");
+  assert(headerSrc.includes("#7C3AED"), "Accent roxo do spec no header");
+  assert(headerSrc.includes("#FEF3C7"), "Badge Rascunho usa fundo amber do spec");
+  assert(headerSrc.includes("headerAnesthesiaChipLabel"), "Chip unificado de status da anestesia");
+  assert(!headerSrc.includes("from-indigo-600"), "Header não monta o microfone gigante em gradiente");
+  assert(headerSrc.includes('aria-label="Mais opções"'), "Overflow permanece acessível");
+  assert(!headerSrc.includes("group-hover:visible"), "Overflow não depende de hover");
+
+  assert(navSrc.includes('shortLabel: "Intraop."'), "Aba intra abreviada é Intraop.");
+  assert(navSrc.includes('label: "Auditoria"'), "Aba de auditoria no desktop não concatena Assinatura");
+  assert(navSrc.includes("hidden xl:inline"), "Nomes completos das abas só no desktop");
+  assert(navSrc.includes("xl:hidden"), "Nomes curtos das abas no mobile/tablet");
+  assert(navSrc.includes("bg-gradient-to-l"), "Fade de scroll à direita das abas");
+  assert(navSrc.includes("from-white"), "Fade de scroll vai para branco");
+  assert(navSrc.includes("bg-[#F3E8FF]"), "Aba ativa usa lilás do spec");
+
+  assert(voiceSrc.includes('variant?: "default" | "header"'), "VoiceCommandButton aceita variante header");
+  assert(voiceSrc.includes("h-9 w-9"), "Mic header é 36x36 no mobile");
+  assert(voiceSrc.includes("xl:h-10 xl:w-10"), "Mic header é 40x40 no desktop");
+  assert(badgeSrc.includes('variant?: "chip" | "plain"'), "SyncStatusBadge aceita variante plain");
+  assert(badgeSrc.includes('text-[#10B981]'), "Salvo plain usa verde do spec");
+
+  assert(shell.includes("<VoiceCommandButton"), "Microfone continua montado no shell clínico");
+  assert(shell.includes("document.addEventListener"), "Menu overflow escuta document");
+
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { headerAnesthesiaChipLabel, getElapsedAnesthesiaString } = await import("../components/AppHeader.tsx");
+  const blank = getBlankDocument();
+  const now = new Date("2026-08-29T12:30:00Z");
+  assert(headerAnesthesiaChipLabel(blank, now) === "Aguardando início", "Chip unificado aguarda início sem timer");
+  assert(getElapsedAnesthesiaString(blank, now) === "Não iniciada", "Timer interno permanece Não iniciada sem start");
+  const running = {
+    ...blank,
+    timers: { ...blank.timers, startAnesthesia: "2026-08-29T12:00:00Z" }
+  };
+  assert(headerAnesthesiaChipLabel(running, now) === "00:30", "Chip em andamento mostra o tempo decorrido");
+  const ended = {
+    ...blank,
+    timers: {
+      ...blank.timers,
+      startAnesthesia: "2026-08-29T12:00:00Z",
+      endAnesthesia: "2026-08-29T13:00:00Z"
+    }
+  };
+  assert(headerAnesthesiaChipLabel(ended, now) === "Anestesia encerrada", "Chip encerrado não mistura com aguardando");
+} catch (err) {
+  assert(false, `Falha na verificação do header responsivo: ${err}`);
+}
+
+// 22. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
