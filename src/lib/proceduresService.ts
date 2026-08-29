@@ -2,6 +2,7 @@ import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { getSupabase } from "./supabase";
 import { ensureUniqueClinicalEventIds } from "./syncEngine";
 import { throwClinical } from "./clinicalErrors";
+import { assertCanEdit } from "./assertCanEdit";
 import {
   loadClinicalChildren,
   persistClinicalChildren,
@@ -141,21 +142,11 @@ export async function saveProcedure(document: AnesthesiaDocument, userId: string
     currentResponsibleUid = createdByUid;
   }
 
-  if (
-    cleanedDoc.currentResponsibleUid &&
-    isUuid(cleanedDoc.currentResponsibleUid) &&
-    cleanedDoc.currentResponsibleUid !== userId &&
-    createdByUid !== userId &&
-    currentResponsibleUid !== userId
-  ) {
-    throw new Error(
-      `Apenas o anestesiologista responsável atual (Dr. ${cleanedDoc.team?.anesthesiologistLead || "Responsável"}) pode salvar alterações nesta ficha.`
-    );
-  }
-
   cleanedDoc.createdByUid = createdByUid;
   cleanedDoc.currentResponsibleUid = currentResponsibleUid;
   cleanedDoc.userId = createdByUid;
+
+  assertCanEdit(cleanedDoc, userId, { closingSignature: cleanedDoc.status === "Signed" });
 
   const write = async () => {
     const supabase = getSupabase();

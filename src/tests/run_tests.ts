@@ -737,7 +737,95 @@ try {
   assert(false, `Falha na verificação da Fase 2: ${err}`);
 }
 
-// 15. VERIFICAÇÃO FINAL DE RESULTADOS
+// 15. FASE 3 — assertCanEdit (só o responsável grava)
+console.log("\n15. Verificando Fase 3 (assertCanEdit)...");
+try {
+  const {
+    assertCanEdit,
+    assignNewDocumentOwner,
+    canEditDocument,
+    isClinicalEditor,
+    isCurrentResponsible,
+    EDIT_BLOCKED_SIGNED,
+    EDIT_BLOCKED_UNAUTHENTICATED,
+  } = await import("../lib/assertCanEdit.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+
+  const aliceDoc = {
+    status: "Draft" as const,
+    currentResponsibleUid: "alice-uid",
+    createdByUid: "creator-uid",
+    team: { anesthesiologistLead: "Alice" },
+  };
+
+  assert(canEditDocument(aliceDoc, "alice-uid").ok === true, "Responsável atual pode editar");
+  assert(isClinicalEditor(aliceDoc, "alice-uid") === true, "isClinicalEditor verdadeiro para o responsável");
+  assert(isCurrentResponsible(aliceDoc, "alice-uid") === true, "isCurrentResponsible ignora status e olha o UID");
+
+  const creatorGate = canEditDocument(aliceDoc, "creator-uid");
+  assert(creatorGate.ok === false && creatorGate.reason === "not_responsible", "Criador que não é responsável não edita");
+  assert(creatorGate.ok === false && creatorGate.message.includes("Alice"), "Mensagem cita o responsável atual");
+
+  const bobGate = canEditDocument(aliceDoc, "bob-uid");
+  assert(bobGate.ok === false && bobGate.reason === "not_responsible", "Outro UID não edita");
+
+  const anonGate = canEditDocument(aliceDoc, null);
+  assert(anonGate.ok === false && anonGate.reason === "unauthenticated", "Sem UID não edita");
+  assert(anonGate.ok === false && anonGate.message === EDIT_BLOCKED_UNAUTHENTICATED, "Mensagem de não autenticado");
+
+  const missingResp = canEditDocument({ status: "Draft", team: {} }, "alice-uid");
+  assert(missingResp.ok === false && missingResp.reason === "not_responsible", "Sem currentResponsibleUid é fail-closed");
+
+  const signedDoc = { ...aliceDoc, status: "Signed" as const };
+  const signedGate = canEditDocument(signedDoc, "alice-uid");
+  assert(signedGate.ok === false && signedGate.reason === "signed", "Ficha assinada bloqueia mutação");
+  assert(signedGate.ok === false && signedGate.message === EDIT_BLOCKED_SIGNED, "Mensagem de ficha assinada");
+  assert(isCurrentResponsible(signedDoc, "alice-uid") === true, "Quem assinou continua o responsável (banner)");
+  assert(isClinicalEditor(signedDoc, "alice-uid") === false, "Responsável não edita ficha já assinada");
+  assert(canEditDocument(signedDoc, "alice-uid", { closingSignature: true }).ok === true, "Fechamento da ficha permite closingSignature");
+
+  let threw = false;
+  try {
+    assertCanEdit(aliceDoc, "bob-uid");
+  } catch (err) {
+    threw = err instanceof Error && err.message.includes("responsável");
+  }
+  assert(threw, "assertCanEdit lança para quem não é responsável");
+
+  const stamped = assignNewDocumentOwner(getBlankDocument(), "alice-uid");
+  assert(stamped.currentResponsibleUid === "alice-uid", "Nova ficha recebe o UID como responsável");
+  assert(stamped.createdByUid === "alice-uid", "Nova ficha recebe o UID como criador");
+  assert(isClinicalEditor(stamped, "alice-uid") === true, "Dono recém-carimbado pode editar");
+
+  const saveSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  assert(saveSrc.includes("assertCanEdit"), "saveProcedure usa assertCanEdit");
+  assert(!saveSrc.includes("createdByUid !== userId"), "saveProcedure não libera o criador no lugar do responsável");
+
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  assert(syncSrc.includes("canEditDocument"), "Autosave usa canEditDocument");
+  assert(!syncSrc.includes("!userId || !currentResponsibleUid"), "Autosave não é fail-open sem UID");
+
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  assert(appSrc.includes("isClinicalEditor") && appSrc.includes("canEditDocument"), "App consulta o gate único");
+  assert(appSrc.includes("assignNewDocumentOwner"), "Reset/login carimbam o dono da ficha em branco");
+
+  const signSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/signatureService.ts"), "utf-8");
+  assert(signSrc.includes("assertCanEdit"), "Assinatura exige assertCanEdit");
+
+  const bannerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ResponsibilityBanner.tsx"), "utf-8");
+  assert(bannerSrc.includes("isCurrentResponsible"), "Banner de responsável usa UID, não o gate de edição");
+  assert(!bannerSrc.includes("!user || !user.uid || !currentResponsibleUid"), "Banner não trata ausência de UID como autorizado");
+
+  const patientSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PatientTab.tsx"), "utf-8");
+  assert(patientSrc.includes("isClinicalEditor"), "Aba paciente fecha campos pelo gate único");
+
+  const readme3 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme3.includes("Fase 3") && readme3.includes("assertCanEdit"), "README documenta Fase 3");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 3: ${err}`);
+}
+
+// 16. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

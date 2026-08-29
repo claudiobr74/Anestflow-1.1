@@ -9,6 +9,7 @@ import {
 import { subscribeProcedureRealtime } from "./procedureRealtime";
 import { isUuid } from "./procedureMapper";
 import { clinicalChangeFingerprint } from "./clinicalChangeFingerprint";
+import { canEditDocument } from "./assertCanEdit";
 
 export function useSyncEngine(
   document: AnesthesiaDocument,
@@ -143,9 +144,7 @@ export function useSyncEngine(
     };
   }, [status, flushPendingQueue]);
 
-  // Single-writer check: Only currentResponsibleUid (or creator if unset) is authorized to save
-  const currentResponsibleUid = document.currentResponsibleUid || document.createdByUid || document.userId;
-  const isResponsible = !userId || !currentResponsibleUid || currentResponsibleUid === userId;
+  const isResponsible = canEditDocument(document, userId).ok;
 
   // Continuous Autosave effect triggered on document changes (ONLY for current responsible)
   const currentDocIdRef = useRef<string>("");

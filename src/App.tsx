@@ -44,6 +44,11 @@ import {
   activeDocSessionKey,
   purgeClinicalPhiFromLocalStorage,
 } from "./lib/clinicalStorageKeys";
+import {
+  assignNewDocumentOwner,
+  canEditDocument,
+  isClinicalEditor,
+} from "./lib/assertCanEdit";
 
 type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
 
@@ -176,6 +181,14 @@ export default function App() {
       }, 5000);
     }
   }, [document, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    setDocument((prev) => {
+      if (prev.currentResponsibleUid || prev.createdByUid) return prev;
+      return assignNewDocumentOwner(prev, user.uid!);
+    });
+  }, [user?.uid]);
 
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(true);
   const [resendingEmail, setResendingEmail] = useState<boolean>(false);
@@ -354,11 +367,7 @@ export default function App() {
 
       // Initialize a fresh blank document specifically for the newly logged-in user.
       // NEVER adopt or auto-assign an existing document from a previous user's session!
-      const newBlank = getBlankDocument();
-      newBlank.createdByUid = doctor.uid || "";
-      newBlank.currentResponsibleUid = doctor.uid || "";
-      newBlank.participantUids = doctor.uid ? [doctor.uid] : [];
-      newBlank.userId = doctor.uid || "";
+      const newBlank = assignNewDocumentOwner(getBlankDocument(), doctor.uid || "");
       newBlank.patient.hospital = doctor.hospital || appSettings.defaultHospital;
       newBlank.team.anesthesiologistLead = doctor.name || appSettings.defaultAnesthesiologistName;
       newBlank.team.crmLead = doctor.crm || appSettings.defaultCrm;
@@ -407,8 +416,10 @@ export default function App() {
   };
 
   // State modification wrappers
+  const canEdit = isClinicalEditor(document, user?.uid);
+
   const updatePatient = (patientData: Partial<PatientInfo>) => {
-    if (document.status === "Signed") return; // locked
+    if (!canEdit) return;
     setDocumentWithBroadcast(prev => ({
       ...prev,
       patient: { ...prev.patient, ...patientData }
@@ -416,7 +427,7 @@ export default function App() {
   };
 
   const updateTeam = (teamData: Partial<AnesthesiaDocument["team"]>) => {
-    if (document.status === "Signed") return; // locked
+    if (!canEdit) return;
     setDocumentWithBroadcast(prev => ({
       ...prev,
       team: { ...prev.team, ...teamData }
@@ -424,7 +435,7 @@ export default function App() {
   };
 
   const updatePreEvaluation = (evalData: Partial<PreAnestheticEvaluation>) => {
-    if (document.status === "Signed") return; // locked
+    if (!canEdit) return;
     setDocumentWithBroadcast(prev => ({
       ...prev,
       preEvaluation: { ...prev.preEvaluation, ...evalData } as any
@@ -432,6 +443,10 @@ export default function App() {
   };
 
   const handleLoadWorklist = async (cpf: string) => {
+    if (!canEdit) {
+      const gate = canEditDocument(document, user?.uid);
+      throw new Error(gate.ok === false ? gate.message : "Edição não permitida.");
+    }
     const { getFromWorklist } = await import("./lib/worklistService");
     const entry = await getFromWorklist(cpf);
     if (!entry) throw new Error("Paciente não encontrado na Worklist");
@@ -452,7 +467,7 @@ export default function App() {
   const updateRecovery = (
     recoveryData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
   ) => {
-    if (document.status === "Signed") return; // locked
+    if (!canEdit) return;
     setDocumentWithBroadcast(prev => {
       const patch = typeof recoveryData === "function" ? recoveryData(prev.recovery) : recoveryData;
       return {
@@ -462,15 +477,10 @@ export default function App() {
     });
   };
 
-  const isCurrentResponsible = !user || !user.uid || !document.currentResponsibleUid || document.currentResponsibleUid === user.uid;
-
   const updateDocumentDirectly = (updates: AnesthesiaDocumentPatch) => {
-    if (document.status === "Signed") {
-      alert("Esta ficha foi encerrada e assinada. Alterações não são permitidas.");
-      return;
-    }
-    if (user && user.uid && document.currentResponsibleUid && document.currentResponsibleUid !== user.uid) {
-      alert(`Somente o anestesiologista atualmente responsável (Dr. ${document.team?.anesthesiologistLead || 'Responsável'}) pode editar os dados clínicos.`);
+    const gate = canEditDocument(document, user?.uid);
+    if (gate.ok === false) {
+      alert(gate.message);
       return;
     }
     setDocumentWithBroadcast(prev => {
@@ -565,8 +575,9 @@ export default function App() {
     pendingItems: string;
     immediate?: boolean;
   }) => {
-    if (document.status === "Signed") {
-      alert("Esta ficha foi encerrada e não permite alterações.");
+    const gate = canEditDocument(document, user?.uid);
+    if (gate.ok === false) {
+      alert(gate.message);
       return;
     }
 
@@ -821,7 +832,11 @@ export default function App() {
     const pending = pendingVoice;
     setPendingVoice(null);
     if (!pending?.actions) return;
-    if (document.status === "Signed") return;
+    const gate = canEditDocument(document, user?.uid);
+    if (gate.ok === false) {
+      alert(gate.message);
+      return;
+    }
 
     applyPendingVoiceTemplate(pending.actions.templates);
 
@@ -847,7 +862,8 @@ export default function App() {
 
   const handleResetToBlankConfirm = () => {
     setShowResetConfirm(false);
-    const blank = getBlankDocument();
+    let blank = getBlankDocument();
+    if (user?.uid) blank = assignNewDocumentOwner(blank, user.uid);
     if (user) {
       blank.team.anesthesiologistLead = user.name;
       blank.team.crmLead = user.crm;
@@ -861,6 +877,11 @@ export default function App() {
   const handleCloseProcedure = async () => {
     if (!user || !user.uid) {
       alert("Usuário não autenticado. É necessário estar logado para assinar a ficha.");
+      return;
+    }
+    const gate = canEditDocument(document, user.uid);
+    if (gate.ok === false) {
+      alert(gate.message);
       return;
     }
 
@@ -891,7 +912,8 @@ export default function App() {
 
   const handleReloadMockDataConfirm = () => {
     setShowReloadConfirm(false);
-    const mockDoc = getMockDocument();
+    let mockDoc = getMockDocument();
+    if (user?.uid) mockDoc = assignNewDocumentOwner(mockDoc, user.uid);
     if (user) {
       mockDoc.team.anesthesiologistLead = user.name;
       mockDoc.team.crmLead = user.crm;
@@ -1026,7 +1048,7 @@ export default function App() {
             <div className="flex items-center gap-1.5">
               <VoiceCommandButton
                 isDark={isDark}
-                disabled={document.status === "Signed"}
+                disabled={!canEdit}
                 startAiSupervisor={startAiSupervisor}
                 stopAiSupervisor={stopAiSupervisor}
                 onCommandProcessed={({ transcription, identifiedActions }) => {
@@ -1190,7 +1212,7 @@ export default function App() {
             </div>
           )}
 
-          {!isCurrentResponsible && document.status !== "Signed" && (
+          {!canEdit && document.status !== "Signed" && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 shrink-0 text-amber-500" />
