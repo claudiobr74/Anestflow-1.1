@@ -8,24 +8,10 @@ import {
   clearClinicalSessionDrafts,
   purgeClinicalPhiFromLocalStorage,
 } from '../lib/clinicalStorageKeys';
+import { DEFAULT_APP_SETTINGS, type AppSettings } from '../lib/appSettings';
 
-export interface AppSettings {
-  defaultHospital: string;
-  defaultAnesthesiologistName: string;
-  defaultCrm: string;
-  vitalIntervalMinutes: number;
-  soundAlertsEnabled: boolean;
-  compactMode: boolean;
-}
-
-export const DEFAULT_APP_SETTINGS: AppSettings = {
-  defaultHospital: '',
-  defaultAnesthesiologistName: '',
-  defaultCrm: '',
-  vitalIntervalMinutes: 5,
-  soundAlertsEnabled: true,
-  compactMode: false,
-};
+export type { AppSettings };
+export { DEFAULT_APP_SETTINGS };
 
 interface SettingsModalProps {
   isOpen: boolean;
