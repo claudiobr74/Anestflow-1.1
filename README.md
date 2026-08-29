@@ -293,7 +293,7 @@ Na interface isso é **selo criptográfico de integridade** / **Integridade SHA-
 
 Adendos: autor oficial = `auth.uid()` → `profiles`. `p_author_name` / `p_author_crm` / `p_author_uf` do navegador são ignorados. O canonical do adendo vincula procedimento, snapshot (`content_hash`), autor, timestamp, conteúdo e motivo.
 
-O PDF final fino da Fase 7 (`pdfFinal.ts`) continua sendo um recorte para golden tests e **não** substitui o JSON selado no banco. Live: `fase04b_live.ts` (e `onda3_live.ts` atualizado para o close atômico).
+O PDF final da Fase 7 (`pdfFinal.ts`) deriva do contrato `SignedAnesthesiaRecordV1` (snapshot 4B + hash sidecar). O preview de captura (`html-to-image` / `PdfPreviewModal`) permanece. Live: `fase04b_live.ts` (e `onda3_live.ts` atualizado para o close atômico).
 
 ## Checkpoint pós-Fase 4
 
@@ -323,7 +323,7 @@ Live condensado (persistir → selar → A+B → imutável):
 npx tsx src/tests/checkpoint_live.ts
 ```
 
-Sentinela: `CHECKPOINT_LIVE_OK`. Ainda fora deste checkpoint (feitas depois): fatiar App/Intra (6B), PDF final completo (7F) e `transcript_original`.
+Sentinela: `CHECKPOINT_LIVE_OK`. Feitas depois deste checkpoint: fatiar App/Intra (6B), PDF final do contrato 4B (7F) e `transcript_original` (7E).
 
 ## Fase 5 (renomear `document` → `ficha` + higiene)
 
@@ -388,13 +388,15 @@ A onda 7 permanece: **12h** de timebox e **8h** ociosas **encerram a sessão** (
 
 ### 7E — IA
 
-`toAIClinicalContext(ficha)` omite CPF, nome, prontuário, admissão, leito e UIDs. `ReviewTab` e a descrição enviam esse contexto; a chave `document` da Edge `generate-description` não muda. A Edge ainda stripa na entrada (`_shared/aiStrip.ts`). Parse falho de review continua `AI_REVIEW_PARSE_FAILED` (HTTP 502), **não** `alerts: []`.
+`toAIClinicalContext(ficha)` omite CPF, nome, prontuário, admissão, leito, UIDs e **transcrições originais de voz**. `ReviewTab` e a descrição enviam esse contexto; a chave `document` da Edge `generate-description` não muda. A Edge ainda stripa na entrada (`_shared/aiStrip.ts`). Parse falho de review continua `AI_REVIEW_PARSE_FAILED` (HTTP 502), **não** `alerts: []`.
 
-Modelo pinado: `gemini-3.1-flash-lite` (sem alias `gemini-flash-latest`). Cada função manda `prompt_version` (`review-v1`, `description-v1`, `voice-v1`) e devolve metadados técnicos (`provider`, `model`, `prompt_version`, `schema_version`, `timestamp`, `latency_ms`, `success`). JWT das Edge Functions permanece (`verify_jwt = true`).
+Modelo pinado: `gemini-3.1-flash-lite` (sem alias `gemini-flash-latest`). Cada função manda `prompt_version` (`review-v1`, `description-v1`, `voice-v2`) e devolve metadados técnicos (`provider`, `model`, `prompt_version`, `schema_version`, `timestamp`, `latency_ms`, `success`). JWT das Edge Functions permanece (`verify_jwt = true`).
+
+Cadeia do escriba: áudio → `transcript_original` (o que foi ouvido, sem correção de jargão) → interpretação clínica (`identifiedActions`) → confirmação humana → comando na ficha. A transcrição original é persistida em `procedures.voice_transcripts` e entra no selo 4B só quando há itens (selos antigos sem a chave continuam byte-idênticos na checagem B). A interpretação **nunca** substitui o que foi ouvido.
 
 ### 7F — PDF final
 
-O preview atual (`html-to-image` / `PdfPreviewModal`) não foi reescrito. O caminho arquitetural testável é `SignedAnesthesiaRecordV1` + `toSignedAnesthesiaRecordV1` + `pdfFinalSearchableText`. Ausência continua ausência (`Não registrado` / `UNREGISTERED`).
+O preview de captura (`html-to-image` / `PdfPreviewModal`) não foi reescrito. O PDF clínico definitivo (`toSignedAnesthesiaRecordV1` + `pdfFinalSearchableText` + `buildSignedRecordPdfBytes`) deriva do snapshot `SignedAnesthesiaRecordV1` do contrato 4B, com `integrityHash` sidecar (`content_hash`). Texto pesquisável, layout determinístico (Helvetica, data de criação fixa) e metadados (`procedureId`, `revision`, `signedAt`, responsável, hash). Ausência continua ausência (`Não registrado` / `UNREGISTERED`). O PDF **não** inventa `120/80`. Na Review de ficha selada há **PDF final (selo)**.
 
 ### 7G — CORS
 

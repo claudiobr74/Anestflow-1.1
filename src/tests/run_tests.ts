@@ -281,6 +281,7 @@ try {
   assert(!reviewUi.includes("/api/review"), "ReviewTab não chama /api/review");
   assert(voiceUi.includes('"voice-command"') && !voiceUi.includes("/api/voice-command"), "Voz usa Edge Function, não Express");
   assert(voiceUi.includes("transcription"), "Botão de voz encaminha a transcrição para conferência");
+  assert(voiceUi.includes("transcript_original"), "Cliente prefere transcript_original da Edge");
   assert(!voiceUi.includes("console.log(\"Comando de voz processado\""), "Botão de voz não loga o payload clínico");
   const appVoice = clinicalShellSrc();
   assert(appVoice.includes("<VoiceCommandButton"), "Microfone de voz está montado no App");
@@ -469,6 +470,13 @@ try {
   const signed = { ...blank, status: "Signed" as const };
   const ignored = applyVoiceActionsToDocument(signed, sanitized!, null);
   assert(ignored.bolusDrugs.length === blank.bolusDrugs.length, "Ficha assinada ignora voz");
+
+  const heard = "tem ta cinquenta";
+  const onlyHeard = applyVoiceActionsToDocument(blank, {}, null, new Date("2026-08-29T12:00:00Z"), heard);
+  assert(onlyHeard.voiceTranscripts?.[0]?.transcriptOriginal === heard, "Transcrição original persiste sem correção de jargão");
+  assert(!onlyHeard.voiceTranscripts?.[0]?.transcriptOriginal.includes("fenta"), "Não substitui o que foi ouvido por fenta");
+  const signedHeard = applyVoiceActionsToDocument({ ...onlyHeard, status: "Signed" }, {}, null, new Date(), "outra fala");
+  assert(signedHeard.voiceTranscripts?.length === onlyHeard.voiceTranscripts?.length, "Ficha assinada não grava transcrição");
 } catch (err) {
   assert(false, `Falha na verificação do escriba por voz: ${err}`);
 }
@@ -1521,10 +1529,12 @@ try {
   fichaIa.patient.cpf = "39053344705";
   fichaIa.patient.recordNumber = "PRONT-7";
   fichaIa.patient.admissionNumber = "ADM-7";
+  fichaIa.voiceTranscripts = [{ id: "vt-ia", transcriptOriginal: "paciente João CPF 390", createdAt: "2026-08-29T12:00:00.000Z" }];
   const ctx = toAIClinicalContext(fichaIa);
   assert(aiContextOmitsIdentifiers(ctx), "toAIClinicalContext omite identificadores");
   assert(fichaIa.patient.cpf === "39053344705", "Strip da IA não muta a ficha viva");
   assert(ctx.patient && typeof ctx.patient === "object" && !("cpf" in (ctx.patient as object)), "CPF não vai no contexto");
+  assert(!("voiceTranscripts" in ctx), "Transcrição original não vai para a IA");
   const reviewUi = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
   assert(reviewUi.includes("toAIClinicalContext(ficha)"), "ReviewTab envia contexto stripado");
   const drawerUi = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
@@ -1544,7 +1554,13 @@ try {
   assert(parseAiReviewPayload({ error: AI_REVIEW_PARSE_FAILED, ai: { success: false } }).ok === false, "AI_REVIEW_PARSE_FAILED continua distinto de alerts vazios");
   assert(parseAiReviewPayload({ alerts: [] }).ok === true, "alerts: [] continua sucesso (zero achados)");
 
-  const { toSignedAnesthesiaRecordV1, pdfFinalSearchableText, SIGNED_RECORD_SCHEMA } = await import("../lib/pdfFinal.ts");
+  const {
+    toSignedAnesthesiaRecordV1,
+    pdfFinalSearchableText,
+    parseSignedAnesthesiaRecordV1,
+    buildSignedRecordPdfBytes,
+    SIGNED_RECORD_SCHEMA,
+  } = await import("../lib/pdfFinal.ts");
   const { UNREGISTERED } = await import("../lib/clinicalDisplay.ts");
   const signed = toSignedAnesthesiaRecordV1(getBlankDocument());
   const text1 = pdfFinalSearchableText(signed);
@@ -1555,6 +1571,69 @@ try {
   assert(!text1.includes("120/80"), "PDF final não inventa 120/80");
   const pdfPreview = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
   assert(pdfPreview.includes("html-to-image") || pdfPreview.includes("toPng") || pdfPreview.includes("htmlToImage"), "Preview de captura permanece");
+
+  const goldenRaw = fs.readFileSync(path.join(process.cwd(), "src/tests/fixtures/signed_record_v1_golden.json"), "utf-8");
+  const goldenHash = "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899";
+  const parsedGolden = parseSignedAnesthesiaRecordV1(goldenRaw, goldenHash);
+  assert(parsedGolden?.schema === SIGNED_RECORD_SCHEMA, "parse do snapshot 4B");
+  assert(parsedGolden?.procedureId === "11111111-1111-4111-8111-111111111111", "snapshot traz procedureId");
+  assert(parsedGolden?.revision === 2, "snapshot traz revision");
+  const goldenText = pdfFinalSearchableText(parsedGolden!);
+  assert(goldenText === pdfFinalSearchableText(parsedGolden!), "texto pesquisável do golden é determinístico");
+  assert(goldenText.includes("tem ta cinquenta"), "PDF inclui transcrição original");
+  assert(goldenText.includes(goldenHash), "PDF inclui integrity hash");
+  assert(goldenText.includes(`procedure.diagnosis=${UNREGISTERED}`), "diagnóstico vazio permanece ausência");
+  assert(!goldenText.includes("120/80"), "golden não inventa 120/80");
+  const pdfBytes = buildSignedRecordPdfBytes(parsedGolden!);
+  const pdfAscii = Buffer.from(pdfBytes).toString("latin1");
+  assert(pdfAscii.startsWith("%PDF"), "PDF final começa com %PDF");
+  assert(pdfAscii.includes("SignedAnesthesiaRecordV1"), "bytes do PDF contêm o schema");
+  assert(pdfAscii.includes("tem ta cinquenta"), "bytes do PDF contêm a transcrição original");
+  assert(pdfAscii.includes("11111111-1111-4111-8111-111111111111"), "bytes do PDF contêm procedureId");
+
+  const fichaSnap = getBlankDocument();
+  fichaSnap.signatureSnapshot = goldenRaw;
+  fichaSnap.hash = goldenHash;
+  const fromSnap = toSignedAnesthesiaRecordV1(fichaSnap);
+  assert(fromSnap.procedureId === parsedGolden?.procedureId, "toSigned prefere o snapshot 4B");
+  assert(fromSnap.voiceTranscripts[0]?.transcriptOriginal === "tem ta cinquenta", "snapshot hidrata transcript_original");
+
+  const { applyVoiceActionsToDocument } = await import("../lib/voiceCommand.ts");
+  const { parentPayloadForWrite } = await import("../lib/procedureMapper.ts");
+  const { clinicalChangeFingerprint, CLINICAL_FINGERPRINT_FIELDS } = await import("../lib/clinicalChangeFingerprint.ts");
+  const heard = "tem ta cinquenta";
+  const blankVoice = getBlankDocument();
+  const withTranscript = applyVoiceActionsToDocument(blankVoice, {}, null, new Date("2026-08-29T12:00:00Z"), heard);
+  assert(withTranscript.voiceTranscripts?.[0]?.transcriptOriginal === heard, "apply grava transcript_original sem mutar");
+  const appended = applyVoiceActionsToDocument(withTranscript, {}, null, new Date("2026-08-29T12:01:00Z"), heard);
+  assert(appended.voiceTranscripts?.length === 2, "nova fala faz append");
+  assert(
+    clinicalChangeFingerprint(withTranscript) !== clinicalChangeFingerprint(blankVoice),
+    "fingerprint muda ao gravar transcrição"
+  );
+  assert(
+    (CLINICAL_FINGERPRINT_FIELDS as readonly string[]).includes("voiceTranscripts"),
+    "fingerprint cobre voiceTranscripts"
+  );
+  const payloadVoice = parentPayloadForWrite(withTranscript, "alice-uid", { includeStatus: true });
+  assert(Array.isArray(payloadVoice.voice_transcripts), "mapper persiste voice_transcripts");
+
+  const modalSrc = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandConfirmModal.tsx"), "utf-8");
+  assert(modalSrc.includes("Transcrição original"), "Modal rotula transcrição original");
+  const voiceFn7 = fs.readFileSync(path.join(process.cwd(), "supabase/functions/voice-command/index.ts"), "utf-8");
+  assert(voiceFn7.includes("transcript_original"), "Edge declara transcript_original");
+  assert(voiceFn7.includes("voice-v2") && voiceFn7.includes("voice-actions-v2"), "Edge bumpou prompt/schema da voz");
+  assert(voiceFn7.includes("NÃO converta"), "Prompt proíbe corrigir fonema em transcript_original");
+
+  const mig7eName = fs.readdirSync(path.join(process.cwd(), "supabase/migrations")).find((f) => f.includes("voice_transcripts"));
+  assert(!!mig7eName, "Migration voice_transcripts existe");
+  const mig7e = fs.readFileSync(path.join(process.cwd(), "supabase/migrations", mig7eName as string), "utf-8");
+  assert(mig7e.includes("voice_transcripts") && mig7e.includes("voiceTranscripts"), "Migration inclui coluna e chave do selo");
+  assert(mig7e.includes("jsonb_array_length"), "Selo só inclui voiceTranscripts quando há itens");
+
+  assert(reviewUi.includes("PDF final (selo)"), "Review oferece PDF final do selo");
+  assert(reviewUi.includes("downloadSignedRecordPdf"), "Review baixa o PDF derivado do contrato 4B");
+  assert(reviewUi.includes("Transcrições originais"), "Review lista transcrições originais");
 
   const corsSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/cors.ts"), "utf-8");
   assert(corsSrc.includes("ANESTFLOW_CORS_ORIGIN"), "CORS aceita origem opcional");
@@ -1572,6 +1651,7 @@ try {
   const readme7 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
   assert(readme7.includes("Fase 7") && readme7.includes("toAIClinicalContext"), "README documenta Fase 7");
   assert(readme7.includes("20 min") && readme7.includes("lint:lib"), "README documenta lock e lint:lib");
+  assert(readme7.includes("transcript_original") && readme7.includes("PDF final (selo)"), "README documenta 7E/7F");
 } catch (err) {
   const extra =
     err && typeof err === "object" && "stderr" in err
