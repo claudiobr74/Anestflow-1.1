@@ -7,10 +7,10 @@ import {
   ensureUniqueClinicalEventIds
 } from "./syncEngine";
 import { subscribeProcedureRealtime } from "./procedureRealtime";
-import { isUuid } from "./procedureMapper";
+import { isUuid, expectedProcedureRevision } from "./procedureMapper";
 import { clinicalChangeFingerprint } from "./clinicalChangeFingerprint";
 import { canEditDocument } from "./assertCanEdit";
-import { isStaleRevisionError, mapClinicalError } from "./clinicalErrors";
+import { isStaleRevisionError, mapClinicalError, REMOTE_DIRTY_CONFLICT_MESSAGE } from "./clinicalErrors";
 
 export function useSyncEngine(
   ficha: AnesthesiaDocument,
@@ -109,21 +109,35 @@ export function useSyncEngine(
       } catch (err: unknown) {
         console.error(`[SyncEngine] Falha ao sincronizar documento ${docId}:`, err);
         if (isStaleRevisionError(err)) {
+          const localDoc = item.doc;
           SyncQueueManager.dequeue(docId);
           staleConflict = true;
-          setErrorMessage(mapClinicalError(err).message);
+          autosavePausedRef.current = true;
+          setAutosavePaused(true);
           const staleId = item.doc.id;
           if (isUuid(staleId)) {
             try {
               const remote = await getProcedureById(staleId);
               if (remote) {
-                lastDocStateHashRef.current = clinicalChangeFingerprint(remote);
-                fichaRef.current = remote;
-                if (onRemoteUpdate) onRemoteUpdate(remote);
+                const localFp = clinicalChangeFingerprint(localDoc);
+                const remoteFp = clinicalChangeFingerprint(remote);
+                if (localFp === remoteFp) {
+                  lastDocStateHashRef.current = remoteFp;
+                  fichaRef.current = remote;
+                  if (onRemoteUpdate) onRemoteUpdate(remote);
+                  setErrorMessage(mapClinicalError(err).message);
+                } else {
+                  setErrorMessage(REMOTE_DIRTY_CONFLICT_MESSAGE);
+                }
+              } else {
+                setErrorMessage(mapClinicalError(err).message);
               }
             } catch (reloadErr) {
               console.warn("[SyncEngine] Falha ao recarregar ficha após conflito de revision:", reloadErr);
+              setErrorMessage(mapClinicalError(err).message);
             }
+          } else {
+            setErrorMessage(mapClinicalError(err).message);
           }
           continue;
         }
@@ -257,8 +271,18 @@ export function useSyncEngine(
 
     const unsubscribe = subscribeProcedureRealtime(ficha.id, () => {
       if (isLocalSavingRef.current || !onRemoteUpdate) return;
-      void getProcedureById(ficha.id).then((remote) => {
+      const procedureId = fichaRef.current.id;
+      void getProcedureById(procedureId).then((remote) => {
         if (!remote || isLocalSavingRef.current) return;
+        const localRev = expectedProcedureRevision(fichaRef.current);
+        const remoteRev = expectedProcedureRevision(remote);
+        if (remoteRev < localRev) return;
+        const queued = SyncQueueManager.getPendingQueue()[procedureId];
+        if (queued) {
+          setStatus("error");
+          setErrorMessage(REMOTE_DIRTY_CONFLICT_MESSAGE);
+          return;
+        }
         lastDocStateHashRef.current = clinicalChangeFingerprint(remote);
         onRemoteUpdate(remote);
       }).catch((error) => {

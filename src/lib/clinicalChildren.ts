@@ -24,7 +24,37 @@ type ChildTable =
   | "procedure_infusions"
   | "procedure_events";
 
-type ExistingChild = { id: string; payload: Record<string, unknown> | null; created_by: string };
+type ExistingChild = {
+  id: string;
+  payload: Record<string, unknown> | null;
+  created_by: string;
+  voided_at?: string | null;
+  voided_by?: string | null;
+  void_reason?: string | null;
+};
+
+export type ClinicalChildKind = "vitals" | "medications" | "fluids" | "infusions" | "events";
+
+function mergeVoidMeta<T extends { id?: string }>(
+  item: T,
+  row: { voided_at?: string | null; voided_by?: string | null; void_reason?: string | null }
+): T {
+  if (!row.voided_at && !itemHasVoid(item)) return item;
+  return {
+    ...item,
+    voidedAt: row.voided_at || (item as { voidedAt?: string }).voidedAt,
+    voidedBy: row.voided_by || (item as { voidedBy?: string }).voidedBy,
+    voidReason: row.void_reason || (item as { voidReason?: string }).voidReason
+  };
+}
+
+function itemHasVoid(item: unknown): boolean {
+  return Boolean(item && typeof item === "object" && "voidedAt" in item && (item as { voidedAt?: string }).voidedAt);
+}
+
+export function isClinicalItemVoided(item: { voidedAt?: string } | null | undefined): boolean {
+  return Boolean(item?.voidedAt);
+}
 
 function minutesFrom(item: Record<string, unknown>): number | null {
   const value = item.minutesFromStart;
@@ -107,11 +137,11 @@ export async function loadClinicalChildren(procedureId: string): Promise<{
 }> {
   const supabase = getSupabase();
   const [vitals, meds, fluids, infusions, events, transfers] = await Promise.all([
-    supabase.from("procedure_vitals").select("id, clinical_at, minutes_from_start, payload").eq("procedure_id", procedureId).order("clinical_at"),
-    supabase.from("procedure_medications").select("id, clinical_at, minutes_from_start, payload").eq("procedure_id", procedureId).order("clinical_at"),
-    supabase.from("procedure_fluids").select("id, clinical_at, payload").eq("procedure_id", procedureId).order("clinical_at"),
-    supabase.from("procedure_infusions").select("id, clinical_at, payload").eq("procedure_id", procedureId).order("clinical_at"),
-    supabase.from("procedure_events").select("id, clinical_at, payload").eq("procedure_id", procedureId).order("clinical_at"),
+    supabase.from("procedure_vitals").select("id, clinical_at, minutes_from_start, payload, voided_at, voided_by, void_reason").eq("procedure_id", procedureId).order("clinical_at"),
+    supabase.from("procedure_medications").select("id, clinical_at, minutes_from_start, payload, voided_at, voided_by, void_reason").eq("procedure_id", procedureId).order("clinical_at"),
+    supabase.from("procedure_fluids").select("id, clinical_at, payload, voided_at, voided_by, void_reason").eq("procedure_id", procedureId).order("clinical_at"),
+    supabase.from("procedure_infusions").select("id, clinical_at, payload, voided_at, voided_by, void_reason").eq("procedure_id", procedureId).order("clinical_at"),
+    supabase.from("procedure_events").select("id, clinical_at, payload, voided_at, voided_by, void_reason").eq("procedure_id", procedureId).order("clinical_at"),
     supabase.from("procedure_transfers").select("id, clinical_at, outgoing_user_id, incoming_user_id, payload").eq("procedure_id", procedureId).order("clinical_at")
   ]);
 
@@ -120,10 +150,18 @@ export async function loadClinicalChildren(procedureId: string): Promise<{
   }
 
   const mapItems = <T extends { id?: string; minutesFromStart?: number }>(
-    rows: Array<{ id: string; payload?: Record<string, unknown> | null; minutes_from_start?: number | null; clinical_at?: string }> | null
+    rows: Array<{
+      id: string;
+      payload?: Record<string, unknown> | null;
+      minutes_from_start?: number | null;
+      clinical_at?: string;
+      voided_at?: string | null;
+      voided_by?: string | null;
+      void_reason?: string | null;
+    }> | null
   ): T[] => {
     return (rows || []).map((row) => {
-      const item = payloadToItem<T>(row);
+      const item = mergeVoidMeta(payloadToItem<T>(row), row);
       if (row.minutes_from_start != null && item.minutesFromStart == null) {
         item.minutesFromStart = row.minutes_from_start;
       }
@@ -191,6 +229,23 @@ export async function deleteClinicalEventItem(
   throw new Error(
     "Eventos clínicos não são apagados. Corrija com adendo ou cancele de forma auditável; exclusão de ficha vale só para rascunho."
   );
+}
+
+export async function voidClinicalItem(
+  kind: ClinicalChildKind,
+  itemId: string,
+  reason: string
+): Promise<{ revision?: number; already_voided?: boolean }> {
+  if (!isUuid(itemId)) {
+    throw new Error("Identificador clínico inválido para cancelamento.");
+  }
+  const { data, error } = await getSupabase().rpc("void_clinical_item", {
+    p_kind: kind,
+    p_item_id: itemId,
+    p_reason: reason
+  });
+  if (error) throwClinical(error, "Erro ao cancelar o lançamento clínico.");
+  return (data || {}) as { revision?: number; already_voided?: boolean };
 }
 
 export async function getClinicalEventItems<T extends { id?: string }>(

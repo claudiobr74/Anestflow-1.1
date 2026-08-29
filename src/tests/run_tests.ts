@@ -915,6 +915,7 @@ try {
   const blankEval = evaluateSigningReadiness(blankReady);
   assert(blankEval.canClose === false, "Ficha em branco não encerra");
   assert(blankEval.alerts.some((a) => a.level === "CRITICAL" && a.title.includes("Início")), "Falta de início é CRITICAL");
+  assert(blankEval.alerts.some((a) => a.level === "CRITICAL" && a.title.includes("Término")), "Falta de término é CRITICAL");
   assert(blankEval.alerts.some((a) => a.level === "CRITICAL" && a.title.includes("Responsável")), "Responsável ausente é CRITICAL");
   assert(blankEval.alerts.some((a) => a.level === "IMPORTANT" && a.module === "Technique"), "Técnica ausente é IMPORTANT, não bloqueio universal");
   assert(!blankEval.alerts.some((a) => /capno|EtCO|etco2/i.test(`${a.title} ${a.description}`)), "Capnografia não é critério de encerramento");
@@ -929,6 +930,7 @@ try {
   closeable.team.anesthesiologistLead = "Alice";
   closeable.team.crmLead = "12345";
   closeable.timers.startAnesthesia = "2026-08-29T12:00:00Z";
+  closeable.timers.endAnesthesia = "2026-08-29T14:00:00Z";
   closeable.technique.balanced = true;
   closeable.vitals = [{ id: "v1", timestamp: "2026-08-29T12:05:00Z", minutesFromStart: 5, fc: 72 }];
   closeable.bolusDrugs = [{ id: "d1", name: "Fentanil", timestamp: "2026-08-29T12:05:00Z" } as any];
@@ -939,8 +941,12 @@ try {
   assert(!readyEval.alerts.some((a) => a.level === "CRITICAL"), "Sem CRITICAL no caso mínimo");
   assert(!readyEval.alerts.some((a) => /capno|EtCO|etco2/i.test(`${a.title} ${a.description}`)), "IOT sem capnografia registrada não bloqueia");
 
-  const chrono = { ...closeable, timers: { startAnesthesia: "2026-08-29T13:00:00Z", startSurgery: "2026-08-29T12:00:00Z" } };
+  const chrono = { ...closeable, timers: { startAnesthesia: "2026-08-29T13:00:00Z", startSurgery: "2026-08-29T12:00:00Z", endAnesthesia: "2026-08-29T15:00:00Z" } };
   assert(evaluateSigningReadiness(chrono).canClose === false, "Cirurgia antes da anestesia é CRITICAL");
+  const endBeforeStart = { ...closeable, timers: { startAnesthesia: "2026-08-29T14:00:00Z", endAnesthesia: "2026-08-29T13:00:00Z" } };
+  assert(evaluateSigningReadiness(endBeforeStart).canClose === false, "Término antes do início é CRITICAL");
+  const pending = { ...closeable, pendingTransfer: { incomingUid: "bob", incomingName: "Bob", incomingCRM: "1", incomingUF: "SP", outgoingName: "Alice", outgoingCRM: "2", outgoingUF: "SP", requestedAt: "2026-08-29T12:00:00Z", clinicalConditions: "", incidentsReported: "", ongoingInfusions: "", pendingItems: "" } as any };
+  assert(evaluateSigningReadiness(pending).canClose === false, "Transferência pendente é CRITICAL");
 
   const saveSrcStatus = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
   assert(saveSrcStatus.includes("withInProgressIfAnesthesiaStarted"), "saveProcedure promove Draft → InProgress");
@@ -1334,11 +1340,11 @@ try {
   assert(isStaleRevisionError(staleMapped), "isStaleRevisionError reconhece a mensagem mapeada");
 
   const saveSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
-  assert(saveSrc.includes('.eq("revision"'), "saveProcedure condiciona o UPDATE à revision esperada");
-  assert(saveSrc.includes("stale_revision"), "saveProcedure lança stale_revision");
+  assert(saveSrc.includes('rpc("save_procedure_atomic"'), "saveProcedure usa save_procedure_atomic");
+  assert(saveSrc.includes("p_expected_revision"), "saveProcedure envia a revision esperada à RPC");
   assert(saveSrc.includes("applyRevisionMeta"), "saveProcedure devolve revision/updated_at ao cliente");
-  assert(saveSrc.includes("insertProcedureParent"), "INSERT da ficha não usa RETURNING (RLS de participante)");
-  assert(saveSrc.includes("INSERT ... RETURNING cai no RLS"), "Comentário explica por que o INSERT não faz select encadeado");
+  assert(saveSrc.includes("childrenPayloadForWrite"), "save atômico envia os filhos no mesmo payload");
+  assert(!/await persistClinicalChildren\(cleanedDoc/.test(saveSrc), "saveProcedure não persiste filhos em round-trip separado");
 
   const mapperSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/procedureMapper.ts"), "utf-8");
   assert(mapperSrc.includes("expectedProcedureRevision"), "Mapper expõe expectedProcedureRevision");
@@ -1737,6 +1743,8 @@ try {
     "fase04b_live.ts",
     "fase04_handover_live.ts",
     "fase06_live.ts",
+    "fase_atomic_live.ts",
+    "fase_longcase_live.ts",
     "onda3_live.ts",
     "checkpoint_live.ts"
   ];
@@ -2165,6 +2173,66 @@ try {
   assert(readme.includes("store: false"), "README documenta store false");
 } catch (err) {
   assert(false, `Falha na verificação da arquitetura Gemini: ${err}`);
+}
+
+// 24. TRANSAÇÃO CLÍNICA (atomicidade, void, readiness, realtime dirty)
+console.log("\n24. Verificando transação clínica (save atômico, void, readiness)...");
+try {
+  const { evaluateSigningReadiness } = await import("../lib/signingReadinessEngine.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+  const { childrenPayloadForWrite } = await import("../lib/procedureMapper.ts");
+  const { mapClinicalError, REMOTE_DIRTY_CONFLICT_MESSAGE } = await import("../lib/clinicalErrors.ts");
+  const { isClinicalItemVoided } = await import("../lib/clinicalChildren.ts");
+  const saveSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  const childrenSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalChildren.ts"), "utf-8");
+  const engineSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/signingReadinessEngine.ts"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  const mig = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260829234350_clinical_transaction.sql"), "utf-8");
+  const aiCfg = fs.readFileSync(path.join(process.cwd(), "src/lib/aiModelConfig.ts"), "utf-8");
+
+  assert(saveSrc.includes('rpc("save_procedure_atomic"'), "Cliente grava via save_procedure_atomic");
+  assert(mig.includes("create or replace function public.save_procedure_atomic"), "Migration cria a RPC pública");
+  assert(mig.includes("for update"), "RPC trava a linha do procedimento");
+  assert(mig.includes("raise exception 'stale_revision'"), "RPC devolve stale_revision específico");
+  assert(mig.includes("drop policy if exists procedure_events_delete"), "DELETE de evento clínico sai das policies");
+  assert(mig.includes("voided_by"), "Void grava identidade no banco");
+  assert(mig.includes("private.assert_signed_in_confirmed()"), "voided_by vem de auth.uid()");
+  assert(mig.includes("endAnesthesia"), "Servidor exige término da anestesia");
+  assert(mig.includes("pending_transfer_blocks_sign"), "Servidor bloqueia selo com transferência pendente");
+  assert(!mig.includes("create or replace function private.jsonb_child_rows"), "Migration não reescreve jsonb_child_rows (selos antigos)");
+
+  const blank = getBlankDocument();
+  const kids = childrenPayloadForWrite(blank);
+  assert(Array.isArray(kids.vitals) && Array.isArray(kids.medications), "Payload de filhos tem vitals e medications");
+  assert(isClinicalItemVoided({ voidedAt: "2026-08-29T12:00:00Z" }) === true, "voidedAt marca cancelamento");
+  assert(isClinicalItemVoided({}) === false, "sem voidedAt permanece ativo");
+
+  const ready = getBlankDocument();
+  ready.currentResponsibleUid = "alice-uid";
+  ready.patient.fullName = "Maria da Silva Santos";
+  ready.team.anesthesiologistLead = "Alice";
+  ready.team.crmLead = "12345";
+  ready.timers.startAnesthesia = "2026-08-29T12:00:00Z";
+  ready.timers.endAnesthesia = "2026-08-29T14:00:00Z";
+  assert(evaluateSigningReadiness(ready).canClose === true, "Início + término coerentes permitem encerrar");
+  assert(!evaluateSigningReadiness(ready).alerts.some((a) => /Mallampati|sistemas inicialmente/i.test(`${a.title} ${a.description}`)), "Defaults qualitativos não geram alerta");
+
+  assert(childrenSrc.includes("void_clinical_item"), "Cliente chama void_clinical_item");
+  assert(syncSrc.includes("REMOTE_DIRTY_CONFLICT_MESSAGE"), "Realtime dirty não aplica remoto em silêncio");
+  assert(syncSrc.includes("remoteRev < localRev"), "Realtime antigo não rebaixa revision");
+  assert(reviewSrc.includes("Confirmo que revisei os dados desta ficha"), "Confirmação de encerramento cita revisão dos defaults");
+  assert(engineSrc.includes("Término de Anestesia Pendente"), "Engine cliente exige término");
+  assert(mapClinicalError({ message: "pending_transfer_blocks_sign" }).message.toLowerCase().includes("transferência"), "pending_transfer_blocks_sign tem mensagem");
+  assert(REMOTE_DIRTY_CONFLICT_MESSAGE.includes("não salvas"), "Mensagem de dirty/remoto existe");
+
+  assert(aiCfg.includes("gemini-3.5-transcribe") && aiCfg.includes("gemini-3.6-flash"), "Baseline Gemini intacta");
+  assert(aiCfg.includes("voice-parser-v4") && aiCfg.includes("clinical-review-v4"), "Prompts de IA intactos");
+  assert(readme.includes("save_procedure_atomic"), "README documenta o save atômico");
+  assert(readme.includes("ATOMICITY_AND_RLS_AUDIT.md"), "README aponta a auditoria");
+} catch (err) {
+  assert(false, `Falha na verificação da transação clínica: ${err}`);
 }
 
 // 23. VERIFICAÇÃO FINAL DE RESULTADOS

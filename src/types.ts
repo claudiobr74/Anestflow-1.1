@@ -92,7 +92,13 @@ export interface PendingTransfer {
   requestedAt: string;
 }
 
-export interface ClinicalEvent {
+export type ClinicalVoidMeta = {
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+};
+
+export interface ClinicalEvent extends ClinicalVoidMeta {
   id: string;
   name: string;
   timestamp: string; // ISO or relative minutes
@@ -102,7 +108,7 @@ export interface ClinicalEvent {
   user?: string;
 }
 
-export interface VitalRecord {
+export interface VitalRecord extends ClinicalVoidMeta {
   id: string;
   timestamp: string; // ISO string
   minutesFromStart: number; // relative to start
@@ -125,7 +131,7 @@ export interface VitalRecord {
   p_plat?: number;
 }
 
-export interface BolusDrug {
+export interface BolusDrug extends ClinicalVoidMeta {
   id: string;
   name: string;
   dose?: number;
@@ -140,7 +146,7 @@ export interface BolusDrug {
   notes?: string;
 }
 
-export interface ContinuousInfusion {
+export interface ContinuousInfusion extends ClinicalVoidMeta {
   id: string;
   name: string;
   concentration?: string; // e.g., "1 mg/ml" — vazio se a voz/UI não informou
@@ -170,7 +176,7 @@ export interface InhalationAgent {
   endTime?: string;
 }
 
-export interface FluidRecord {
+export interface FluidRecord extends ClinicalVoidMeta {
   id: string;
   type: "Cristaloide" | "Coloide" | "Albumina" | "Concentrado de Hemácias" | "Plasma Fresco" | "Plaquetas" | "Crioprecipitado" | "Outro";
   name: string; // e.g., "Soro Ringer Lactato"

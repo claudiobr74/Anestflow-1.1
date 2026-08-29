@@ -756,7 +756,7 @@ export default function ReviewTab({
             </div>
             <h3 className="text-lg font-bold">Selar ficha anestésica?</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
-              Ao encerrar, o servidor monta o contrato clínico <strong>SignedAnesthesiaRecordV1</strong> e grava o <strong>selo criptográfico de integridade (SHA-256)</strong>. O navegador não envia o canonical. A ficha tornar-se-á <strong>estritamente imutável</strong>. Deseja prosseguir?
+              Confirmo que revisei os dados desta ficha, inclusive os campos previamente preenchidos com valores padrão, e que o conteúdo representa o estado clínico e o atendimento realizado. Ao encerrar, o servidor monta o contrato clínico <strong>SignedAnesthesiaRecordV1</strong> e grava o <strong>selo criptográfico de integridade (SHA-256)</strong>. O navegador não envia o canonical. A ficha tornar-se-á <strong>estritamente imutável</strong>.
             </p>
             <div className="mt-6 flex gap-3">
               <button

@@ -2,6 +2,8 @@ import React from "react";
 import { DraggablePanel } from "../DraggablePanel";
 import ClinicalChart from "../ClinicalChart";
 import { useIntraUi } from "./IntraoperativeUiContext";
+import { isUuid } from "../../lib/procedureMapper";
+import { voidClinicalItem } from "../../lib/clinicalChildren";
 
 export default function IntraoperativeChartLaunch() {
   const {
@@ -27,8 +29,21 @@ export default function IntraoperativeChartLaunch() {
             }}
             onRemoveVitalRecord={(id) => {
               onUpdateDocument((prev) => ({
-                vitals: (prev.vitals || []).filter(v => v.id !== id)
+                vitals: (prev.vitals || []).map((v) =>
+                  v.id === id
+                    ? {
+                        ...v,
+                        voidedAt: v.voidedAt || new Date().toISOString(),
+                        voidReason: v.voidReason || "Lançamento removido no gráfico"
+                      }
+                    : v
+                )
               }));
+              if (isUuid(ficha.id) && isUuid(id)) {
+                void voidClinicalItem("vitals", id, "Lançamento removido no gráfico").catch((err) => {
+                  console.warn("[chart] void de vital:", err);
+                });
+              }
             }}
             onUpdateVitalsList={(newVitals) => {
               onUpdateDocument(() => ({ vitals: newVitals }));

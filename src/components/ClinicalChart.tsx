@@ -31,7 +31,11 @@ export default function ClinicalChart({
   onRemoveVitalRecord,
   onUpdateVitalsList
 }: ClinicalChartProps) {
-  const { vitals = [], events = [], bolusDrugs = [], continuousInfusions = [], timers, inhalationAgents = [] } = ficha;
+  const { timers, inhalationAgents = [] } = ficha;
+  const vitals = (ficha.vitals || []).filter((v) => !v.voidedAt);
+  const events = (ficha.events || []).filter((e) => !e.voidedAt);
+  const bolusDrugs = (ficha.bolusDrugs || []).filter((d) => !d.voidedAt);
+  const continuousInfusions = (ficha.continuousInfusions || []).filter((i) => !i.voidedAt);
 
   const isDark = theme === "dark" || theme === "dark-clean";
   const cardClass = isDark
