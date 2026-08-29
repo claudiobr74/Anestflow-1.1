@@ -14,6 +14,7 @@ import ReviewTab from "./components/ReviewTab";
 import PdfPreviewModal from "./components/PdfPreviewModal";
 import AnestFlowLogo from "./components/AnestFlowLogo";
 import LoginScreen from "./components/LoginScreen";
+import WorkstationLockScreen from "./components/WorkstationLockScreen";
 import { Clock, Printer, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldAlert, FileText, Sun, Moon, LogOut, Download, Database, Users, BrainCircuit, Activity, Syringe, Droplet, Flag, Settings, ArrowRightLeft, MoreHorizontal, Lock, Eye, UserCheck } from "lucide-react";
 import ProceduresManagerModal from "./components/ProceduresManagerModal";
 import ShareModal from "./components/ShareModal";
@@ -45,7 +46,9 @@ import {
   clearClinicalBrowserCache,
   clearSessionClock,
   clearSessionEndReason,
+  needsSignatureStepUp,
   persistSessionEndReason,
+  readSessionClock,
   type SessionViolation,
 } from "./lib/sessionPolicy";
 import {
@@ -126,6 +129,8 @@ export default function App() {
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showReloadConfirm, setShowReloadConfirm] = useState(false);
+  const [workstationLocked, setWorkstationLocked] = useState(false);
+  const [lockReason, setLockReason] = useState<"idle" | "signature">("idle");
 
   useEffect(() => {
     if (!overflowMenuOpen) return;
@@ -402,10 +407,17 @@ export default function App() {
     setUser(null);
     setFicha(getBlankDocument());
     setActiveTab("patient");
+    setWorkstationLocked(false);
   }, []);
 
   useSessionGuard(Boolean(user?.uid), (reason) => {
     void handleLogout(reason);
+  }, {
+    locked: workstationLocked,
+    onLock: () => {
+      setLockReason("idle");
+      setWorkstationLocked(true);
+    },
   });
 
   // Calculate dynamic elapsed timing of the surgery
@@ -797,6 +809,11 @@ export default function App() {
     const gate = canEditDocument(ficha, user.uid);
     if (gate.ok === false) {
       alert(gate.message);
+      return;
+    }
+    if (needsSignatureStepUp({ ...readSessionClock(), now: Date.now() })) {
+      setLockReason("signature");
+      setWorkstationLocked(true);
       return;
     }
 
@@ -1357,6 +1374,16 @@ export default function App() {
         toggleTheme={toggleTheme}
         userEmail={user?.email || undefined}
       />
+
+      {workstationLocked && (
+        <WorkstationLockScreen
+          email={user.email}
+          isDark={isDark}
+          reason={lockReason}
+          onUnlocked={() => setWorkstationLocked(false)}
+          onLogout={() => { void handleLogout(); }}
+        />
+      )}
 
     </div>
   );

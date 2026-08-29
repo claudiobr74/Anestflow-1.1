@@ -136,7 +136,7 @@ serveAiFunction("voice-command", async (_user, body) => {
     return jsonResponse({ error: "Áudio não fornecido." }, 400);
   }
 
-  const text = await generateJsonWithRetry(
+  const { text, meta } = await generateJsonWithRetry(
     [
       { text: VOICE_PROMPT },
       {
@@ -148,11 +148,13 @@ serveAiFunction("voice-command", async (_user, body) => {
     ],
     "Retorne EXCLUSIVAMENTE um objeto JSON válido seguindo estritamente a estrutura solicitada. Nenhuma palavra a mais.",
     VOICE_SCHEMA,
+    { prompt_version: "voice-v1", schema_version: "voice-actions-v1" },
   );
 
   try {
-    return jsonResponse(JSON.parse(text || "{}"));
+    const parsed = JSON.parse(text || "{}") as Record<string, unknown>;
+    return jsonResponse({ ...parsed, ai: meta });
   } catch {
-    return jsonResponse({});
+    return jsonResponse({ ai: { ...meta, success: false } });
   }
 }, "O tempo limite para processamento do áudio foi excedido.");

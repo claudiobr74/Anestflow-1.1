@@ -3,6 +3,7 @@ import { AnesthesiaDocument, AnestheticNarrativeLaunch } from "../types";
 import { X, Check, Plus, Edit2, Copy, RotateCcw, FileText, Trash2, Star, Download, Upload, Clock, User, Shield, AlertCircle, FileDown, Eye, CheckCircle2, Sparkles, Loader2 } from "lucide-react";
 import { SYSTEM_MODELS, compileNarrativeDraft, AnesthesiaModel } from "../utils/narrativeTemplates";
 import { invokeAiFunction } from "../lib/aiFunctions";
+import { toAIClinicalContext } from "../lib/aiClinicalContext";
 
 interface AnesthesiaDescriptionDrawerProps {
   isOpen: boolean;
@@ -132,7 +133,7 @@ export default function AnesthesiaDescriptionDrawer({
     try {
       const data = await invokeAiFunction<{ description?: string }>(
         "generate-description",
-        { document: ficha, models },
+        { document: toAIClinicalContext(ficha), models },
         controller.signal
       );
       clearTimeout(timeoutId);

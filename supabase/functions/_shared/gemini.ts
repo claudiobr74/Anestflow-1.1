@@ -28,9 +28,19 @@ export type GeminiPart =
   | { text: string }
   | { inlineData: { mimeType: string; data: string } };
 
-const PRIMARY_MODELS = ["gemini-3.1-flash-lite", "gemini-flash-latest"];
+const PRIMARY_MODELS = ["gemini-3.1-flash-lite"];
 const ATTEMPT_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
+
+export type GeminiInvocationMeta = {
+  provider: "google-gemini";
+  model: string;
+  prompt_version: string;
+  schema_version: string;
+  timestamp: string;
+  latency_ms: number;
+  success: boolean;
+};
 
 function isTransient(message: string): boolean {
   return (
@@ -151,15 +161,18 @@ async function getGeminiApiKey(): Promise<string> {
 }
 
 /**
- * Calls Gemini with the same retry/fallback chain as the former Express routes.
- * Never log `parts` — they may contain PHI or audio.
+ * Calls Gemini with retry on the pinned model. Never log `parts` — they may contain PHI or audio.
+ * Return metadata is technical only (no chain-of-thought).
  */
 export async function generateJsonWithRetry(
   parts: GeminiPart[],
   systemInstruction: string,
   responseSchema: Record<string, unknown>,
-): Promise<string> {
+  options: { prompt_version: string; schema_version?: string },
+): Promise<{ text: string; meta: GeminiInvocationMeta }> {
   const apiKey = await getGeminiApiKey();
+  const started = Date.now();
+  const schema_version = options.schema_version ?? "1";
 
   const models = PRIMARY_MODELS.filter((m, i, arr) => m && arr.indexOf(m) === i);
   let lastError: unknown = null;
@@ -167,7 +180,19 @@ export async function generateJsonWithRetry(
   for (const model of models) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        return await generateOnce(apiKey, model, parts, systemInstruction, responseSchema);
+        const text = await generateOnce(apiKey, model, parts, systemInstruction, responseSchema);
+        return {
+          text,
+          meta: {
+            provider: "google-gemini",
+            model,
+            prompt_version: options.prompt_version,
+            schema_version,
+            timestamp: new Date().toISOString(),
+            latency_ms: Date.now() - started,
+            success: true,
+          },
+        };
       } catch (error) {
         lastError = error;
         if (error instanceof GeminiConfigError) throw error;

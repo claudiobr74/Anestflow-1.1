@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
+import { toAIClinicalContext } from "../lib/aiClinicalContext";
 import {
   AI_REVIEW_PARSE_FAILED,
   AI_REVIEW_UNAVAILABLE_MESSAGE,
@@ -226,7 +227,7 @@ export default function ReviewTab({
     try {
       const result = await invokeAiFunction<{ alerts?: Array<{ type: string; title: string; description: string; module: string }>; error?: string }>(
         "review",
-        ficha,
+        toAIClinicalContext(ficha),
         controller.signal
       );
       

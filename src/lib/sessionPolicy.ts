@@ -10,6 +10,10 @@ import {
 
 export const SESSION_TIMEBOX_MS = 12 * 60 * 60 * 1000;
 export const SESSION_INACTIVITY_MS = 8 * 60 * 60 * 1000;
+/** Lock da interface no posto; não destrói a ficha nem faz logout. */
+export const WORKSTATION_LOCK_MS = 20 * 60 * 1000;
+/** Assinatura pede senha de novo se o posto ficou ocioso (step-up). */
+export const SIGNATURE_STEP_UP_MS = 15 * 60 * 1000;
 
 export const SESSION_STARTED_KEY = "anestflow_session_started_at";
 export const SESSION_ACTIVITY_KEY = "anestflow_session_activity_at";
@@ -34,6 +38,28 @@ export function evaluateSession(args: {
     return "inactivity";
   }
   return null;
+}
+
+export function evaluateWorkstationLock(args: {
+  startedAt: number | null;
+  lastActivityAt: number | null;
+  now: number;
+  lockMs?: number;
+}): boolean {
+  const last = args.lastActivityAt ?? args.startedAt;
+  if (last == null) return false;
+  return args.now - last >= (args.lockMs ?? WORKSTATION_LOCK_MS);
+}
+
+export function needsSignatureStepUp(args: {
+  startedAt: number | null;
+  lastActivityAt: number | null;
+  now: number;
+  stepUpMs?: number;
+}): boolean {
+  const last = args.lastActivityAt ?? args.startedAt;
+  if (last == null) return true;
+  return args.now - last >= (args.stepUpMs ?? SIGNATURE_STEP_UP_MS);
 }
 
 export function sessionEndMessage(reason: SessionViolation): string {

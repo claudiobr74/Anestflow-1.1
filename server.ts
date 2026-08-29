@@ -9,6 +9,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { applySupabaseEnvFromFiles, describeSupabaseEnvPresence } from "./src/lib/supabaseEnvFiles";
 import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./src/lib/supabaseProject";
+import { applyAnestflowSecurityHeaders } from "./src/lib/securityHeaders";
 
 const projectRoot = process.cwd();
 dotenv.config({ path: path.join(projectRoot, ".env.local") });
@@ -21,12 +22,10 @@ const supabaseEnv = applySupabaseEnvFromFiles(
 const app = express();
 const PORT = 3000;
 
-// Security headers middleware
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-XSS-Protection", "1; mode=block");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+app.use((_req, res, next) => {
+  applyAnestflowSecurityHeaders((name, value) => {
+    res.setHeader(name, value);
+  });
   res.removeHeader("X-Powered-By");
   next();
 });
