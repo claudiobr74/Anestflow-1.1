@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnesthesiaDocument, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass, AnesthesiologistTransfer, PendingTransfer } from "./types";
-import { getMockDocument, getBlankDocument, calculateAge } from "./mockData";
+import { getMockDocument, getBlankDocument } from "./mockData";
 import PatientTab from "./components/PatientTab";
 import PreEvaluationTab from "./components/PreEvaluationTab";
 import IntraoperativeTab from "./components/IntraoperativeTab";
@@ -21,6 +21,13 @@ import SettingsModal, { AppSettings, DEFAULT_APP_SETTINGS } from "./components/S
 import TransferResponsibilityModal from "./components/TransferResponsibilityModal";
 import { PRESET_TEMPLATES } from "./components/AnesthesiaTemplatesModalData";
 import { VoiceCommandButton } from "./components/VoiceCommandButton";
+import { VoiceCommandConfirmModal } from "./components/VoiceCommandConfirmModal";
+import {
+  applyVoiceActionsToDocument,
+  sanitizeVoiceCommand,
+  summarizeVoiceActions,
+  type SanitizedVoiceActions,
+} from "./lib/voiceCommand";
 import { useSyncEngine } from "./lib/useSyncEngine";
 import SyncStatusBadge from "./components/SyncStatusBadge";
 import { claimResponsibilityAtomic, transferResponsibilityAtomic } from "./lib/proceduresService";
@@ -74,6 +81,10 @@ export default function App() {
   });
 
   const [pendingTemplateForReview, setPendingTemplateForReview] = useState<any>(null);
+  const [pendingVoice, setPendingVoice] = useState<{
+    transcription: string;
+    actions: SanitizedVoiceActions | null;
+  } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark" | "dark-clean">(() => {
     const saved = localStorage.getItem("anesthesia_theme");
     return (saved as "light" | "dark" | "dark-clean") || "light";
@@ -748,361 +759,69 @@ export default function App() {
     }));
   };
 
-  const extractNumber = (val: any) => {
-    if (val === undefined || val === null) return undefined;
-    const parsed = parseFloat(String(val).replace(/,/g, '.').replace(/[^\d.-]/g, ''));
-    return isNaN(parsed) ? undefined : parsed;
-  };
-
-  const parseDateToYYYYMMDD = (val: string | undefined | null) => {
-    if (!val) return undefined;
-    const str = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-      return str;
-    }
-    const matchDMY = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
-    if (matchDMY) {
-      const day = matchDMY[1].padStart(2, "0");
-      const month = matchDMY[2].padStart(2, "0");
-      const year = matchDMY[3];
-      return `${year}-${month}-${day}`;
-    }
-    
-    // Suporte a datas escritas por extenso em português (ex: "12 de novembro de 1974")
-    const months: { [key: string]: string } = {
-      janeiro: "01", fev: "02", fevereiro: "02", mar: "03", marco: "03", março: "03",
-      abr: "04", abril: "04", mai: "05", maio: "05", jun: "06", junho: "06",
-      jul: "07", julho: "07", ago: "08", agosto: "08", set: "09", setembro: "09",
-      out: "10", outubro: "10", nov: "11", novembro: "11", dez: "12", dezembro: "12"
-    };
-    
-    const textMatch = str.toLowerCase().match(/^(\d{1,2})\s+(?:de\s+)?([a-zçáéíóú]+)\s+(?:de\s+)?(\d{4})$/i);
-    if (textMatch) {
-      const day = textMatch[1].padStart(2, "0");
-      const monthStr = textMatch[2];
-      const year = textMatch[3];
-      const monthNum = months[monthStr];
-      if (monthNum) {
-        return `${year}-${monthNum}-${day}`;
-      }
-    }
-    
-    // Se for formato ISO completo (ex: "1974-11-12T00:00:00.000Z")
-    if (str.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(str)) {
-      return str.slice(0, 10);
-    }
-
-    return str;
-  };
-
-  const sanitizeVoiceCommand = (actions: any) => {
-    if (!actions || typeof actions !== 'object') return null;
-
-    const result: any = {};
-    let hasValidData = false;
-
-    if (Array.isArray(actions.templates) && actions.templates.length > 0) {
-      result.templates = actions.templates;
-      hasValidData = true;
-    }
-    if (actions.patient && typeof actions.patient === 'object' && Object.keys(actions.patient).length > 0) {
-      result.patient = actions.patient;
-      hasValidData = true;
-    }
-    if (actions.timers && typeof actions.timers === 'object' && Object.keys(actions.timers).length > 0) {
-      result.timers = actions.timers;
-      hasValidData = true;
-    }
-    if (Array.isArray(actions.bolusDrugs) && actions.bolusDrugs.length > 0) {
-      result.bolusDrugs = actions.bolusDrugs;
-      hasValidData = true;
-    }
-    if (Array.isArray(actions.continuousInfusions) && actions.continuousInfusions.length > 0) {
-      result.continuousInfusions = actions.continuousInfusions;
-      hasValidData = true;
-    }
-    if (actions.vitals && typeof actions.vitals === 'object' && Object.keys(actions.vitals).length > 0) {
-      result.vitals = actions.vitals;
-      hasValidData = true;
-    }
-    if (Array.isArray(actions.events) && actions.events.length > 0) {
-      result.events = actions.events;
-      hasValidData = true;
-    }
-
-    return hasValidData ? result : null;
-  };
-
-  const handleVoiceCommand = (actions: any) => {
-    console.log("[Diagnostic] Received voice command actions:", actions);
-    const sanitized = sanitizeVoiceCommand(actions);
-    if (!sanitized) {
-      console.log("[Diagnostic] No valid actions to process from voice command.");
-      return;
-    }
-
-    if (sanitized.templates) {
-      console.log("[Diagnostic] Processing templates request:", sanitized.templates);
-      try {
-        const stored = localStorage.getItem("anesthesia_templates");
-        let allTemplates: any[] = [...PRESET_TEMPLATES];
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed)) {
-              allTemplates = [...allTemplates, ...parsed];
-            }
-          } catch (err) {}
+  const applyPendingVoiceTemplate = (names: string[] | undefined) => {
+    if (!names || names.length === 0) return;
+    try {
+      const stored = localStorage.getItem("anesthesia_templates");
+      let allTemplates: any[] = [...PRESET_TEMPLATES];
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            allTemplates = [...allTemplates, ...parsed];
+          }
+        } catch {
+          /* ignore malformed local templates */
         }
-        
-        const requestedName = sanitized.templates[0];
-        const nameStr = typeof requestedName === "string" ? requestedName : (requestedName?.name || "");
-        const template = allTemplates.find(t => {
-          if (!t?.name || !nameStr) return false;
-          const removeAccents = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          const tName = removeAccents(t.name.toLowerCase());
-          const reqName = removeAccents(nameStr.toLowerCase());
-          
-          if (reqName.includes("cesarea") && tName.includes("cesariana")) return true;
-          if (reqName.includes("cesariana") && tName.includes("cesarea")) return true;
-          const isMatch = tName.includes(reqName) || reqName.includes(tName);
-          if (isMatch) return true;
-          const reqWords = reqName.split(" ").filter(w => w.length > 3);
-          const tWords = tName.split(" ").filter(w => w.length > 3);
-          if (reqWords.some(rw => tWords.some(tw => tw.includes(rw) || rw.includes(tw)))) return true;
-          return false;
-        });
-
-        if (template) {
-          console.log("[Diagnostic] Setting template:", template.name);
-          setPendingTemplateForReview(template);
-          setActiveTab("intra");
-        } else {
-          console.log("[Diagnostic] Template not found for:", nameStr);
-        }
-      } catch (e) {
-        console.error("Error handling template from voice:", e);
       }
+
+      const requestedName = names[0];
+      const nameStr = typeof requestedName === "string" ? requestedName : "";
+      const template = allTemplates.find((t) => {
+        if (!t?.name || !nameStr) return false;
+        const removeAccents = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const tName = removeAccents(t.name.toLowerCase());
+        const reqName = removeAccents(nameStr.toLowerCase());
+
+        if (reqName.includes("cesarea") && tName.includes("cesariana")) return true;
+        if (reqName.includes("cesariana") && tName.includes("cesarea")) return true;
+        if (tName.includes(reqName) || reqName.includes(tName)) return true;
+        const reqWords = reqName.split(" ").filter((w) => w.length > 3);
+        const tWords = tName.split(" ").filter((w) => w.length > 3);
+        return reqWords.some((rw) => tWords.some((tw) => tw.includes(rw) || rw.includes(tw)));
+      });
+
+      if (template) {
+        setPendingTemplateForReview(template);
+        setActiveTab("intra");
+      }
+    } catch {
+      /* template lookup is best-effort */
     }
+  };
 
-    const hasDocUpdates = sanitized.patient || sanitized.timers || sanitized.bolusDrugs || sanitized.continuousInfusions || sanitized.vitals || sanitized.events;
+  const handleVoiceCommandConfirm = () => {
+    const pending = pendingVoice;
+    setPendingVoice(null);
+    if (!pending?.actions) return;
+    if (document.status === "Signed") return;
 
+    applyPendingVoiceTemplate(pending.actions.templates);
+
+    const hasDocUpdates = Boolean(
+      pending.actions.patient ||
+      pending.actions.timers ||
+      pending.actions.bolusDrugs ||
+      pending.actions.continuousInfusions ||
+      pending.actions.inhalationAgents ||
+      pending.actions.vitals ||
+      pending.actions.events
+    );
     if (!hasDocUpdates) return;
 
-    try {
-      setDocumentWithBroadcast((prev) => {
-        if (prev.status === "Signed") {
-          console.warn("Document is signed. Voice updates ignored.");
-          return prev;
-        }
-        let newDoc = { ...prev };
-        
-        if (sanitized.patient) {
-          const getPatientProp = (keys: string[]) => {
-            for (const key of keys) {
-              if (sanitized.patient[key] !== undefined && sanitized.patient[key] !== null) {
-                return sanitized.patient[key];
-              }
-            }
-            return undefined;
-          };
-
-          const rawFullName = getPatientProp(["fullName", "fullname", "full_name", "nome", "nome_completo", "nomeCompleto"]);
-          const rawDob = getPatientProp(["dob", "birthDate", "birthdate", "birth_date", "data_nascimento", "dataNascimento", "nascimento"]);
-          const rawAge = getPatientProp(["age", "idade"]);
-          const rawWeight = getPatientProp(["weight", "peso"]);
-          const rawRecordNumber = getPatientProp(["recordNumber", "recordnumber", "record_number", "prontuario", "prontuário", "numero_prontuario", "num_prontuario", "numero", "número"]);
-          const rawAdmissionNumber = getPatientProp(["admissionNumber", "admissionnumber", "admission_number", "atendimento", "numero_atendimento", "num_atendimento", "atendimentos"]);
-          const rawBed = getPatientProp(["bed", "leito", "quarto"]);
-
-          const parsedDob = parseDateToYYYYMMDD(rawDob);
-          const newAge = rawAge !== undefined && rawAge !== null 
-            ? extractNumber(rawAge) 
-            : (parsedDob ? calculateAge(parsedDob) : undefined);
-          const newWeight = extractNumber(rawWeight);
-
-          newDoc.patient = {
-            ...newDoc.patient,
-            ...(rawFullName !== undefined && rawFullName !== null && { fullName: String(rawFullName) }),
-            ...(newAge !== undefined && { age: newAge }),
-            ...(newWeight !== undefined && { weight: newWeight }),
-            ...(rawRecordNumber !== undefined && rawRecordNumber !== null && { recordNumber: String(rawRecordNumber) }),
-            ...(rawAdmissionNumber !== undefined && rawAdmissionNumber !== null && { admissionNumber: String(rawAdmissionNumber) }),
-            ...(rawBed !== undefined && rawBed !== null && { bed: String(rawBed) }),
-            ...(parsedDob && { birthDate: parsedDob }),
-          };
-        }
-
-        if (sanitized.timers) {
-          newDoc.timers = { ...newDoc.timers };
-          const now = new Date();
-          if (sanitized.timers.startAnesthesia) {
-            newDoc.timers.startAnesthesia = now.toISOString();
-            newDoc.events = [
-              ...(newDoc.events || []),
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: now.toISOString(),
-                minutesFromStart: 0,
-                category: 'Marcador Temporal',
-                name: 'Início Anestesia'
-              }
-            ];
-          }
-          if (sanitized.timers.startSurgeryMinutes !== undefined && sanitized.timers.startSurgeryMinutes !== null) {
-            const futureTime = new Date(now.getTime() + sanitized.timers.startSurgeryMinutes * 60000);
-            newDoc.timers.startSurgery = futureTime.toISOString();
-            newDoc.events = [
-              ...(newDoc.events || []),
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: futureTime.toISOString(),
-                minutesFromStart: newDoc.timers.startAnesthesia ? Math.floor((futureTime.getTime() - new Date(newDoc.timers.startAnesthesia).getTime()) / 60000) : 0,
-                category: 'Marcador Temporal',
-                name: 'Início Cirurgia'
-              }
-            ];
-          } else if (sanitized.timers.startSurgery) {
-            newDoc.timers.startSurgery = now.toISOString();
-            newDoc.events = [
-              ...(newDoc.events || []),
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: now.toISOString(),
-                minutesFromStart: newDoc.timers.startAnesthesia ? Math.floor((now.getTime() - new Date(newDoc.timers.startAnesthesia).getTime()) / 60000) : 0,
-                category: 'Marcador Temporal',
-                name: 'Início Cirurgia'
-              }
-            ];
-          }
-          if (sanitized.timers.endSurgery) {
-            newDoc.timers.endSurgery = now.toISOString();
-            newDoc.events = [
-              ...(newDoc.events || []),
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: now.toISOString(),
-                minutesFromStart: newDoc.timers.startAnesthesia ? Math.floor((now.getTime() - new Date(newDoc.timers.startAnesthesia).getTime()) / 60000) : 0,
-                category: 'Marcador Temporal',
-                name: 'Fim Cirurgia'
-              }
-            ];
-          }
-          if (sanitized.timers.endAnesthesia) {
-            newDoc.timers.endAnesthesia = now.toISOString();
-            newDoc.events = [
-              ...(newDoc.events || []),
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: now.toISOString(),
-                minutesFromStart: newDoc.timers.startAnesthesia ? Math.floor((now.getTime() - new Date(newDoc.timers.startAnesthesia).getTime()) / 60000) : 0,
-                category: 'Marcador Temporal',
-                name: 'Fim Anestesia'
-              }
-            ];
-          }
-        }
-
-        const targetMins = selectedMinutes !== null ? selectedMinutes : (prev.timers.startAnesthesia ? Math.floor((Date.now() - new Date(prev.timers.startAnesthesia).getTime()) / 60000) : 0);
-
-        if (sanitized.bolusDrugs) {
-          newDoc.bolusDrugs = [
-            ...(newDoc.bolusDrugs || []),
-            ...sanitized.bolusDrugs.map((d: any) => ({
-              id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-              timestamp: new Date().toISOString(),
-              minutesFromStart: targetMins,
-              name: String(d.name || ''),
-              dose: extractNumber(d.dose) || 0,
-              unit: String(d.unit || 'mg'),
-              route: String(d.route || 'EV'),
-            }))
-          ];
-        }
-        
-        if (sanitized.continuousInfusions) {
-          newDoc.continuousInfusions = [
-            ...(newDoc.continuousInfusions || []),
-            ...sanitized.continuousInfusions.map((d: any) => ({
-              id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-              name: String(d.name || ''),
-              concentration: "1", 
-              diluent: "",
-              totalVolumePrepared: 100,
-              unit: String(d.rateUnit || 'mcg/kg/min'),
-              history: [{
-                timestamp: new Date().toISOString(),
-                minutesFromStart: targetMins,
-                rate: extractNumber(d.rate) || 0,
-                status: "Iniciado"
-              }]
-            }))
-          ];
-        }
-
-        if (sanitized.vitals) {
-          const snappedMinutes = prev.timers.startAnesthesia ? Math.round(Math.floor((Date.now() - new Date(prev.timers.startAnesthesia).getTime()) / 60000) / 5) * 5 : 0;
-          const mins = selectedMinutes !== null ? selectedMinutes : Math.max(0, snappedMinutes);
-          
-          const vitalsUpdate: any = {
-            ...(sanitized.vitals.hr && { fc: Number(sanitized.vitals.hr) }),
-            ...(sanitized.vitals.systolic && { pas: Number(sanitized.vitals.systolic) }),
-            ...(sanitized.vitals.diastolic && { pad: Number(sanitized.vitals.diastolic) }),
-            ...(sanitized.vitals.spo2 && { spo2: Number(sanitized.vitals.spo2) }),
-            ...(sanitized.vitals.etco2 && { etco2: Number(sanitized.vitals.etco2) }),
-            ...(sanitized.vitals.temp && { temp: Number(sanitized.vitals.temp) })
-          };
-
-          const existingVitals = [...(newDoc.vitals || [])];
-          const existingIndex = existingVitals.findIndex(v => v.minutesFromStart === mins);
-
-          let finalPas = vitalsUpdate.pas;
-          let finalPad = vitalsUpdate.pad;
-          if (existingIndex >= 0) {
-            if (finalPas === undefined) finalPas = existingVitals[existingIndex].pas;
-            if (finalPad === undefined) finalPad = existingVitals[existingIndex].pad;
-          }
-          if (finalPas !== undefined && finalPad !== undefined) {
-            vitalsUpdate.pam = Math.round(finalPad + (finalPas - finalPad) / 3);
-          }
-
-          if (existingIndex >= 0) {
-            existingVitals[existingIndex] = {
-              ...existingVitals[existingIndex],
-              ...vitalsUpdate
-            };
-            newDoc.vitals = existingVitals;
-          } else {
-            newDoc.vitals = [
-              ...existingVitals,
-              {
-                id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-                timestamp: new Date().toISOString(),
-                minutesFromStart: mins,
-                ...vitalsUpdate
-              }
-            ];
-          }
-        }
-
-        if (sanitized.events) {
-          newDoc.events = [
-            ...(newDoc.events || []),
-            ...sanitized.events.map((e: any) => ({
-              id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-              timestamp: new Date().toISOString(),
-              minutesFromStart: targetMins,
-              category: String(e.category || 'Outro'),
-              name: String(e.name || '')
-            }))
-          ];
-        }
-
-        return newDoc;
-      });
-    } catch (err) {
-      console.error("Failed to process voice command in state:", err);
-    }
+    setDocumentWithBroadcast((prev) =>
+      applyVoiceActionsToDocument(prev, pending.actions!, selectedMinutes)
+    );
   };
 
   const triggerResetToBlank = () => {
@@ -1288,6 +1007,18 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-1.5">
+              <VoiceCommandButton
+                isDark={isDark}
+                disabled={document.status === "Signed"}
+                startAiSupervisor={startAiSupervisor}
+                stopAiSupervisor={stopAiSupervisor}
+                onCommandProcessed={({ transcription, identifiedActions }) => {
+                  setPendingVoice({
+                    transcription,
+                    actions: sanitizeVoiceCommand(identifiedActions),
+                  });
+                }}
+              />
               <button 
                 onClick={() => setShowPrintModal(true)} 
                 className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-sm font-medium transition-colors flex items-center gap-1.5"
@@ -1553,6 +1284,16 @@ export default function App() {
         }}
         userId={user?.uid || ""}
         isDark={isDark}
+      />
+
+      <VoiceCommandConfirmModal
+        isOpen={Boolean(pendingVoice)}
+        transcription={pendingVoice?.transcription || ""}
+        summaries={pendingVoice?.actions ? summarizeVoiceActions(pendingVoice.actions) : []}
+        canApply={Boolean(pendingVoice?.actions)}
+        isDark={isDark}
+        onDismiss={() => setPendingVoice(null)}
+        onConfirm={handleVoiceCommandConfirm}
       />
 
       {/* CUSTOM CONFIRMATION DIALOG: RESET TO BLANK */}

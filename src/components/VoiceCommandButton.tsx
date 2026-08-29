@@ -1,17 +1,25 @@
 import React, { useState, useRef } from "react";
-import { Mic, Square, Loader2, Info, Zap } from "lucide-react";
+import { Mic, Loader2, Zap } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
-export interface VoiceCommandButtonProps { 
+
+export interface VoiceCommandResult {
+  transcription: string;
+  identifiedActions: unknown;
+}
+
+export interface VoiceCommandButtonProps {
   isDark?: boolean;
-  onCommandProcessed?: (actions: any) => void;
+  disabled?: boolean;
+  onCommandProcessed?: (result: VoiceCommandResult) => void;
   className?: string;
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
   stopAiSupervisor?: (reason: string) => void;
 }
 
-export function VoiceCommandButton({ 
-  isDark, 
-  onCommandProcessed, 
+export function VoiceCommandButton({
+  isDark,
+  disabled = false,
+  onCommandProcessed,
   className,
   startAiSupervisor,
   stopAiSupervisor
@@ -25,6 +33,7 @@ export function VoiceCommandButton({
   
 
   const handleStartRecording = async () => {
+    if (disabled || isProcessing) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
@@ -113,18 +122,25 @@ export function VoiceCommandButton({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const data = await invokeAiFunction<{ identifiedActions?: unknown }>(
+      const data = await invokeAiFunction<{ transcription?: string; identifiedActions?: unknown }>(
         "voice-command",
         { audioBase64: base64data, mimeType: mimeTypeUsed },
         controller.signal
       );
       
       clearTimeout(timeoutId);
-      
-      console.log("Comando de voz processado:", data);
-      
-      if (onCommandProcessed && data.identifiedActions) {
-        onCommandProcessed(data.identifiedActions);
+
+      const transcription = typeof data.transcription === "string" ? data.transcription : "";
+      const identifiedActions = data.identifiedActions ?? {};
+      const hasActions =
+        identifiedActions &&
+        typeof identifiedActions === "object" &&
+        Object.keys(identifiedActions as object).length > 0;
+
+      if (!transcription.trim() && !hasActions) {
+        setResultMsg({ type: "info", text: "O áudio não gerou transcrição nem lançamentos." });
+      } else if (onCommandProcessed) {
+        onCommandProcessed({ transcription, identifiedActions });
       }
 
       if (stopAiSupervisor) {
@@ -192,16 +208,19 @@ export function VoiceCommandButton({
         )}
         <button
           onClick={isRecording ? handleStopRecording : handleStartRecording}
-          disabled={isProcessing}
-          title="Assistente de Voz IA"
+          disabled={isProcessing || disabled}
+          title={disabled ? "Ficha assinada — voz não altera o registro" : "Assistente de Voz IA"}
+          aria-label={disabled ? "Assistente de voz indisponível na ficha assinada" : "Assistente de Voz IA"}
           className={`relative w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 transform hover:scale-105 active:scale-95 ${
             isRecording 
               ? "bg-gradient-to-tr from-rose-600 to-rose-400 text-white ring-4 ring-rose-500/30" 
               : isProcessing
                 ? "bg-gradient-to-tr from-amber-500 to-amber-400 text-white opacity-90 cursor-not-allowed"
-                : isDark
-                  ? "bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white ring-2 ring-indigo-500/20"
-                  : "bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white ring-2 ring-indigo-600/20"
+                : disabled
+                  ? "bg-zinc-400 text-white opacity-50 cursor-not-allowed"
+                  : isDark
+                    ? "bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white ring-2 ring-indigo-500/20"
+                    : "bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white ring-2 ring-indigo-600/20"
           }`}
         >
           {isProcessing ? (

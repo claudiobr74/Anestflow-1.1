@@ -1,0 +1,114 @@
+import React from "react";
+import { Mic, X } from "lucide-react";
+
+export interface VoiceCommandConfirmModalProps {
+  isOpen: boolean;
+  transcription: string;
+  summaries: string[];
+  canApply: boolean;
+  isDark?: boolean;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}
+
+export function VoiceCommandConfirmModal({
+  isOpen,
+  transcription,
+  summaries,
+  canApply,
+  isDark = false,
+  onConfirm,
+  onDismiss,
+}: VoiceCommandConfirmModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="voice-confirm-title"
+    >
+      <div
+        className={`w-full max-w-md rounded-xl p-5 shadow-lg border text-left transition-all ${
+          isDark ? "bg-[#1C1C1E] border-zinc-800 text-white" : "bg-white border-zinc-200 text-zinc-900"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+              <Mic className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 id="voice-confirm-title" className="text-lg font-bold">
+                Conferir comando de voz
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Nada é lançado na ficha até você confirmar.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Fechar"
+            className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Transcrição</p>
+        <div
+          className={`max-h-32 overflow-y-auto rounded-lg border p-3 text-sm leading-relaxed ${
+            isDark ? "bg-zinc-900 border-zinc-800 text-zinc-200" : "bg-slate-50 border-slate-200 text-slate-800"
+          }`}
+        >
+          {transcription.trim() || "O modelo não devolveu transcrição."}
+        </div>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mt-4 mb-1">
+          Lançamentos identificados
+        </p>
+        {summaries.length > 0 ? (
+          <ul className="max-h-40 overflow-y-auto space-y-1.5 text-sm">
+            {summaries.map((line, index) => (
+              <li
+                key={`${index}-${line.slice(0, 24)}`}
+                className={`rounded-lg px-3 py-2 ${isDark ? "bg-zinc-900" : "bg-slate-50"}`}
+              >
+                {line}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Nenhum lançamento estruturado. Você pode só conferir o texto e descartar.
+          </p>
+        )}
+
+        <div className="mt-5 flex gap-3">
+          <button
+            type="button"
+            onClick={onDismiss}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-semibold border transition ${
+              isDark
+                ? "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700"
+                : "bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200"
+            }`}
+          >
+            Descartar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!canApply}
+            className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition shadow-xs"
+          >
+            Lançar na ficha
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

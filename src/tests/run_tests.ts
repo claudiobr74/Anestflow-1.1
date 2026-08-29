@@ -220,6 +220,12 @@ try {
   assert(reviewUi.includes('invokeAiFunction') && reviewUi.includes('"review"'), "ReviewTab invoca a função review");
   assert(!reviewUi.includes("/api/review"), "ReviewTab não chama /api/review");
   assert(voiceUi.includes('"voice-command"') && !voiceUi.includes("/api/voice-command"), "Voz usa Edge Function, não Express");
+  assert(voiceUi.includes("transcription"), "Botão de voz encaminha a transcrição para conferência");
+  assert(!voiceUi.includes("console.log(\"Comando de voz processado\""), "Botão de voz não loga o payload clínico");
+  const appVoice = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  assert(appVoice.includes("<VoiceCommandButton"), "Microfone de voz está montado no App");
+  assert(appVoice.includes("VoiceCommandConfirmModal"), "Confirmação da transcrição existe no App");
+  assert(appVoice.includes("handleVoiceCommandConfirm"), "Lançamento na ficha só após confirmar");
   assert(descUi.includes('"generate-description"') && !descUi.includes("/api/generate-description"), "Descrição usa Edge Function, não Express");
   assert(!server.includes("GEMINI_API_KEY"), "Express não lê GEMINI_API_KEY");
   assert(!server.includes("@google/genai"), "Express não depende de @google/genai");
@@ -347,7 +353,55 @@ try {
   assert(false, `Falha na verificação das env Vite: ${err}`);
 }
 
-// 9. VERIFICAÇÃO FINAL DE RESULTADOS
+// 9. ESCRIBA POR VOZ — CONFIRMAÇÃO, GASES E APLICAÇÃO
+console.log("\n9. Verificando escriba por voz (microfone, gases, confirmação)...");
+try {
+  const {
+    sanitizeVoiceCommand,
+    mapInhalationAgentName,
+    summarizeVoiceActions,
+    applyVoiceActionsToDocument,
+    parseDateToYYYYMMDD,
+  } = await import("../lib/voiceCommand.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+
+  assert(mapInhalationAgentName("sevo") === "Sevoflurano", "Jargão sevo vira Sevoflurano");
+  assert(mapInhalationAgentName("nora") === null, "Fármaco EV não é mapeado como gás");
+  assert(parseDateToYYYYMMDD("10 de maio de 1980") === "1980-05-10", "Data por extenso vira YYYY-MM-DD");
+
+  const raw = {
+    transcription: "cento e cinquenta de propofol e sevo",
+    identifiedActions: {
+      bolusDrugs: [{ name: "Propofol", dose: "150", unit: "mg", route: "EV" }],
+      inhalationAgents: [{ name: "sevo" }],
+      vitals: { hr: 65, systolic: 115, diastolic: 70, spo2: 99 },
+    },
+  };
+  const sanitized = sanitizeVoiceCommand(raw.identifiedActions);
+  assert(Boolean(sanitized?.inhalationAgents?.length), "sanitizeVoiceCommand preserva gases inalatórios");
+  assert(Boolean(sanitized?.bolusDrugs?.length), "sanitizeVoiceCommand preserva bolus");
+
+  const summary = summarizeVoiceActions(sanitized!);
+  assert(summary.some((line) => line.includes("Sevoflurano")), "Resumo cita o gás mapeado");
+  assert(summary.some((line) => /Propofol/i.test(line)), "Resumo cita o bolus");
+
+  const blank = getBlankDocument();
+  blank.status = "Draft";
+  const applied = applyVoiceActionsToDocument(blank, sanitized!, null, new Date("2026-08-29T12:00:00Z"));
+  assert(applied.bolusDrugs.some((d) => d.name === "Propofol" && d.dose === 150), "Bolus entra na ficha só na aplicação");
+  assert(applied.inhalationAgents.some((g) => g.agent === "Sevoflurano"), "Sevoflurano entra em inhalationAgents");
+  assert(applied.vitals.some((v) => v.fc === 65 && v.pas === 115 && v.pad === 70), "Vitais entram na ficha");
+  const again = applyVoiceActionsToDocument(applied, sanitized!, null, new Date("2026-08-29T12:01:00Z"));
+  assert(again.inhalationAgents.filter((g) => g.agent === "Sevoflurano").length === 1, "Gás já lançado não duplica");
+
+  const signed = { ...blank, status: "Signed" as const };
+  const ignored = applyVoiceActionsToDocument(signed, sanitized!, null);
+  assert(ignored.bolusDrugs.length === blank.bolusDrugs.length, "Ficha assinada ignora voz");
+} catch (err) {
+  assert(false, `Falha na verificação do escriba por voz: ${err}`);
+}
+
+// 10. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
