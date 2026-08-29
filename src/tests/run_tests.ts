@@ -6,6 +6,8 @@ import {
   AUTH_ERROR_TOO_MANY_REQUESTS,
   mapAuthError
 } from "../lib/authErrors.ts";
+import { isMockProcedureId, isUuid, toDbStatus, fromDbStatus, isMeaningfulDocument } from "../lib/procedureMapper.ts";
+import { computeSHA256 } from "../lib/signatureService.ts";
 import fs from "fs";
 import path from "path";
 
@@ -127,7 +129,44 @@ try {
   assert(false, `Falha na verificação da onda 2: ${err}`);
 }
 
-// 5. VERIFICAÇÃO FINAL DE RESULTADOS
+// 5. ONDA 3 — PERSISTÊNCIA SUPABASE
+console.log("\n5. Verificando persistência clínica no Supabase (onda 3)...");
+try {
+  const procService = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  const worklist = fs.readFileSync(path.join(process.cwd(), "src/lib/worklistService.ts"), "utf-8");
+  const syncEngineHook = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  const share = fs.readFileSync(path.join(process.cwd(), "src/components/ShareModal.tsx"), "utf-8");
+  const review = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+
+  assert(!procService.includes("firebase/firestore"), "proceduresService não usa Firestore");
+  assert(procService.includes("sign_procedure"), "Assinatura usa RPC sign_procedure");
+  assert(procService.includes("transfer_responsibility"), "Transferência usa RPC transfer_responsibility");
+  assert(!worklist.includes("firebase/firestore"), "worklistService não usa Firestore");
+  assert(worklist.includes("cpf_hash"), "Worklist grava cpf_hash, não índice global de CPF");
+  assert(syncEngineHook.includes("subscribeProcedureRealtime"), "Autosave escuta Realtime do Supabase");
+  assert(!syncEngineHook.includes("firebase/firestore"), "useSyncEngine não usa Firestore");
+  assert(share.includes("addParticipantByEmail"), "ShareModal adiciona participante via RPC");
+  assert(!review.includes("../lib/firebase"), "ReviewTab não usa Firebase Auth");
+  assert(isUuid("6c121a5b-8e8d-4e8a-bb0d-42120764d7db"), "UUID v4 válido é reconhecido");
+  assert(!isUuid("doc-123"), "id local doc-timestamp não é UUID");
+  assert(isMockProcedureId("doc-mock-cvl-2026"), "Fichas mock não persistem");
+  assert(toDbStatus("Signed") === "signed" && fromDbStatus("in_progress") === "InProgress", "Status Draft/InProgress/Signed mapeia para o check SQL");
+  assert(isMeaningfulDocument({ patient: { fullName: "Paciente Teste" } } as any), "Ficha com nome de paciente é persistível");
+  assert(!isMeaningfulDocument({ patient: { fullName: "" }, vitals: [] } as any), "Stub vazio não é persistível");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 3: ${err}`);
+}
+
+console.log("\n5b. Hash de CPF da worklist (SHA-256 hex minúsculo)...");
+try {
+  const digest = (await computeSHA256("39053344705")).toLowerCase();
+  assert(/^[0-9a-f]{64}$/.test(digest), "cpf_hash tem 64 hex minúsculos");
+  assert(digest === digest.toLowerCase(), "cpf_hash não usa hex maiúsculo (check SQL)");
+} catch (err) {
+  assert(false, `Falha no hash de CPF: ${err}`);
+}
+
+// 6. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

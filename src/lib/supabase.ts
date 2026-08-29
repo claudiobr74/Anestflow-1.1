@@ -1,8 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 function viteEnv(name: string): string {
-  const env = import.meta.env as Record<string, string | undefined>;
-  return (env[name] ?? "").trim();
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  if (env?.[name]) return (env[name] ?? "").trim();
+  if (typeof process !== "undefined" && process.env[name]) {
+    return (process.env[name] ?? "").trim();
+  }
+  return "";
 }
 
 export function getSupabaseUrl(): string {
