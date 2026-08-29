@@ -122,7 +122,11 @@ export function VoiceCommandButton({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const data = await invokeAiFunction<{ transcription?: string; identifiedActions?: unknown }>(
+      const data = await invokeAiFunction<{
+        transcript_original?: string;
+        transcription?: string;
+        identifiedActions?: unknown;
+      }>(
         "voice-command",
         { audioBase64: base64data, mimeType: mimeTypeUsed },
         controller.signal
@@ -130,7 +134,9 @@ export function VoiceCommandButton({
       
       clearTimeout(timeoutId);
 
-      const transcription = typeof data.transcription === "string" ? data.transcription : "";
+      const transcription = String(
+        data.transcript_original ?? data.transcription ?? ""
+      ).trim();
       const identifiedActions = data.identifiedActions ?? {};
       const hasActions =
         identifiedActions &&

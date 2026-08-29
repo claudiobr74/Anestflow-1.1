@@ -58,13 +58,13 @@ export function VoiceCommandConfirmModal({
           </button>
         </div>
 
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Transcrição</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Transcrição original</p>
         <div
           className={`max-h-32 overflow-y-auto rounded-lg border p-3 text-sm leading-relaxed ${
             isDark ? "bg-zinc-900 border-zinc-800 text-zinc-200" : "bg-slate-50 border-slate-200 text-slate-800"
           }`}
         >
-          {transcription.trim() || "O modelo não devolveu transcrição."}
+          {transcription.trim() || "O modelo não devolveu transcrição original."}
         </div>
 
         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mt-4 mb-1">
@@ -83,7 +83,7 @@ export function VoiceCommandConfirmModal({
           </ul>
         ) : (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Nenhum lançamento estruturado. Você pode só conferir o texto e descartar.
+            Nenhum lançamento estruturado. Você pode gravar a transcrição original mesmo assim.
           </p>
         )}
 

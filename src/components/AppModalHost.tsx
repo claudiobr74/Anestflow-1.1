@@ -121,7 +121,7 @@ export default function AppModalHost({
         isOpen={Boolean(pendingVoice)}
         transcription={pendingVoice?.transcription || ""}
         summaries={pendingVoice?.actions ? summarizeVoiceActions(pendingVoice.actions) : []}
-        canApply={Boolean(pendingVoice?.actions) && canEdit}
+        canApply={canEdit && Boolean(pendingVoice?.actions || pendingVoice?.transcription?.trim())}
         isDark={isDark}
         onDismiss={onDismissVoice}
         onConfirm={onConfirmVoice}

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
-import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash } from "lucide-react";
+import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash, FileDown, Mic } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
 import { toAIClinicalContext } from "../lib/aiClinicalContext";
 import {
@@ -23,6 +23,7 @@ import {
   verifyProcedureIntegrity
 } from "../lib/proceduresService";
 import { evaluateSigningReadiness } from "../lib/signingReadinessEngine";
+import { downloadSignedRecordPdf, toSignedAnesthesiaRecordV1 } from "../lib/pdfFinal";
 
 interface ReviewTabProps {
   ficha: AnesthesiaDocument;
@@ -216,6 +217,10 @@ export default function ReviewTab({
     }
   };
 
+  const handleDownloadFinalPdf = () => {
+    downloadSignedRecordPdf(toSignedAnesthesiaRecordV1(ficha));
+  };
+
   // Sign and Lock documents
   const handleSignDocument = () => {
     if (!canEdit) return;
@@ -345,12 +350,21 @@ export default function ReviewTab({
                 <KeyRound className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Selo criptográfico de integridade</span>
               </div>
-              <button
-                type="button"
-                onClick={handleVerifyIntegrity}
-                disabled={verifyingHash}
-                className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
-              >
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadFinalPdf}
+                  className="px-3 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-900 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-white rounded-lg shadow-xs transition flex items-center gap-1.5"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>PDF final (selo)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleVerifyIntegrity}
+                  disabled={verifyingHash}
+                  className="px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                >
                 {verifyingHash ? (
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
@@ -358,6 +372,7 @@ export default function ReviewTab({
                 )}
                 <span>Verificar Integridade SHA-256</span>
               </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -417,6 +432,25 @@ export default function ReviewTab({
           </div>
         )}
       </div>
+
+      {Array.isArray(ficha.voiceTranscripts) && ficha.voiceTranscripts.length > 0 && (
+        <div className="bg-white dark:bg-zinc-900 border-slate-200/60 dark:border-zinc-800/60 p-5 rounded-lg border shadow-sm">
+          <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-3 flex items-center gap-2">
+            <Mic className="w-4 h-4" />
+            Transcrições originais
+          </h4>
+          <ul className="space-y-2">
+            {ficha.voiceTranscripts.map((row) => (
+              <li
+                key={row.id}
+                className="text-sm rounded-lg border border-slate-200 dark:border-zinc-800 px-3 py-2 whitespace-pre-wrap"
+              >
+                {row.transcriptOriginal}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* CARD 2: PROPRIEDADE E RESPONSABILIDADE MÉDICA */}
       <div className="bg-white dark:bg-zinc-900 border-slate-200/60 dark:border-zinc-800/60 p-5 rounded-lg border shadow-sm transition-colors">

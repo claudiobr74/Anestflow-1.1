@@ -31,6 +31,7 @@ export const CLINICAL_FINGERPRINT_FIELDS = [
   "handover",
   "narrativeLaunches",
   "pendingTransfer",
+  "voiceTranscripts",
 ] as const;
 
 export type ClinicalFingerprintField = (typeof CLINICAL_FINGERPRINT_FIELDS)[number];

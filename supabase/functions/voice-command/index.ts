@@ -6,7 +6,16 @@ import { serveAiFunction } from "../_shared/serve.ts";
 const VOICE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    transcription: { type: "STRING", description: "Transcrição fiel do áudio." },
+    transcript_original: {
+      type: "STRING",
+      description:
+        "O que foi ouvido, sem corrigir jargão fonético. NÃO converta 'tem ta' em 'fenta' neste campo.",
+    },
+    transcription: {
+      type: "STRING",
+      description:
+        "Texto clínico opcionalmente normalizado. Nunca substitui transcript_original.",
+    },
     identifiedActions: {
       type: "OBJECT",
       properties: {
@@ -111,11 +120,14 @@ const VOICE_SCHEMA = {
       },
     },
   },
-  required: ["transcription", "identifiedActions"],
+  required: ["transcript_original", "identifiedActions"],
 };
 
 const VOICE_PROMPT = `Você é um assistente de IA atuando como 'Escriba Anestésico' avançado, especializado no contexto médico brasileiro.
 Seu objetivo é ouvir e interpretar com altíssima precisão o comando de voz do anestesiologista durante a cirurgia, extraindo as ações clínicas de forma estruturada.
+
+CADEIA OBRIGATÓRIA: áudio → transcrição original → interpretação clínica → ações propostas → confirmação humana → comando clínico.
+Nunca substitua silenciosamente o que foi ouvido pela interpretação.
 
 ATENÇÃO REDOBRADA AOS JARGÕES E ATALHOS VERBAIS DO BRASIL:
 - Fármacos: "propofol", "fenta" (fentanil), "remi" (remifentanil), "nora" ou "norinha" (noradrenalina), "sevo" (sevoflurano), "des" (desflurano), "keta" (cetamina), "cis" ou "nimbium" (cisatracúrio), "esmeron" ou "rocu" (rocurônio), "dex" ou "precedex" (dexmedetomidina), "adrena" (adrenalina), "atropo" (atropina).
@@ -127,8 +139,9 @@ ATENÇÃO REDOBRADA AOS JARGÕES E ATALHOS VERBAIS DO BRASIL:
 - Templates: Quando o usuário pedir para carregar/ativar um "protocolo" ou "template", retorne APENAS o nome base do protocolo (ex: se pedir "ativar protocolo de cesariana", retorne "cesariana"; se "carregar template de revascularização", retorne "revascularização").
 
 INSTRUÇÕES:
-1. Transcreva o áudio de forma ABSOLUTAMENTE FIEL E CORRETA para o português do Brasil no campo 'transcription'. Corrija fonemas mal compreendidos para o termo médico correto (ex: "tem ta" -> "fenta", "nora adrenalina" -> "noradrenalina").
-2. Preencha as estruturas relevantes (campo 'identifiedActions'). Se algo não for falado, deixe vazio. Extraia o máximo de informações e cruze os jargões para as categorias corretas.`;
+1. Campo 'transcript_original': transcreva exatamente o que foi ouvido, em português do Brasil, SEM corrigir jargão fonético. NÃO converta "tem ta" em "fenta" nem "nora adrenalina" em "noradrenalina" neste campo. Preserve a fala original.
+2. Campo 'transcription': opcional. Aqui você PODE normalizar termos clínicos (ex: "tem ta" → "fenta"). Este campo NUNCA substitui transcript_original e NÃO é a fonte da ficha.
+3. Preencha as estruturas relevantes (campo 'identifiedActions') com a interpretação clínica. Se algo não for falado, deixe vazio. Extraia o máximo de informações e cruze os jargões para as categorias corretas.`;
 
 serveAiFunction("voice-command", async (_user, body) => {
   const payload = body as { audioBase64?: string; mimeType?: string } | null;
@@ -148,7 +161,7 @@ serveAiFunction("voice-command", async (_user, body) => {
     ],
     "Retorne EXCLUSIVAMENTE um objeto JSON válido seguindo estritamente a estrutura solicitada. Nenhuma palavra a mais.",
     VOICE_SCHEMA,
-    { prompt_version: "voice-v1", schema_version: "voice-actions-v1" },
+    { prompt_version: "voice-v2", schema_version: "voice-actions-v2" },
   );
 
   try {

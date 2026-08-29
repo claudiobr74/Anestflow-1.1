@@ -303,25 +303,32 @@ export default function App() {
   const handleVoiceCommandConfirm = () => {
     const pending = pendingVoice;
     setPendingVoice(null);
-    if (!pending?.actions) return;
+    if (!pending) return;
     const gate = canEditDocument(ficha, user?.uid);
     if (gate.ok === false) {
       alert(gate.message);
       return;
     }
-    applyPendingVoiceTemplate(pending.actions.templates);
+    applyPendingVoiceTemplate(pending.actions?.templates);
+    const original = pending.transcription || "";
     const hasDocUpdates = Boolean(
-      pending.actions.patient ||
-      pending.actions.timers ||
-      pending.actions.bolusDrugs ||
-      pending.actions.continuousInfusions ||
-      pending.actions.inhalationAgents ||
-      pending.actions.vitals ||
-      pending.actions.events
+      pending.actions?.patient ||
+      pending.actions?.timers ||
+      pending.actions?.bolusDrugs ||
+      pending.actions?.continuousInfusions ||
+      pending.actions?.inhalationAgents ||
+      pending.actions?.vitals ||
+      pending.actions?.events
     );
-    if (!hasDocUpdates) return;
+    if (!hasDocUpdates && !original.trim()) return;
     setFichaWithBroadcast((prev) =>
-      applyVoiceActionsToDocument(prev, pending.actions!, selectedMinutes)
+      applyVoiceActionsToDocument(
+        prev,
+        pending.actions ?? {},
+        selectedMinutes,
+        new Date(),
+        original || undefined
+      )
     );
   };
 

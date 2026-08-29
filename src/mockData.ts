@@ -782,6 +782,7 @@ export function getMockDocument(): AnesthesiaDocument {
       notes: "Paciente com boa evolução na SRPA. Sinais vitais estáveis. Sem dor intensa, referiu apenas dor leve incisional, sem náuseas (Aldrete 10). Liberada para quarto conforme rotina institucional."
     },
     amendments: [],
+    voiceTranscripts: [],
     narrativeLaunches: [
       {
         id: "nl-1",
@@ -1060,6 +1061,7 @@ export function getBlankDocument(): AnesthesiaDocument {
       notes: ""
     },
     amendments: [],
-    narrativeLaunches: []
+    narrativeLaunches: [],
+    voiceTranscripts: []
   };
 }

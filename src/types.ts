@@ -563,6 +563,15 @@ export interface AnesthesiaDocument {
   handover: HandoverSummary;
   amendments: DocumentAmendment[];
   narrativeLaunches?: AnestheticNarrativeLaunch[];
+  /** Transcrições originais do escriba por voz. A interpretação da IA não substitui o que foi ouvido. */
+  voiceTranscripts?: VoiceTranscript[];
+}
+
+export interface VoiceTranscript {
+  id: string;
+  /** Texto ouvido, sem correção de jargão. Nunca mutar depois de gravar. */
+  transcriptOriginal: string;
+  createdAt: string;
 }
 
 /** Partial da ficha ou updater funcional (evita snapshot stale de arrays). */

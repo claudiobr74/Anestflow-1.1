@@ -437,6 +437,7 @@ export function applyVoiceActionsToDocument(
   actions: SanitizedVoiceActions,
   selectedMinutes: number | null,
   now = new Date(),
+  transcriptOriginal?: string,
 ): AnesthesiaDocument {
   if (prev.status === "Signed") return prev;
 
@@ -710,6 +711,22 @@ export function applyVoiceActionsToDocument(
           category: mapEventCategory(event.category),
           name: String(event.name || ""),
         })),
+      ],
+    };
+  }
+
+  const original =
+    typeof transcriptOriginal === "string" ? transcriptOriginal : "";
+  if (original.trim()) {
+    newDoc = {
+      ...newDoc,
+      voiceTranscripts: [
+        ...(newDoc.voiceTranscripts || []),
+        {
+          id: newClientId("vt"),
+          transcriptOriginal: original,
+          createdAt: nowIso,
+        },
       ],
     };
   }
