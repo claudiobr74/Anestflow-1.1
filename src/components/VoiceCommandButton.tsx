@@ -12,6 +12,7 @@ export interface VoiceCommandButtonProps {
   disabled?: boolean;
   onCommandProcessed?: (result: VoiceCommandResult) => void;
   className?: string;
+  variant?: "default" | "header";
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
   stopAiSupervisor?: (reason: string) => void;
 }
@@ -21,6 +22,7 @@ export function VoiceCommandButton({
   disabled = false,
   onCommandProcessed,
   className,
+  variant = "default",
   startAiSupervisor,
   stopAiSupervisor
 }: VoiceCommandButtonProps) {
@@ -183,10 +185,17 @@ export function VoiceCommandButton({
     }
   };
 
+  const isHeader = variant === "header";
+  const headerIdle = isDark
+    ? "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 text-[#7C3AED] transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 md:p-2 xl:h-10 xl:w-10"
+    : "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-1.5 text-[#7C3AED] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 md:p-2 xl:h-10 xl:w-10";
+  const headerBusy = isRecording
+    ? "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 p-1.5 text-rose-600 md:p-2 xl:h-10 xl:w-10"
+    : "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 p-1.5 text-amber-600 opacity-90 md:p-2 xl:h-10 xl:w-10";
+
   return (
-    <div className={`relative flex items-center justify-center gap-2 ${className || ''}`}>
-      {/* Indicadores de status em tempo real */}
-      {(isRecording || isProcessing) && (
+    <div className={`relative ${isHeader ? "inline-flex" : "flex items-center justify-center gap-2"} ${className || ""}`}>
+      {!isHeader && (isRecording || isProcessing) && (
         <span className={`text-xs md:text-xs font-bold px-2 py-1 rounded-lg animate-pulse whitespace-nowrap ${
           isRecording 
             ? "bg-rose-500/10 text-rose-500 border border-rose-500/20" 
@@ -197,7 +206,7 @@ export function VoiceCommandButton({
       )}
 
       {resultMsg && (
-        <div className={`absolute top-full mt-2 right-0 md:-right-4 z-50 p-3 rounded-lg shadow-sm text-xs font-bold w-64 animate-fade-in ${
+        <div className={`absolute top-full mt-2 right-0 z-50 p-3 rounded-lg shadow-sm text-xs font-bold w-64 animate-fade-in ${
           resultMsg.type === "error" 
             ? "bg-red-500 text-white" 
             : resultMsg.type === "success" 
@@ -209,36 +218,45 @@ export function VoiceCommandButton({
       )}
       
       <div className="relative">
-        {isRecording && (
+        {!isHeader && isRecording && (
           <div className="absolute inset-0 rounded-full bg-rose-500 blur-md animate-pulse opacity-75"></div>
         )}
         <button
+          type="button"
           onClick={isRecording ? handleStopRecording : handleStartRecording}
           disabled={isProcessing || disabled}
-          title={disabled ? "Ficha assinada — voz não altera o registro" : "Assistente de Voz IA"}
+          title={disabled ? "Ficha assinada — voz não altera o registro" : isRecording ? "Parar gravação" : "Assistente de Voz IA"}
           aria-label={disabled ? "Assistente de voz indisponível na ficha assinada" : "Assistente de Voz IA"}
-          className={`relative w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 transform hover:scale-105 active:scale-95 ${
-            isRecording 
-              ? "bg-gradient-to-tr from-rose-600 to-rose-400 text-white ring-4 ring-rose-500/30" 
-              : isProcessing
-                ? "bg-gradient-to-tr from-amber-500 to-amber-400 text-white opacity-90 cursor-not-allowed"
-                : disabled
-                  ? "bg-zinc-400 text-white opacity-50 cursor-not-allowed"
-                  : isDark
-                    ? "bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white ring-2 ring-indigo-500/20"
-                    : "bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white ring-2 ring-indigo-600/20"
-          }`}
+          className={
+            isHeader
+              ? (isRecording || isProcessing ? headerBusy : headerIdle)
+              : `relative w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center shadow-sm transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                  isRecording 
+                    ? "bg-gradient-to-tr from-rose-600 to-rose-400 text-white ring-4 ring-rose-500/30" 
+                    : isProcessing
+                      ? "bg-gradient-to-tr from-amber-500 to-amber-400 text-white opacity-90 cursor-not-allowed"
+                      : disabled
+                        ? "bg-zinc-400 text-white opacity-50 cursor-not-allowed"
+                        : isDark
+                          ? "bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white ring-2 ring-indigo-500/20"
+                          : "bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white ring-2 ring-indigo-600/20"
+                }`
+          }
         >
           {isProcessing ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className={isHeader ? "h-4 w-4 animate-spin" : "w-5 h-5 animate-spin"} />
           ) : isRecording ? (
-            <div className="flex items-center justify-center gap-0.5">
-               <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-               <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-               <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
+            isHeader ? (
+              <Mic className="h-4 w-4" />
+            ) : (
+              <div className="flex items-center justify-center gap-0.5">
+                 <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                 <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                 <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+            )
           ) : (
-            <Mic className="w-5 h-5" />
+            <Mic className={isHeader ? "h-4 w-4" : "w-5 h-5"} />
           )}
         </button>
       </div>

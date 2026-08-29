@@ -2,7 +2,8 @@ import React from "react";
 import { 
   Cloud,
   WifiOff, 
-  AlertTriangle 
+  AlertTriangle,
+  Check
 } from "lucide-react";
 import { SyncStatus } from "../lib/syncEngine";
 
@@ -16,6 +17,7 @@ interface SyncStatusBadgeProps {
   onRetry: () => void;
   isDark?: boolean;
   compact?: boolean;
+  variant?: "chip" | "plain";
 }
 
 export default function SyncStatusBadge({
@@ -27,7 +29,8 @@ export default function SyncStatusBadge({
   errorMessage,
   onRetry,
   isDark = false,
-  compact = false
+  compact = false,
+  variant = "chip"
 }: SyncStatusBadgeProps) {
 
   const formatLastSaved = (date: Date | null) => {
@@ -81,11 +84,27 @@ export default function SyncStatusBadge({
     );
   }
 
-  // 3. SAVED & SYNCING States (Minimalist Cloud Indicator - Fixed Dimensions & Smooth Pulse)
+  // 3. SAVED & SYNCING States
   const isSyncing = status === "syncing";
+  const savedTitle = `Salvo ${formatLastSaved(lastSavedAt)}`;
+
+  if (variant === "plain") {
+    return (
+      <div
+        title={savedTitle}
+        className={`inline-flex items-center gap-1 text-xs font-medium text-[#10B981] ${
+          isSyncing ? "animate-pulse" : ""
+        }`}
+      >
+        <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+        <span>{isSyncing ? "Salvando" : "Salvo"}</span>
+      </div>
+    );
+  }
 
   return (
     <div 
+      title={savedTitle}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors duration-300 ${
         isDark 
           ? "bg-zinc-800/80 border-zinc-700 text-zinc-300" 
@@ -110,7 +129,7 @@ export default function SyncStatusBadge({
       </div>
 
       <span className="font-semibold text-slate-700 dark:text-zinc-200">
-        {isSyncing ? "Salvo" : "Salvo"}
+        Salvo
       </span>
 
       {!compact && (
