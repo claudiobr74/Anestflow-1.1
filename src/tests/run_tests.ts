@@ -1236,6 +1236,8 @@ try {
   assert(appSrc.includes("anestflow-compact"), "App aplica classe compacta");
   assert(cssSrc.includes(".anestflow-compact"), "CSS define densidade compacta");
   assert(appSrc.includes("data-compact"), "App expõe data-compact");
+  const settingsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/SettingsModal.tsx"), "utf-8");
+  assert(settingsSrc.includes("if (isOpen) setFormData(settings)"), "Settings recarrega o formulário ao reabrir");
 
   assert(appSrc.includes("supervisorDevLog"), "Supervisor de IA usa logger de DEV");
   assert(!appSrc.includes("console.log(`[Supervisor de IA]"), "Supervisor não usa console.log direto");
