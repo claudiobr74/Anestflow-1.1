@@ -1,6 +1,6 @@
-import fs from "fs";
-import path from "path";
-import dotenv from "dotenv";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as dotenv from "dotenv";
 import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./supabaseProject";
 
 export { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY };

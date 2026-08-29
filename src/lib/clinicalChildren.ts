@@ -193,7 +193,7 @@ export async function deleteClinicalEventItem(
   if (error) throwClinical(error);
 }
 
-export async function getClinicalEventItems<T>(
+export async function getClinicalEventItems<T extends { id?: string }>(
   procedureId: string,
   subcollectionName: ClinicalSubcollectionName
 ): Promise<T[]> {

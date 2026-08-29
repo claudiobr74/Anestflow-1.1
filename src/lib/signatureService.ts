@@ -6,21 +6,22 @@ export const CURRENT_SCHEMA_VERSION = "2.0.0";
 /**
  * Helper to recursively sort keys of an object to ensure exact deterministic string representation for SHA-256 hashing
  */
-function recursiveSortKeysJson(obj: any): string {
+function recursiveSortKeysJson(obj: unknown): string {
   if (obj === null || typeof obj !== "object") {
     return JSON.stringify(obj);
   }
   if (Array.isArray(obj)) {
-    return "[" + obj.map(item => recursiveSortKeysJson(item)).join(",") + "]";
+    return "[" + obj.map((item) => recursiveSortKeysJson(item)).join(",") + "]";
   }
-  const sortedKeys = Object.keys(obj).sort();
+  const record = obj as Record<string, unknown>;
+  const sortedKeys = Object.keys(record).sort();
   const parts = sortedKeys
-    .map(key => {
-      const val = obj[key];
+    .map((key) => {
+      const val = record[key];
       if (val === undefined) return null;
       return JSON.stringify(key) + ":" + recursiveSortKeysJson(val);
     })
-    .filter(Boolean);
+    .filter((part): part is string => Boolean(part));
   return "{" + parts.join(",") + "}";
 }
 
@@ -65,12 +66,11 @@ function sha256Fallback(ascii: string): string {
 
   const mathPow = Math.pow;
   const maxWord = mathPow(2, 32);
-  let lengthProperty = 'length';
   let i, j;
   let result = '';
 
   const words: number[] = [];
-  const asciiLength = ascii[lengthProperty];
+  const asciiLength = ascii.length;
   const hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
   const k = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -90,7 +90,7 @@ function sha256Fallback(ascii: string): string {
   words[asciiLength >> 2] |= 0x80 << (24 - (asciiLength % 4) * 8);
   words[(((asciiLength + 8) >> 6) << 4) + 15] = bitLength;
 
-  for (j = 0; j < words[lengthProperty]; j += 16) {
+  for (j = 0; j < words.length; j += 16) {
     const w = words.slice(j, j + 16);
     const oldHash = hash.slice(0);
 
