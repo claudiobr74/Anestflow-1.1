@@ -186,8 +186,9 @@ export function VoiceCommandButton({
   };
 
   const isHeader = variant === "header";
-  const headerIdle =
-    "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-1.5 text-[#7C3AED] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800 md:p-2 xl:h-10 xl:w-10";
+  const headerIdle = isDark
+    ? "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 text-[#7C3AED] transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 md:p-2 xl:h-10 xl:w-10"
+    : "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-1.5 text-[#7C3AED] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 md:p-2 xl:h-10 xl:w-10";
   const headerBusy = isRecording
     ? "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-300 bg-rose-50 p-1.5 text-rose-600 md:p-2 xl:h-10 xl:w-10"
     : "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 p-1.5 text-amber-600 opacity-90 md:p-2 xl:h-10 xl:w-10";
