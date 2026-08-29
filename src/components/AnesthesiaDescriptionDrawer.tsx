@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { AnesthesiaDocument, AnestheticNarrativeLaunch } from "../types";
 import { X, Check, Plus, Edit2, Copy, RotateCcw, FileText, Trash2, Star, Download, Upload, Clock, User, Shield, AlertCircle, FileDown, Eye, CheckCircle2, Sparkles, Loader2 } from "lucide-react";
 import { SYSTEM_MODELS, compileNarrativeDraft, AnesthesiaModel } from "../utils/narrativeTemplates";
-import { authenticatedFetch } from "../lib/api";
+import { invokeAiFunction } from "../lib/aiFunctions";
 
 interface AnesthesiaDescriptionDrawerProps {
   isOpen: boolean;
@@ -130,27 +130,17 @@ export default function AnesthesiaDescriptionDrawer({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const res = await authenticatedFetch("/api/generate-description", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ document, models }),
-        signal: controller.signal
-      });
+      const data = await invokeAiFunction<{ description?: string }>(
+        "generate-description",
+        { document, models },
+        controller.signal
+      );
       clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.description) {
-          setEditingText(data.description);
-        } else {
-          setEditingText("");
-          alert("Não foi possível gerar a descrição.");
-        }
+      if (data.description) {
+        setEditingText(data.description);
       } else {
-        const err = await res.json();
-        alert(err.error || "Erro ao gerar descrição.");
         setEditingText("");
+        alert("Não foi possível gerar a descrição.");
       }
 
       if (stopAiSupervisor) {
@@ -166,7 +156,7 @@ export default function AnesthesiaDescriptionDrawer({
       if (e.name === "AbortError") {
         alert("O servidor de IA demorou muito para responder (limite de tempo atingido). Por favor, tente novamente.");
       } else {
-        alert("Falha de rede ao conectar com IA.");
+        alert(e.message || "Falha de rede ao conectar com IA.");
       }
       setEditingText("");
     } finally {

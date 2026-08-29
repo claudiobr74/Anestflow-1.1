@@ -434,3 +434,14 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Onda 5 — Gemini nas Edge Functions. JWT obrigatório na gateway;
+# o handler ainda confirma e-mail via auth.getUser.
+[functions.review]
+verify_jwt = true
+
+[functions.voice-command]
+verify_jwt = true
+
+[functions.generate-description]
+verify_jwt = true

@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash } from "lucide-react";
-import { authenticatedFetch } from "../lib/api";
+import { invokeAiFunction } from "../lib/aiFunctions";
 import { getSupabase } from "../lib/supabase";
 import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } from "../lib/signatureService";
 import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
@@ -218,18 +218,13 @@ export default function ReviewTab({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const response = await authenticatedFetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(document),
-        signal: controller.signal
-      });
+      const result = await invokeAiFunction<{ alerts?: Array<{ type: string; title: string; description: string; module: string }> }>(
+        "review",
+        document,
+        controller.signal
+      );
       
       clearTimeout(timeoutId);
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.details || result.error || "Falha ao comunicar com o assistente de IA.");
-      }
       setAiAlerts(result.alerts || []);
       
       if (stopAiSupervisor) {

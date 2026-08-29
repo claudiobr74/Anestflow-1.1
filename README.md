@@ -55,10 +55,10 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 
 1. `npm install`
 2. `cp .env.example .env.local` e preencha `VITE_SUPABASE_PUBLISHABLE_KEY`
-3. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express; opcional)
+3. IA (opcional): `npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc`
 4. `npm run dev`
 
-Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Não adicione documentos Firestore novos nem copie PHI de produção.
+Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Assistentes de IA chamam Edge Functions (onda 5). Não adicione documentos Firestore novos nem copie PHI de produção.
 
 ## Onda 1 (schema, RLS, RPCs)
 
@@ -121,7 +121,25 @@ O cliente grava no schema da onda 1:
 
 IDs locais `doc-{timestamp}` viram UUID no primeiro save. Fichas `doc-mock*` não vão para a nuvem.
 
-Fora desta onda: Edge Functions de IA (onda 5). Não copie PHI de produção.
+## Onda 5 (IA nas Edge Functions)
+
+As três rotas Gemini saíram do Express. O cliente chama `getSupabase().functions.invoke` (JWT da sessão + chave publishable). A `GEMINI_API_KEY` fica só nos **secrets do projeto** — nunca `VITE_GEMINI_*`.
+
+| Função | Contrato (igual ao Express) |
+|---|---|
+| `review` | body = ficha completa → `{ alerts: [...] }` |
+| `voice-command` | `{ audioBase64, mimeType }` → `{ transcription, identifiedActions }` |
+| `generate-description` | `{ document, models }` → `{ description }` |
+
+`verify_jwt` permanece **ligado**. O handler ainda chama `auth.getUser` e recusa e-mail não confirmado. Express só serve o SPA e `GET /api/health`.
+
+Limite de body nas Edge Functions é ~5,5MB (o Express permitia 10MB). Áudio muito longo pode retornar 413.
+
+```bash
+npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc
+```
+
+Sem o secret de Edge Function, as funções tentam o fallback no Vault (`private.read_gemini_api_key`, só `service_role`). Não coloque a chave no Vite nem em migration.
 
 ## Segurança imediata (fora do código)
 
