@@ -15,7 +15,7 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**. Senha vazada (HaveIBeenPwned) no cliente é a **onda 8**.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**. Senha vazada (HaveIBeenPwned) no cliente é a **onda 8**. Onda **9** fecha o que ainda dava para fazer no código e lista o que só o Dashboard/ops resolve.
 
 ## Onda 0 (fundação)
 
@@ -175,8 +175,28 @@ Ligar no projeto (plano Pro ou superior):
 
 SMTP próprio e Google OAuth continuam fora desta onda (precisam de secret no Dashboard). Storage não entra: áudio de voz não é persistido.
 
-## Segurança imediata (fora do código)
+## Onda 9 (fechamento)
 
-1. Tornar o repositório GitHub **privado**.
-2. Rotacionar no Google Cloud a API key Firebase que já esteve em `firebase-applet-config.json` (o arquivo saiu da árvore; o histórico do git ainda tem o valor).
-3. Confirmar e-mail ON e anônimo OFF no Dashboard do Anestflow.
+Inventário do que as ondas 0–8 **não** cobriram, e o que ainda entra no código.
+
+### Feito nesta onda
+
+- `ClinicalErrorBoundary` em volta do app: um throw no React deixa de virar tela branca sem explicação; a ficha na nuvem não é apagada; o recarregar volta ao posto.
+- Onda 4 **nunca existiu** no plano (salto 3 → 5). Storage de arquivo foi recusado de propósito na onda 6 (PDF/TCLE locais; áudio de voz não persiste).
+
+### Só no Dashboard / ops (o git não liga sozinho)
+
+| Item | Onde |
+|---|---|
+| Prevent use of leaked passwords (HaveIBeenPwned) | Auth → Providers → Email (Pro+) |
+| Sessão 12h / ociosidade 8h iguais ao `config.toml` | Auth → Settings (CLI não aplica no cloud) |
+| Confirmar e-mail ON, cadastro anônimo OFF | Auth → Providers / Settings |
+| SMTP próprio (sair do teto de 2 e-mails/hora) | Auth → SMTP |
+| Google OAuth | Auth → Providers → Google, com Client ID/Secret |
+| `GEMINI_API_KEY` | `npx supabase secrets set` / Edge Function secrets |
+| `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` | Vercel → Environment Variables |
+| Repositório GitHub **privado** | Settings do repo |
+| Rotacionar a API key Firebase que já esteve no git | Google Cloud |
+| Merge da pilha de PRs no `main` | revisão humana |
+
+Não desligue a confirmação de e-mail para contornar o limite de SMTP.
