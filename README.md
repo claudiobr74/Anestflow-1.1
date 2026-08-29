@@ -15,7 +15,7 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Tabelas ainda vazias — schema/RLS entram na onda 1.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto.
 
 ## Onda 0 (fundação)
 
@@ -57,7 +57,33 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 2. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express)
 3. `npm run dev`
 
-Firebase permanece até a onda 2. Não adicione novos documentos Firestore. Não copie PHI para este projeto até a RLS da onda 1.
+Firebase permanece até a onda 2. Não adicione novos documentos Firestore. Não copie PHI de produção para este projeto.
+
+## Onda 1 (schema, RLS, RPCs)
+
+Aplicada no Anestflow. O app **ainda não faz login no Supabase** (isso é a onda 2). Não há cliente novo nesta onda.
+
+Migrations em `supabase/migrations/`:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `20260829022538_onda_1_clinical_schema.sql` | `profiles`, fichas, filhas, worklist, `private.audit_events`, triggers |
+| `20260829022539_onda_1_rls_policies.sql` | Helpers RLS, policies, grants, view `procedure_summaries` (`security_invoker`) |
+| `20260829022540_onda_1_rpcs_realtime.sql` | Assinar, transferir, claim, participante, adendo; publicação Realtime |
+| `20260829023500_onda_1_advisor_fixes.sql` | Policies de auditoria, índices de FK, wrappers `SECURITY INVOKER` |
+
+Regras importantes:
+
+- `anon` não lê nem grava nada clínico.
+- SELECT da ficha exige participação **e** e-mail confirmado.
+- UPDATE da ficha só o responsável, e não se `status = signed`.
+- `created_by` é imutável (trigger). Ficha signed não atualiza nem apaga.
+- Worklist só do criador; `cpf_hash` é SHA-256 hex, sem índice global de CPF.
+- `transfer_responsibility` exige `p_incoming_user_id <> auth.uid()`.
+- Hash de assinatura/adendo é SHA-256 **no servidor** (`extensions.digest`).
+- RPCs públicas são wrappers invoker; a implementação DEFINER fica em `private`.
+
+Advisors de segurança no projeto: **0 lints** depois da onda 1.
 
 ## Segurança imediata (fora do código)
 
