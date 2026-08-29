@@ -5,6 +5,7 @@ export const AI_REVIEW_PARSE_FAILED = "AI_REVIEW_PARSE_FAILED";
 export const VOICE_TRANSCRIPTION_FAILED = "VOICE_TRANSCRIPTION_FAILED";
 export const VOICE_PARSE_FAILED = "VOICE_PARSE_FAILED";
 export const VOICE_SCHEMA_INVALID = "VOICE_SCHEMA_INVALID";
+export const VOICE_PARSE_INCOMPLETE = "VOICE_PARSE_INCOMPLETE";
 
 export const AI_NARRATIVE_FAILED = "AI_NARRATIVE_FAILED";
 export const AI_NARRATIVE_SCHEMA_INVALID = "AI_NARRATIVE_SCHEMA_INVALID";
@@ -14,6 +15,9 @@ export const AI_REVIEW_UNAVAILABLE_MESSAGE =
 
 export const VOICE_UNAVAILABLE_MESSAGE =
   "Interpretação de voz indisponível. Nenhum lançamento foi produzido.";
+
+export const VOICE_PARSE_INCOMPLETE_MESSAGE =
+  "Não foi possível interpretar todos os itens mencionados. Revise o transcript e faça os lançamentos manualmente ou repita o comando.";
 
 export const NARRATIVE_UNAVAILABLE_MESSAGE =
   "Narrativa de IA indisponível. Nenhuma descrição foi produzida.";
@@ -37,6 +41,7 @@ export function isVoiceAiErrorCode(value: unknown): boolean {
   return (
     value === VOICE_TRANSCRIPTION_FAILED ||
     value === VOICE_PARSE_FAILED ||
-    value === VOICE_SCHEMA_INVALID
+    value === VOICE_SCHEMA_INVALID ||
+    value === VOICE_PARSE_INCOMPLETE
   );
 }

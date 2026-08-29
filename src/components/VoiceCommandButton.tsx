@@ -1,13 +1,15 @@
 import React, { useState, useRef } from "react";
 import { Mic, Loader2, Zap } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
-import { isVoiceAiErrorCode, VOICE_UNAVAILABLE_MESSAGE } from "../lib/aiErrorCodes";
+import { isVoiceAiErrorCode, VOICE_PARSE_INCOMPLETE, VOICE_PARSE_INCOMPLETE_MESSAGE, VOICE_UNAVAILABLE_MESSAGE } from "../lib/aiErrorCodes";
 
 export interface VoiceCommandResult {
   transcription: string;
   identifiedActions: unknown;
   warnings?: string[];
   unparsedFragments?: string[];
+  actionable?: boolean;
+  missingEntities?: string[];
 }
 
 export interface VoiceCommandButtonProps {
@@ -134,11 +136,42 @@ export function VoiceCommandButton({
         warnings?: string[];
         unparsedFragments?: string[];
         error?: string;
+        actionable?: boolean;
+        missingEntities?: string[];
       }>(
         "voice-command",
         { audioBase64: base64data, mimeType: mimeTypeUsed },
         controller.signal
       );
+
+      const transcription = String(
+        data.transcript_original ?? data.transcription ?? ""
+      ).trim();
+      const identifiedActions = data.identifiedActions ?? {};
+      const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+      const unparsedFragments = Array.isArray(data.unparsedFragments) ? data.unparsedFragments.map(String) : [];
+      const incomplete =
+        data.error === VOICE_PARSE_INCOMPLETE ||
+        data.actionable === false;
+
+      if (incomplete) {
+        clearTimeout(timeoutId);
+        setResultMsg({ type: "error", text: VOICE_PARSE_INCOMPLETE_MESSAGE });
+        if (onCommandProcessed) {
+          onCommandProcessed({
+            transcription,
+            identifiedActions,
+            warnings: warnings.length ? warnings : [VOICE_PARSE_INCOMPLETE_MESSAGE],
+            unparsedFragments,
+            actionable: false,
+            missingEntities: Array.isArray(data.missingEntities) ? data.missingEntities.map(String) : [],
+          });
+        }
+        if (stopAiSupervisor) {
+          stopAiSupervisor("Incompleto");
+        }
+        return;
+      }
 
       if (isVoiceAiErrorCode(data.error)) {
         throw new Error(data.error);
@@ -146,10 +179,6 @@ export function VoiceCommandButton({
       
       clearTimeout(timeoutId);
 
-      const transcription = String(
-        data.transcript_original ?? data.transcription ?? ""
-      ).trim();
-      const identifiedActions = data.identifiedActions ?? {};
       const hasActions =
         identifiedActions &&
         typeof identifiedActions === "object" &&
@@ -161,8 +190,9 @@ export function VoiceCommandButton({
         onCommandProcessed({
           transcription,
           identifiedActions,
-          warnings: Array.isArray(data.warnings) ? data.warnings : [],
-          unparsedFragments: Array.isArray(data.unparsedFragments) ? data.unparsedFragments : [],
+          warnings,
+          unparsedFragments,
+          actionable: true,
         });
       }
 
@@ -181,6 +211,8 @@ export function VoiceCommandButton({
       let errMsg = "Falha ao processar áudio.";
       if (error.name === "AbortError") {
         errMsg = "O assistente de IA demorou muito para processar o áudio (limite de tempo atingido). Por favor, tente novamente.";
+      } else if (error.message && error.message.includes("VOICE_PARSE_INCOMPLETE")) {
+        errMsg = VOICE_PARSE_INCOMPLETE_MESSAGE;
       } else if (isVoiceAiErrorCode(error.message) || (error.message && (
         error.message.includes("VOICE_TRANSCRIPTION_FAILED") ||
         error.message.includes("VOICE_PARSE_FAILED") ||

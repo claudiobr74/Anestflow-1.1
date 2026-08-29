@@ -137,6 +137,8 @@ type AppHeaderProps = {
     identifiedActions: any;
     warnings?: string[];
     unparsedFragments?: string[];
+    actionable?: boolean;
+    missingEntities?: string[];
   }) => void;
   onOpenPdf: () => void;
   onOpenShare: () => void;
@@ -366,8 +368,8 @@ export default function AppHeader({
                 disabled={!canEdit}
                 startAiSupervisor={startAiSupervisor}
                 stopAiSupervisor={stopAiSupervisor}
-                onCommandProcessed={({ transcription, identifiedActions, warnings, unparsedFragments }) => {
-                  onVoiceProcessed({ transcription, identifiedActions, warnings, unparsedFragments });
+                onCommandProcessed={({ transcription, identifiedActions, warnings, unparsedFragments, actionable, missingEntities }) => {
+                  onVoiceProcessed({ transcription, identifiedActions, warnings, unparsedFragments, actionable, missingEntities });
                 }}
               />
               <button type="button" onClick={onOpenPdf} className={actionBtnClass(isDark)}>

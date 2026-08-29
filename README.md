@@ -394,7 +394,7 @@ Configuração canônica: `src/lib/aiModelConfig.ts` + `supabase/functions/_shar
 
 React não chama Gemini. Fluxo: React → Edge Function (JWT) → `GeminiGateway` (Interactions API, `store: false`, sem `previous_interaction_id`) → Gemini. A `GEMINI_API_KEY` permanece só no servidor. Cada invocação registra metadados técnicos (`feature`, `provider`, `model`, `prompt_version`, `schema_version`, `thinking_level`, `latency_ms`, `status`) — sem áudio, transcript integral, prompt com PHI ou chain-of-thought.
 
-Prompts/schemas desta versão: `voice-parser-v3` / `voice-command-schema-v3`, `clinical-review-v4` / `clinical-review-schema-v2`, `anesthesia-narrative-v2`. JWT das Edge Functions permanece (`verify_jwt = true`).
+Prompts/schemas desta versão: `voice-parser-v4` / `voice-command-schema-v4`, `clinical-review-v4` / `clinical-review-schema-v2`, `anesthesia-narrative-v2`. JWT das Edge Functions permanece (`verify_jwt = true`).
 
 Cadeia do escriba: áudio → transcrição verbatim (`transcript_original`) → parser 3.6 (proposta) → Zod + validação semântica → confirmação humana → comando na ficha. Structured output garante estrutura, não verdade clínica. Ausência na fala permanece ausência (via/concentração/dose não ditas não são inventadas). A transcrição original é persistida em `procedures.voice_transcripts` e entra no selo 4B só quando há itens (selos antigos sem a chave continuam byte-idênticos na checagem B). A interpretação **nunca** substitui o que foi ouvido.
 

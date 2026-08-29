@@ -1,5 +1,6 @@
 import React from "react";
 import { Mic, X } from "lucide-react";
+import { VOICE_PARSE_INCOMPLETE_MESSAGE } from "../lib/aiErrorCodes";
 
 export interface VoiceCommandConfirmModalProps {
   isOpen: boolean;
@@ -7,6 +8,8 @@ export interface VoiceCommandConfirmModalProps {
   summaries: string[];
   warnings?: string[];
   unparsedFragments?: string[];
+  missingEntities?: string[];
+  incomplete?: boolean;
   canApply: boolean;
   isDark?: boolean;
   onConfirm: () => void;
@@ -19,6 +22,8 @@ export function VoiceCommandConfirmModal({
   summaries,
   warnings = [],
   unparsedFragments = [],
+  missingEntities = [],
+  incomplete = false,
   canApply,
   isDark = false,
   onConfirm,
@@ -61,6 +66,13 @@ export function VoiceCommandConfirmModal({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {incomplete && (
+          <p className="mb-3 text-sm text-amber-800 dark:text-amber-300">
+            {VOICE_PARSE_INCOMPLETE_MESSAGE}
+            {missingEntities.length > 0 ? ` Itens não extraídos: ${missingEntities.join(", ")}.` : ""}
+          </p>
+        )}
 
         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Transcrição original</p>
         <div
@@ -121,10 +133,10 @@ export function VoiceCommandConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={!canApply}
+            disabled={!canApply || incomplete}
             className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition shadow-xs"
           >
-            Lançar na ficha
+            {incomplete ? "Confirmar tudo indisponível" : "Lançar na ficha"}
           </button>
         </div>
       </div>

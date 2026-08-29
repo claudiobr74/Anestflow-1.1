@@ -79,6 +79,15 @@ export function assertNoObsoleteGemini36Sampling(body: Record<string, unknown>):
   }
 }
 
+function isThoughtStepType(type: unknown): boolean {
+  const value = String(type ?? "").toLowerCase();
+  return value === "thought" || value === "thinking" || value.includes("thought");
+}
+
+function isModelOutputStepType(type: unknown): boolean {
+  return String(type ?? "") === "model_output";
+}
+
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!content) return "";
@@ -87,7 +96,7 @@ function textFromContent(content: unknown): string {
   }
   if (typeof content === "object") {
     const rec = content as Record<string, unknown>;
-    if (rec.type === "thought" || rec.type === "thinking") return "";
+    if (isThoughtStepType(rec.type)) return "";
     if (typeof rec.text === "string") return rec.text;
     if (rec.content !== undefined) return textFromContent(rec.content);
   }
@@ -95,30 +104,29 @@ function textFromContent(content: unknown): string {
 }
 
 /**
- * Extrai texto útil da Interactions API sem persistir thinking/CoT.
+ * Extrai texto útil da Interactions API.
+ * Usa apenas steps `model_output`. Thought/signature nunca entram no JSON clínico.
  */
 export function extractInteractionText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
   const rec = payload as Record<string, unknown>;
-  if (typeof rec.output_text === "string" && rec.output_text.trim()) {
-    return rec.output_text.trim();
-  }
-  const outputs = rec.outputs ?? rec.output;
-  const fromOutputs = textFromContent(outputs).trim();
-  if (fromOutputs) return fromOutputs;
-
-  const steps = rec.steps;
-  if (Array.isArray(steps)) {
+  if (Array.isArray(rec.steps)) {
     const chunks: string[] = [];
-    for (const step of steps) {
+    for (const step of rec.steps) {
       if (!step || typeof step !== "object") continue;
       const s = step as Record<string, unknown>;
-      if (s.type === "thought" || s.type === "thinking") continue;
+      if (isThoughtStepType(s.type)) continue;
+      if (!isModelOutputStepType(s.type)) continue;
       const piece = textFromContent(s.content ?? s.output ?? s.text).trim();
       if (piece) chunks.push(piece);
     }
     if (chunks.length) return chunks.join("\n").trim();
   }
+  if (typeof rec.output_text === "string" && rec.output_text.trim()) {
+    return rec.output_text.trim();
+  }
+  const fromOutputs = textFromContent(rec.outputs ?? rec.output).trim();
+  if (fromOutputs) return fromOutputs;
 
   const candidates = rec.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined;
   const legacy = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";

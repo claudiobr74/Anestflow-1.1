@@ -1,14 +1,35 @@
 import { z } from "zod";
+import {
+  coerceInfusionRateUnit,
+  coerceMedicationDoseUnit,
+  coerceMedicationRoute,
+  INFUSION_RATE_UNITS,
+  MEDICATION_DOSE_UNITS,
+  MEDICATION_ROUTES,
+} from "./voiceUnits";
 
-const nullableString = z.union([z.string(), z.null()]).optional();
 const nullableNumber = z.union([z.number(), z.string(), z.null()]).optional();
+const nullableString = z.union([z.string(), z.null()]).optional();
+
+const doseUnitSchema = z.preprocess(
+  (value) => (value === undefined ? undefined : coerceMedicationDoseUnit(value)),
+  z.union([z.enum(MEDICATION_DOSE_UNITS), z.null()]).optional(),
+);
+const rateUnitSchema = z.preprocess(
+  (value) => (value === undefined ? undefined : coerceInfusionRateUnit(value)),
+  z.union([z.enum(INFUSION_RATE_UNITS), z.null()]).optional(),
+);
+const routeSchema = z.preprocess(
+  (value) => (value === undefined ? undefined : coerceMedicationRoute(value)),
+  z.union([z.enum(MEDICATION_ROUTES), z.null()]).optional(),
+);
 
 export const voiceBolusDrugSchema = z
   .object({
     name: z.string().min(1),
     dose: nullableNumber,
-    unit: nullableString,
-    route: nullableString,
+    unit: doseUnitSchema,
+    route: routeSchema,
     sourceText: nullableString,
   })
   .passthrough();
@@ -17,7 +38,7 @@ export const voiceInfusionSchema = z
   .object({
     name: z.string().min(1),
     rate: nullableNumber,
-    rateUnit: nullableString,
+    rateUnit: rateUnitSchema,
     concentration: nullableString,
     totalVolumePrepared: nullableNumber,
     diluent: nullableString,

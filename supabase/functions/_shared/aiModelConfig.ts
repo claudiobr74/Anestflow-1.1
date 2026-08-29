@@ -24,10 +24,10 @@ export const AI_MODEL_CONFIG = {
   },
 } as const;
 
-export const VOICE_PROMPT_VERSION = "voice-parser-v3";
+export const VOICE_PROMPT_VERSION = "voice-parser-v4";
 export const CLINICAL_REVIEW_PROMPT_VERSION = "clinical-review-v4";
 export const NARRATIVE_PROMPT_VERSION = "anesthesia-narrative-v2";
 
-export const VOICE_SCHEMA_VERSION = "voice-command-schema-v3";
+export const VOICE_SCHEMA_VERSION = "voice-command-schema-v4";
 export const CLINICAL_REVIEW_SCHEMA_VERSION = "clinical-review-schema-v2";
 export const NARRATIVE_SCHEMA_VERSION = "narrative-schema-v2";

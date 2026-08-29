@@ -142,6 +142,9 @@ const cases: CaseSpec[] = [
         const unit = fold(hit.unit);
         if (dose !== 100) notes.push(`dose esperada 100, veio ${String(hit.dose)}`);
         if (unit !== "mcg") notes.push(`unidade esperada mcg, veio ${String(hit.unit)}`);
+        if (String(hit.unit ?? "").length > 16 || /\s/.test(String(hit.unit ?? ""))) {
+          notes.push(`unit contém texto de raciocínio: ${String(hit.unit)}`);
+        }
         if (!isAbsent(hit.route) && fold(hit.route) !== "") {
           notes.push(`via inferida indevidamente: ${String(hit.route)}`);
         }
@@ -316,15 +319,23 @@ for (const spec of cases) {
   const metaNotes: string[] = [];
   if (invoked.http !== 200) metaNotes.push(`HTTP ${invoked.http} error=${String(body.error ?? "")} details=${String(body.details ?? "").slice(0, 240)}`);
   else {
+    if (body.error === "VOICE_PARSE_INCOMPLETE" || body.actionable === false) {
+      metaNotes.push(`VOICE_PARSE_INCOMPLETE missing=${JSON.stringify(body.missingEntities ?? [])}`);
+    }
     if (ai?.model !== GEMINI_CLINICAL_MODEL) metaNotes.push(`parser model ${String(ai?.model)} != ${GEMINI_CLINICAL_MODEL}`);
-    if (ai?.thinking_level !== AI_MODEL_CONFIG.voiceParser.thinkingLevel) {
-      metaNotes.push(`thinking ${String(ai?.thinking_level)}`);
+    const repaired = Boolean((ai as { repair_attempted?: boolean } | undefined)?.repair_attempted);
+    const thinking = String(ai?.thinking_level ?? "");
+    if (!repaired && thinking !== AI_MODEL_CONFIG.voiceParser.thinkingLevel) {
+      metaNotes.push(`thinking ${thinking}`);
+    }
+    if (repaired && thinking !== "low" && thinking !== "minimal") {
+      metaNotes.push(`repair thinking ${thinking}`);
     }
     if (ai?.prompt_version !== VOICE_PROMPT_VERSION) metaNotes.push(`prompt ${String(ai?.prompt_version)}`);
     if (ai?.schema_version !== VOICE_SCHEMA_VERSION) metaNotes.push(`schema ${String(ai?.schema_version)}`);
     const asr = ai?.transcription_model ?? ai?.transcription?.model;
     if (asr !== GEMINI_TRANSCRIBE_MODEL) metaNotes.push(`asr model ${String(asr)}`);
-    if (body.error) metaNotes.push(`error code ${String(body.error)}`);
+    if (body.error && body.error !== "VOICE_PARSE_INCOMPLETE") metaNotes.push(`error code ${String(body.error)}`);
   }
 
   const judged = invoked.http === 200

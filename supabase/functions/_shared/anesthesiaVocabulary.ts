@@ -87,6 +87,41 @@ const SPOKEN_ALIASES = [
   "atropo",
 ] as const;
 
+export const DRUG_GROUNDING_ALIASES: Record<string, readonly string[]> = {
+  fentanil: ["fentanil", "fenta"],
+  sufentanil: ["sufentanil", "sufenta"],
+  remifentanil: ["remifentanil", "remi"],
+  propofol: ["propofol"],
+  etomidato: ["etomidato"],
+  cetamina: ["cetamina", "ketamina", "keta"],
+  dexmedetomidina: ["dexmedetomidina", "precedex", "dexmede"],
+  rocurônio: ["rocuronio", "rocurônio", "rocu", "esmeron"],
+  cisatracúrio: ["cisatracurio", "cisatracúrio", "nimbium", "cis"],
+  sugamadex: ["sugamadex", "sugammadex"],
+  neostigmina: ["neostigmina"],
+  atropina: ["atropina", "atropo"],
+  efedrina: ["efedrina"],
+  metaraminol: ["metaraminol"],
+  noradrenalina: ["noradrenalina", "nora", "norinha", "norepinefrina"],
+  adrenalina: ["adrenalina", "adrena", "epinefrina"],
+  fenilefrina: ["fenilefrina"],
+  vasopressina: ["vasopressina"],
+  sevoflurano: ["sevoflurano", "sevo", "sevorane"],
+  desflurano: ["desflurano", "des", "suprane"],
+  isoflurano: ["isoflurano", "iso", "forane"],
+  ondansetrona: ["ondansetrona"],
+  dexametasona: ["dexametasona"],
+  dipirona: ["dipirona"],
+  cetorolaco: ["cetorolaco", "ketorolaco"],
+  tranexâmico: ["tranexamico", "tranexâmico", "acido tranexamico"],
+  midazolam: ["midazolam"],
+  lidocaína: ["lidocaina", "lidocaína"],
+};
+
+export function canonicalAnesthesiaTerms(): string[] {
+  return [...CANONICAL_DRUG_NAMES];
+}
+
 export function transcriptionVocabulary(limit = 100): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

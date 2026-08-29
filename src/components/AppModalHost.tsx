@@ -27,6 +27,8 @@ type AppModalHostProps = {
     actions: SanitizedVoiceActions | null;
     warnings?: string[];
     unparsedFragments?: string[];
+    actionable?: boolean;
+    missingEntities?: string[];
   } | null;
   onDismissVoice: () => void;
   onConfirmVoice: () => void;
@@ -128,7 +130,13 @@ export default function AppModalHost({
         summaries={pendingVoice?.actions ? summarizeVoiceActions(pendingVoice.actions) : []}
         warnings={pendingVoice?.warnings}
         unparsedFragments={pendingVoice?.unparsedFragments}
-        canApply={canEdit && Boolean(pendingVoice?.actions || pendingVoice?.transcription?.trim())}
+        missingEntities={pendingVoice?.missingEntities}
+        incomplete={pendingVoice?.actionable === false}
+        canApply={
+          canEdit &&
+          pendingVoice?.actionable !== false &&
+          Boolean(pendingVoice?.actions || pendingVoice?.transcription?.trim())
+        }
         isDark={isDark}
         onDismiss={onDismissVoice}
         onConfirm={onConfirmVoice}

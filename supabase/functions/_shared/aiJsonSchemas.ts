@@ -1,21 +1,29 @@
-const nullableString = { type: ["string", "null"] };
+import { INFUSION_RATE_UNITS, MEDICATION_DOSE_UNITS, MEDICATION_ROUTES } from "./voiceUnits.ts";
+
 const nullableNumber = { type: ["number", "string", "null"] };
+const nullableString = { type: ["string", "null"] };
+const doseUnit = { type: ["string", "null"], enum: [...MEDICATION_DOSE_UNITS, null] };
+const rateUnit = { type: ["string", "null"], enum: [...INFUSION_RATE_UNITS, null] };
+const routeUnit = { type: ["string", "null"], enum: [...MEDICATION_ROUTES, null] };
 
 export const VOICE_PARSER_JSON_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     identifiedActions: {
       type: "object",
+      additionalProperties: false,
       properties: {
         bolusDrugs: {
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             properties: {
               name: { type: "string" },
               dose: nullableNumber,
-              unit: nullableString,
-              route: nullableString,
+              unit: doseUnit,
+              route: routeUnit,
               sourceText: nullableString,
             },
             required: ["name"],
@@ -25,10 +33,11 @@ export const VOICE_PARSER_JSON_SCHEMA = {
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             properties: {
               name: { type: "string" },
               rate: nullableNumber,
-              rateUnit: nullableString,
+              rateUnit: rateUnit,
               concentration: nullableString,
               sourceText: nullableString,
             },
@@ -39,6 +48,7 @@ export const VOICE_PARSER_JSON_SCHEMA = {
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             properties: {
               name: { type: "string" },
               inspiredConc: nullableNumber,
@@ -52,6 +62,7 @@ export const VOICE_PARSER_JSON_SCHEMA = {
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             properties: {
               name: { type: "string" },
               category: { type: "string" },
