@@ -8,7 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { applySupabaseEnvFromFiles, describeSupabaseEnvPresence } from "./src/lib/supabaseEnvFiles";
-import { CANONICAL_SUPABASE_URL, CANONICAL_SUPABASE_PUBLISHABLE_KEY } from "./src/lib/supabaseProject";
+import { getPublicSupabaseConfig } from "./src/lib/publicSupabaseConfig";
 import { applyAnestflowSecurityHeaders } from "./src/lib/securityHeaders";
 
 const projectRoot = process.cwd();
@@ -57,17 +57,7 @@ app.get("/api/health", (req, res) => {
 
 // Publishable key only — same class of secret as VITE_* in the browser bundle.
 app.get("/api/public-config", (_req, res) => {
-  const url = (process.env.VITE_SUPABASE_URL || CANONICAL_SUPABASE_URL).trim();
-  const key = (
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    CANONICAL_SUPABASE_PUBLISHABLE_KEY ||
-    ""
-  ).trim();
-  res.json({
-    supabaseUrl: url || null,
-    supabasePublishableKey: key && !key.includes("xxxxxxxx") ? key : null
-  });
+  res.json(getPublicSupabaseConfig());
 });
 
 async function setupVite() {
