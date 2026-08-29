@@ -117,7 +117,7 @@ O cliente grava no schema da onda 1:
 
 - `saveProcedure` → `public.procedures` + tabelas filhas (`procedure_vitals`, `medications`, `fluids`, `infusions`, `events`)
 - Assinatura → RPC `sign_procedure` (hash SHA-256 no servidor). O cliente **não** faz UPDATE para `signed`.
-- Troca / assunção → `transfer_responsibility` / `claim_responsibility`
+- Troca / assunção → `transfer_responsibility` / `claim_responsibility` / `request_transfer` / `decline_pending_transfer`
 - Adendo → `add_procedure_amendment`
 - Participantes → `add_participant_by_email`, `list_procedure_participant_profiles`, `remove_procedure_collaborator`
 - Worklist → `worklist_entries` com `cpf_hash` SHA-256 hex minúsculo (sem índice global de CPF)
@@ -244,7 +244,23 @@ Edição clínica é **fail-closed**: só o `currentResponsibleUid` grava. O cri
 
 - `canEditDocument` / `assertCanEdit` no cliente (App, voz, autosave) e em `saveProcedure`.
 - Ficha assinada bloqueia mutação; a gravação que fecha o caso usa `closingSignature`.
-- Claim e transferência **não** passam por `assertCanEdit` (são o mecanismo para passar a ser responsável; RPC na Fase 4).
+- Claim e transferência **não** passam por `assertCanEdit` no sentido de mutação local: o cliente chama as RPCs da Fase 4.
 - Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
+
+## Fase 4 (claim/transfer só via RPC)
+
+Troca e assunção de responsabilidade **não** mutam `currentResponsibleUid` no React. Sem UUID da ficha na nuvem ou sem conexão, o cliente recusa — não há fallback local.
+
+| Ação | RPC | Quem chama |
+|---|---|---|
+| Transferir já | `transfer_responsibility` | Responsável atual; `p_incoming_user_id` é o UID do colega (lookup por e-mail) |
+| Solicitar aceite | `request_transfer` | Responsável atual; inclui o colega como participante e grava `pending_transfer` |
+| Aceitar | `claim_responsibility` | Participante (o colega indicado) |
+| Recusar | `decline_pending_transfer` | Responsável atual **ou** o UID em `pending_transfer.incomingUid` |
+| Assumir | `claim_responsibility` | Participante da ficha |
+
+O e-mail do entrante é **obrigatório**. O cliente resolve o perfil com `lookup_profile_by_email` e nunca envia o UID de quem transfere como incoming (`incoming_must_differ` no servidor). Autosave **não** grava `pending_transfer` nem `procedure_transfers` — essas colunas só mudam nas RPCs (e na assinatura, que zera a pendência).
+
+Com um único usuário de teste não dá para completar o handover entre dois médicos. Claim na própria ficha é no-op; transferir/solicitar para o próprio UID falha com `incoming_must_differ`; e-mail inexistente falha com `profile_not_found`.
 
 

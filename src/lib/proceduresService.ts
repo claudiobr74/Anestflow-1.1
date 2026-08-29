@@ -3,6 +3,7 @@ import { getSupabase } from "./supabase";
 import { ensureUniqueClinicalEventIds } from "./syncEngine";
 import { throwClinical } from "./clinicalErrors";
 import { assertCanEdit } from "./assertCanEdit";
+import { lookupProfileByEmail } from "./profileService";
 import {
   loadClinicalChildren,
   persistClinicalChildren,
@@ -238,23 +239,41 @@ export async function fetchProcedureSubcollections(
   }
 }
 
-export async function transferResponsibilityAtomic(
-  procedureId: string,
-  currentUserId: string,
-  incomingDoctor: { uid: string; name: string; crm: string; uf: string; email?: string },
-  outgoingDoctor: { uid?: string; name: string; crm: string; uf: string },
-  handoverDetails: {
-    clinicalConditions: string;
-    incidentsReported: string;
-    ongoingInfusions: string;
-    pendingItems: string;
-  }
-): Promise<AnesthesiaDocument> {
-  if (!currentUserId) throw new Error("Usuário não autenticado.");
-  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de transferir a responsabilidade.");
-  if (!isUuid(incomingDoctor.uid)) throw new Error("O colega precisa ter um usuário Supabase válido.");
+export type HandoverDoctor = { uid: string; name: string; crm: string; uf: string; email?: string };
+export type OutgoingHandoverDoctor = { uid?: string; name: string; crm: string; uf: string };
+export type HandoverDetails = {
+  clinicalConditions: string;
+  incidentsReported: string;
+  ongoingInfusions: string;
+  pendingItems: string;
+};
 
-  const handover = {
+export async function resolveIncomingDoctorByEmail(
+  email: string,
+  fallback?: { name?: string; crm?: string; uf?: string }
+): Promise<HandoverDoctor> {
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) throw new Error("Informe o e-mail do colega que vai assumir o caso.");
+  const profile = await lookupProfileByEmail(trimmed);
+  if (!profile) {
+    throw new Error("Colega não encontrado. O profissional precisa ter perfil confirmado no AnestFlow.");
+  }
+  return {
+    uid: profile.id,
+    name: (fallback?.name || "").trim() || profile.full_name || trimmed,
+    crm: (fallback?.crm || "").trim() || profile.crm || "",
+    uf: (fallback?.uf || "").trim() || profile.uf || "",
+    email: trimmed
+  };
+}
+
+function handoverPayload(
+  incomingDoctor: HandoverDoctor,
+  outgoingDoctor: OutgoingHandoverDoctor,
+  handoverDetails: HandoverDetails,
+  currentUserId: string
+) {
+  return {
     ...handoverDetails,
     incomingName: incomingDoctor.name,
     incomingCRM: incomingDoctor.crm,
@@ -266,11 +285,26 @@ export async function transferResponsibilityAtomic(
     outgoingUF: outgoingDoctor.uf,
     outgoingUid: outgoingDoctor.uid || currentUserId
   };
+}
+
+export async function transferResponsibilityAtomic(
+  procedureId: string,
+  currentUserId: string,
+  incomingDoctor: HandoverDoctor,
+  outgoingDoctor: OutgoingHandoverDoctor,
+  handoverDetails: HandoverDetails
+): Promise<AnesthesiaDocument> {
+  if (!currentUserId) throw new Error("Usuário não autenticado.");
+  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de transferir a responsabilidade.");
+  if (!isUuid(incomingDoctor.uid)) throw new Error("O colega precisa ter um usuário Supabase válido.");
+  if (incomingDoctor.uid === currentUserId) {
+    throw new Error("A transferência deve ser para outro anestesiologista. Para assumir o caso, use Assumir responsabilidade.");
+  }
 
   const { error } = await getSupabase().rpc("transfer_responsibility", {
     p_procedure_id: procedureId,
     p_incoming_user_id: incomingDoctor.uid,
-    p_handover: handover
+    p_handover: handoverPayload(incomingDoctor, outgoingDoctor, handoverDetails, currentUserId)
   });
   if (error) throwClinical(error, "Erro ao transferir responsabilidade.");
 
@@ -279,9 +313,49 @@ export async function transferResponsibilityAtomic(
   return updated;
 }
 
+export async function requestTransferAtomic(
+  procedureId: string,
+  currentUserId: string,
+  incomingDoctor: HandoverDoctor,
+  outgoingDoctor: OutgoingHandoverDoctor,
+  handoverDetails: HandoverDetails
+): Promise<AnesthesiaDocument> {
+  if (!currentUserId) throw new Error("Usuário não autenticado.");
+  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de solicitar a transferência.");
+  if (!isUuid(incomingDoctor.uid)) throw new Error("O colega precisa ter um usuário Supabase válido.");
+  if (incomingDoctor.uid === currentUserId) {
+    throw new Error("A transferência deve ser para outro anestesiologista. Para assumir o caso, use Assumir responsabilidade.");
+  }
+
+  const { error } = await getSupabase().rpc("request_transfer", {
+    p_procedure_id: procedureId,
+    p_incoming_user_id: incomingDoctor.uid,
+    p_handover: handoverPayload(incomingDoctor, outgoingDoctor, handoverDetails, currentUserId)
+  });
+  if (error) throwClinical(error, "Erro ao solicitar a transferência.");
+
+  const updated = await getProcedureById(procedureId);
+  if (!updated) throw new Error("Ficha não encontrada após solicitar a transferência.");
+  return updated;
+}
+
+export async function declinePendingTransferAtomic(procedureId: string): Promise<AnesthesiaDocument> {
+  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de recusar a transferência.");
+
+  const { error } = await getSupabase().rpc("decline_pending_transfer", {
+    p_procedure_id: procedureId
+  });
+  if (error) throwClinical(error, "Erro ao recusar a transferência.");
+
+  const updated = await getProcedureById(procedureId);
+  if (!updated) throw new Error("Ficha não encontrada após recusar a transferência.");
+  return updated;
+}
+
 export async function claimResponsibilityAtomic(
   procedureId: string,
-  user: { uid: string; name: string; crm: string; uf: string; email?: string }
+  user: { uid: string; name: string; crm: string; uf: string; email?: string },
+  outgoing?: { uid?: string; name?: string; crm?: string; uf?: string }
 ): Promise<AnesthesiaDocument> {
   if (!user?.uid) throw new Error("Usuário não autenticado.");
   if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de assumir a responsabilidade.");
@@ -293,6 +367,10 @@ export async function claimResponsibilityAtomic(
       incomingCRM: user.crm,
       incomingUF: user.uf,
       incomingUid: user.uid,
+      outgoingName: outgoing?.name || "",
+      outgoingCRM: outgoing?.crm || "",
+      outgoingUF: outgoing?.uf || "",
+      outgoingUid: outgoing?.uid || "",
       clinicalConditions: "Responsabilidade clínica assumida diretamente pelo profissional.",
       incidentsReported: "Sem intercorrências registradas na assunção de plantão.",
       ongoingInfusions: "Verificar infusões no gráfico intraoperatório.",
