@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AnesthesiaDocument } from '../types';
 import { X, Users, Mail, Plus, Trash2, ArrowRightLeft, ShieldCheck, AlertCircle, Loader2, UserCheck, ShieldAlert } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { lookupProfileByEmail } from '../lib/profileService';
 
 interface ShareModalProps {
   document: AnesthesiaDocument;
@@ -57,26 +56,10 @@ export default function ShareModal({
 
       for (const uid of participantUids) {
         if (!profilesMap[uid]) {
-          try {
-            const userSnap = await getDoc(doc(db, "users", uid));
-            if (userSnap.exists()) {
-              const data = userSnap.data();
-              profilesMap[uid] = {
-                uid,
-                name: data.name,
-                crm: data.crm,
-                uf: data.uf,
-                email: data.email,
-                emailVerified: data.emailVerified ?? true
-              };
-              updated = true;
-            } else {
-              profilesMap[uid] = { uid, name: "Anestesiologista", email: "UID: " + uid };
-              updated = true;
-            }
-          } catch (e) {
-            console.error("Erro ao carregar perfil do participante:", uid, e);
-          }
+          // RLS de profiles só permite SELECT da própria linha.
+          // Participantes de terceiros aparecem pelo UID até a onda de fichas no Supabase.
+          profilesMap[uid] = { uid, name: "Anestesiologista", email: "UID: " + uid };
+          updated = true;
         }
       }
 
@@ -108,16 +91,13 @@ export default function ShareModal({
 
     setIsSearching(true);
     try {
-      const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-      const querySnap = await getDocs(q);
+      const found = await lookupProfileByEmail(cleanEmail);
 
-      if (!querySnap.empty) {
-        const foundDoc = querySnap.docs[0];
-        const userData = foundDoc.data();
-        const targetUid = foundDoc.id;
+      if (found) {
+        const targetUid = found.id;
 
         if (participantUids.includes(targetUid)) {
-          setSearchError(`Dr(a). ${userData.name || cleanEmail} já possui acesso concedido via UID.`);
+          setSearchError(`Dr(a). ${found.full_name || cleanEmail} já possui acesso concedido via UID.`);
           setIsSearching(false);
           return;
         }
@@ -125,16 +105,15 @@ export default function ShareModal({
         const newUids = Array.from(new Set([...participantUids, targetUid]));
         const updatedEmails = sharedWithEmails.filter(e => e.toLowerCase() !== cleanEmail);
 
-        // Store profile in state
         setUserProfiles(prev => ({
           ...prev,
           [targetUid]: {
             uid: targetUid,
-            name: userData.name,
-            crm: userData.crm,
-            uf: userData.uf,
-            email: userData.email || cleanEmail,
-            emailVerified: userData.emailVerified ?? true
+            name: found.full_name,
+            crm: found.crm,
+            uf: found.uf,
+            email: cleanEmail,
+            emailVerified: true
           }
         }));
 
@@ -143,15 +122,10 @@ export default function ShareModal({
           sharedWithEmails: updatedEmails
         });
 
-        if (userData.emailVerified === false) {
-          setSearchSuccess(`Acesso por UID associado ao Dr(a). ${userData.name || cleanEmail}. Nota: O e-mail deste profissional ainda não foi verificado.`);
-        } else {
-          setSearchSuccess(`Acesso concedido com sucesso por Firebase UID ao Dr(a). ${userData.name || cleanEmail} (CRM ${userData.crm || ''}/${userData.uf || ''}).`);
-        }
+        setSearchSuccess(`Acesso concedido ao Dr(a). ${found.full_name || cleanEmail} (CRM ${found.crm || ''}/${found.uf || ''}).`);
         setSearchEmail("");
       } else {
-        // User not registered in Firebase users collection
-        setSearchError(`Nenhum anestesiologista cadastrado com o e-mail "${cleanEmail}". Para autorização baseada em UID, o profissional deve se cadastrar e verificar seu e-mail no AnestFlow.`);
+        setSearchError(`Nenhum anestesiologista cadastrado com o e-mail "${cleanEmail}". O profissional precisa criar conta e confirmar o e-mail no AnestFlow.`);
       }
     } catch (err: any) {
       console.error("Erro ao buscar anestesiologista:", err);

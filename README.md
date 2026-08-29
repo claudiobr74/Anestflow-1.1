@@ -15,11 +15,11 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. O login do cliente é a **onda 2** (Supabase Auth + `profiles`).
 
 ## Onda 0 (fundação)
 
-O app ainda autentica e persiste no Firebase. A onda 0 só abre o trilho: CLI, Auth local, env e vínculo com este projeto. Login no cliente é a onda 2.
+Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth saiu na onda 2; persistência de fichas no Firestore ainda não foi migrada (onda 3+).
 
 ### Auth (espelhar no Dashboard)
 
@@ -51,19 +51,18 @@ npx supabase start
 
 Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3000`.
 
-## Rodar o app (ainda Firebase)
+## Rodar o app
 
 1. `npm install`
-2. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express)
-3. `npm run dev`
+2. `cp .env.example .env.local` e preencha `VITE_SUPABASE_PUBLISHABLE_KEY`
+3. `GEMINI_API_KEY` em `.env.local` (rotas de IA no Express; opcional)
+4. `npm run dev`
 
-Firebase permanece até a onda 2. Não adicione novos documentos Firestore. Não copie PHI de produção para este projeto.
+Login e perfil usam Supabase Auth + tabela `profiles`. Fichas intraoperatórias ainda podem sincronizar no Firestore legado até a onda de persistência; não adicione novos documentos Firestore nem copie PHI de produção.
 
 ## Onda 1 (schema, RLS, RPCs)
 
-Aplicada no Anestflow. O app **ainda não faz login no Supabase** (isso é a onda 2). Não há cliente novo nesta onda.
-
-Migrations em `supabase/migrations/`:
+Aplicada no Anestflow. Migrations em `supabase/migrations/`:
 
 | Arquivo | Conteúdo |
 |---|---|
@@ -84,6 +83,18 @@ Regras importantes:
 - RPCs públicas são wrappers invoker; a implementação DEFINER fica em `private`.
 
 Advisors de segurança no projeto: **0 lints** depois da onda 1.
+
+## Onda 2 (login no cliente)
+
+- Cliente `src/lib/supabase.ts` com chave publishable (`sb_publishable_…` ou anon legado)
+- Tela de login/cadastro via `signInWithPassword` / `signUp`
+- Perfil clínico em `public.profiles` (CRM, UF, hospital)
+- Confirmação de e-mail obrigatória; senha mínima 12 caracteres com maiúsculas, minúsculas e dígito
+- Google OAuth continua **desligado** até Client ID/Secret no Dashboard
+- Rotas `/api/*` validam o access token do Supabase (`auth.getUser`)
+- Busca de colega em `ShareModal` usa `lookup_profile_by_email`
+
+Fora desta onda: migrar fichas/worklist do Firestore, Realtime (onda 3), Edge Functions de IA (onda 5).
 
 ## Segurança imediata (fora do código)
 

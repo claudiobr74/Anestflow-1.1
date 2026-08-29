@@ -140,24 +140,28 @@ export default function App() {
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(true);
   const [resendingEmail, setResendingEmail] = useState<boolean>(false);
 
-  // Monitor Firebase Auth state to ensure immediate, complete cleanup of session clinical data when unauthenticated
+  // Monitor Supabase Auth state to ensure immediate, complete cleanup of session clinical data when unauthenticated
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    import("./lib/firebase").then(({ auth }) => {
-      import("firebase/auth").then(({ onAuthStateChanged }) => {
-        unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-          if (!firebaseUser) {
-            localStorage.removeItem("anesthesia_user");
-            localStorage.removeItem("anesthesia_doc");
-            try { sessionStorage.clear(); } catch (e) {}
-            setUser(null);
-            setDocument(getBlankDocument());
-            setIsEmailVerified(true);
-          } else {
-            setIsEmailVerified(firebaseUser.emailVerified ?? true);
-          }
-        });
+    import("./lib/supabase").then(({ getSupabase, isSupabaseConfigured }) => {
+      if (!isSupabaseConfigured()) return;
+      const supabase = getSupabase();
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        const supabaseUser = session?.user;
+        if (event === "SIGNED_OUT" || (event === "INITIAL_SESSION" && !supabaseUser)) {
+          localStorage.removeItem("anesthesia_user");
+          localStorage.removeItem("anesthesia_doc");
+          try { sessionStorage.clear(); } catch (e) {}
+          setUser(null);
+          setDocument(getBlankDocument());
+          setIsEmailVerified(true);
+          return;
+        }
+        if (supabaseUser) {
+          setIsEmailVerified(Boolean(supabaseUser.email_confirmed_at));
+        }
       });
+      unsubscribe = () => data.subscription.unsubscribe();
     });
     return () => {
       if (unsubscribe) unsubscribe();
@@ -167,10 +171,12 @@ export default function App() {
   const handleResendVerificationEmail = async () => {
     setResendingEmail(true);
     try {
-      const { auth } = await import("./lib/firebase");
-      const { sendEmailVerification } = await import("firebase/auth");
-      if (auth.currentUser) {
-        await sendEmailVerification(auth.currentUser);
+      const { getSupabase } = await import("./lib/supabase");
+      const { data: userData } = await getSupabase().auth.getUser();
+      const email = userData.user?.email;
+      if (email) {
+        const { error } = await getSupabase().auth.resend({ type: "signup", email });
+        if (error) throw error;
         alert("E-mail de verificação reenviado com sucesso! Verifique sua caixa de entrada e pasta de spam.");
       }
     } catch (err: any) {
@@ -182,16 +188,15 @@ export default function App() {
 
   const handleReloadAuthStatus = async () => {
     try {
-      const { auth } = await import("./lib/firebase");
-      if (auth.currentUser) {
-        await auth.currentUser.reload();
-        const updatedStatus = auth.currentUser.emailVerified ?? true;
-        setIsEmailVerified(updatedStatus);
-        if (updatedStatus) {
-          alert("E-mail verificado com sucesso! Seu acesso a fichas clínicas foi ativado.");
-        } else {
-          alert("O e-mail ainda consta como não verificado. Verifique se clicou no link enviado para sua caixa de entrada.");
-        }
+      const { getSupabase } = await import("./lib/supabase");
+      const { data, error } = await getSupabase().auth.refreshSession();
+      if (error) throw error;
+      const updatedStatus = Boolean(data.user?.email_confirmed_at);
+      setIsEmailVerified(updatedStatus);
+      if (updatedStatus) {
+        alert("E-mail verificado com sucesso! Seu acesso a fichas clínicas foi ativado.");
+      } else {
+        alert("O e-mail ainda consta como não verificado. Verifique se clicou no link enviado para sua caixa de entrada.");
       }
     } catch (err: any) {
       console.error("Erro ao atualizar status de verificação:", err);
@@ -325,9 +330,8 @@ export default function App() {
     }
 
     try {
-      const { auth } = await import("./lib/firebase");
-      const { signOut } = await import("firebase/auth");
-      await signOut(auth);
+      const { getSupabase } = await import("./lib/supabase");
+      await getSupabase().auth.signOut();
     } catch(e) {
       console.error("Error signing out:", e);
     }
