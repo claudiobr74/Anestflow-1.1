@@ -5,41 +5,27 @@
 
 import express from "express";
 import path from "path";
-import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-// Initialize Firebase Admin SDK using configured project ID
-let firebaseProjectId = "anestflow-62d4b";
-try {
-  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(configPath)) {
-    const rawConfig = fs.readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(rawConfig);
-    if (parsed && parsed.projectId) {
-      firebaseProjectId = parsed.projectId;
-    }
+function getSupabaseAuthClient(): SupabaseClient {
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const key =
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    "";
+  if (!url || !key || key.includes("xxxxxxxx")) {
+    throw new Error("VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY ausentes no ambiente do servidor.");
   }
-} catch (e) {
-  console.warn("[Firebase Admin] Usando ID do projeto padrão:", firebaseProjectId);
-}
-
-function getFirebaseAuth() {
-  if (getApps().length === 0) {
-    try {
-      initializeApp({
-        projectId: firebaseProjectId
-      });
-    } catch (err: any) {
-      console.warn("[Firebase Admin] Aviso ao inicializar Firebase Admin:", err?.message || err);
-    }
-  }
-  return getAuth();
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
 }
 
 const app = express();
@@ -107,32 +93,45 @@ function rateLimiter(maxRequests = 30, windowMs = 60 * 1000) {
   };
 }
 
-// Authentication middleware requiring Firebase ID Token in Authorization: Bearer <token>
+// Authentication middleware requiring a Supabase access token in Authorization: Bearer <token>
 async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ 
       error: "Acesso não autorizado.", 
-      details: "Token de autenticação Firebase ausente no cabeçalho Authorization." 
+      details: "Token de autenticação Supabase ausente no cabeçalho Authorization." 
     });
   }
 
-  const idToken = authHeader.substring(7).trim();
-  if (!idToken) {
+  const accessToken = authHeader.substring(7).trim();
+  if (!accessToken) {
     return res.status(401).json({ 
       error: "Acesso não autorizado.", 
-      details: "Token de autenticação Firebase malformado." 
+      details: "Token de autenticação Supabase malformado." 
     });
   }
 
   try {
-    const decodedToken = await getFirebaseAuth().verifyIdToken(idToken);
-    
-    // Attach verified user information to request object
+    const { data, error } = await getSupabaseAuthClient().auth.getUser(accessToken);
+    if (error || !data.user) {
+      return res.status(401).json({ 
+        error: "Acesso não autorizado.", 
+        details: "Sessão inválida, expirada ou token revogado." 
+      });
+    }
+
+    const emailVerified = Boolean(data.user.email_confirmed_at);
+    if (!emailVerified) {
+      return res.status(401).json({ 
+        error: "Acesso não autorizado.", 
+        details: "E-mail ainda não confirmado." 
+      });
+    }
+
     (req as any).user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email || "",
-      emailVerified: decodedToken.email_verified || false
+      uid: data.user.id,
+      email: data.user.email || "",
+      emailVerified
     };
 
     next();
