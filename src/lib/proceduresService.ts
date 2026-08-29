@@ -2,6 +2,7 @@ import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { getSupabase } from "./supabase";
 import { ensureUniqueClinicalEventIds } from "./syncEngine";
 import { throwClinical } from "./clinicalErrors";
+import { validateAssumeReason } from "./assumeResponsibility";
 import { withInProgressIfAnesthesiaStarted } from "./procedureStatus";
 import { assertCanEdit } from "./assertCanEdit";
 import { lookupProfileByEmail } from "./profileService";
@@ -421,32 +422,62 @@ export async function declinePendingTransferAtomic(procedureId: string): Promise
   return updated;
 }
 
+function acceptOrAssumeHandover(
+  user: { uid: string; name: string; crm: string; uf: string; email?: string },
+  outgoing?: { uid?: string; name?: string; crm?: string; uf?: string }
+) {
+  return {
+    incomingName: user.name,
+    incomingCRM: user.crm,
+    incomingUF: user.uf,
+    incomingUid: user.uid,
+    incomingEmail: user.email || "",
+    outgoingName: outgoing?.name || "",
+    outgoingCRM: outgoing?.crm || "",
+    outgoingUF: outgoing?.uf || "",
+    outgoingUid: outgoing?.uid || ""
+  };
+}
+
 export async function claimResponsibilityAtomic(
   procedureId: string,
   user: { uid: string; name: string; crm: string; uf: string; email?: string },
   outgoing?: { uid?: string; name?: string; crm?: string; uf?: string }
 ): Promise<AnesthesiaDocument> {
   if (!user?.uid) throw new Error("Usuário não autenticado.");
-  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de assumir a responsabilidade.");
+  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de aceitar a transferência.");
 
   const { error } = await getSupabase().rpc("claim_responsibility", {
     p_procedure_id: procedureId,
-    p_handover: {
-      incomingName: user.name,
-      incomingCRM: user.crm,
-      incomingUF: user.uf,
-      incomingUid: user.uid,
-      outgoingName: outgoing?.name || "",
-      outgoingCRM: outgoing?.crm || "",
-      outgoingUF: outgoing?.uf || "",
-      outgoingUid: outgoing?.uid || "",
-      clinicalConditions: "Responsabilidade clínica assumida diretamente pelo profissional.",
-      incidentsReported: "Sem intercorrências registradas na assunção de plantão.",
-      ongoingInfusions: "Verificar infusões no gráfico intraoperatório.",
-      pendingItems: "Assunção direta de responsabilidade."
-    }
+    p_handover: acceptOrAssumeHandover(user, outgoing)
   });
-  if (error) throwClinical(error, "Erro ao assumir responsabilidade.");
+  if (error) throwClinical(error, "Erro ao aceitar a transferência.");
+
+  const updated = await getProcedureById(procedureId);
+  if (!updated) throw new Error("Ficha não encontrada após aceitar a transferência.");
+  return updated;
+}
+
+export async function assumeResponsibilityAtomic(
+  procedureId: string,
+  user: { uid: string; name: string; crm: string; uf: string; email?: string },
+  outgoing: { uid?: string; name?: string; crm?: string; uf?: string } | undefined,
+  reason: string
+): Promise<AnesthesiaDocument> {
+  if (!user?.uid) throw new Error("Usuário não autenticado.");
+  if (!isUuid(procedureId)) throw new Error("Salve a ficha na nuvem antes de assumir a responsabilidade.");
+
+  const reasonCheck = validateAssumeReason(reason);
+  if (!reasonCheck.ok) {
+    throw new Error(reasonCheck.message);
+  }
+
+  const { error } = await getSupabase().rpc("assume_responsibility", {
+    p_procedure_id: procedureId,
+    p_reason: reasonCheck.reason,
+    p_handover: acceptOrAssumeHandover(user, outgoing)
+  });
+  if (error) throwClinical(error, "Erro ao assumir a responsabilidade.");
 
   const updated = await getProcedureById(procedureId);
   if (!updated) throw new Error("Ficha não encontrada após assumir a responsabilidade.");

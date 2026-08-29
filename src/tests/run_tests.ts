@@ -933,6 +933,20 @@ try {
     mapClinicalError({ message: "profile_not_found" }).message.includes("perfil"),
     "profile_not_found pede perfil confirmado"
   );
+  assert(
+    mapClinicalError({ message: "reason_required" }).message.toLowerCase().includes("motivo"),
+    "reason_required pede motivo da assunção"
+  );
+  assert(
+    mapClinicalError({ message: "claim_requires_pending" }).message.toLowerCase().includes("assumir"),
+    "claim_requires_pending aponta para Assumir"
+  );
+
+  const { validateAssumeReason } = await import("../lib/assumeResponsibility.ts");
+  assert(validateAssumeReason("curto").ok === false, "motivo curto falha");
+  assert(validateAssumeReason("1234567890").ok === true, "motivo com 10 caracteres passa");
+  assert(validateAssumeReason("   abc   ").ok === false, "trim não infla motivo curto");
+  assert(validateAssumeReason("  motivo excepcional de teste  ").ok === true, "motivo válido após normalizar");
 
   const payload = parentPayloadForWrite(getBlankDocument(), "alice-uid", { includeStatus: true });
   assert(!("pending_transfer" in payload), "autosave não envia pending_transfer");
@@ -941,31 +955,77 @@ try {
   assert(appSrc.includes("resolveIncomingDoctorByEmail"), "Transferência resolve o colega por e-mail");
   assert(appSrc.includes("requestTransferAtomic"), "Solicitar transferência usa RPC");
   assert(appSrc.includes("declinePendingTransferAtomic"), "Recusar pendência usa RPC");
-  assert(appSrc.includes("claimResponsibilityAtomic"), "Aceitar/assumir usa claim RPC");
+  assert(appSrc.includes("assumeResponsibilityAtomic"), "Assumir usa assume RPC");
   assert(appSrc.includes("requireCloudProcedure"), "Claim/transfer recusam ficha só local ou offline");
   assert(!/incomingUid:\s*user\??\.uid/.test(appSrc), "App não usa o UID do sainte como incoming");
   assert(!/currentResponsibleUid:\s*user\??\.uid/.test(appSrc), "App não muta currentResponsibleUid no cliente");
   assert(!appSrc.includes("Solicitar Troca"), "Modo leitura não abre o modal de transfer do responsável");
-  assert(appSrc.includes("handleClaimResponsibility"), "Modo leitura oferece Assumir via claim");
+  assert(appSrc.includes("handleClaimResponsibility"), "Modo leitura oferece Assumir");
+  assert(appSrc.includes("AssumeResponsibilityModal"), "Assumir abre modal de motivo");
+  assert(!appSrc.includes("isSyncing={syncEngine.isOnline}"), "ShareModal não trata online como pause");
+  assert(!appSrc.includes("toggleSync={syncEngine.retrySyncNow}"), "ShareModal não usa retry como pause");
+  assert(appSrc.includes("autosavePaused={syncEngine.autosavePaused}"), "ShareModal recebe pause real");
+  assert(appSrc.includes("onToggleAutosavePause={syncEngine.toggleAutosavePause}"), "ShareModal alterna pauseAutosave");
+
+  const claimFn = appSrc.slice(
+    appSrc.indexOf("const handleClaimResponsibility"),
+    appSrc.indexOf("const handleConfirmAssume")
+  );
+  assert(!claimFn.includes("claimResponsibilityAtomic"), "Assumir não chama claim_responsibility");
+  assert(claimFn.includes("setShowAssumeModal"), "Assumir abre o modal de motivo");
+
+  const assumeFn = appSrc.slice(
+    appSrc.indexOf("const handleConfirmAssume"),
+    appSrc.indexOf("const handleConfirmTransfer")
+  );
+  assert(assumeFn.includes("assumeResponsibilityAtomic"), "Confirmar Assumir chama assume RPC");
+  assert(!assumeFn.includes("claimResponsibilityAtomic"), "Confirmar Assumir não chama claim");
+
+  const acceptFn = appSrc.slice(
+    appSrc.indexOf("const handleAcceptTransfer"),
+    appSrc.indexOf("const handleCancelTransfer")
+  );
+  assert(acceptFn.includes("claimResponsibilityAtomic"), "Aceitar usa claim RPC");
+  assert(!acceptFn.includes("assumeResponsibilityAtomic"), "Aceitar não usa assume RPC");
 
   const modalSrc = fs.readFileSync(path.join(process.cwd(), "src/components/TransferResponsibilityModal.tsx"), "utf-8");
   assert(modalSrc.includes("lookupProfileByEmail"), "Modal consulta perfil pelo e-mail");
   assert(modalSrc.includes("type=\"email\"") && modalSrc.includes("required"), "E-mail do entrante é obrigatório");
   assert(!modalSrc.includes("(opcional)"), "E-mail não é mais opcional no modal");
 
+  const assumeModalSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AssumeResponsibilityModal.tsx"), "utf-8");
+  assert(assumeModalSrc.includes("validateAssumeReason"), "Modal de Assumir valida o motivo");
+  assert(assumeModalSrc.includes("MIN_ASSUME_REASON_LENGTH"), "Modal de Assumir exige mínimo de caracteres");
+
   const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
   assert(procSrc.includes("rpc(\"request_transfer\""), "requestTransferAtomic chama request_transfer");
   assert(procSrc.includes("rpc(\"decline_pending_transfer\""), "declinePendingTransferAtomic chama decline_pending_transfer");
+  assert(procSrc.includes("rpc(\"assume_responsibility\""), "assumeResponsibilityAtomic chama assume_responsibility");
   assert(procSrc.includes("incomingDoctor.uid === currentUserId"), "Cliente recusa transferir para si mesmo");
+  assert(!procSrc.includes("Assunção direta de responsabilidade"), "Claim não envia texto de assunção direta");
+
+  const engineSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  assert(engineSrc.includes("pauseAutosave"), "useSyncEngine exporta pauseAutosave");
+  assert(engineSrc.includes("autosavePaused"), "useSyncEngine guarda autosavePaused");
+  assert(engineSrc.includes("Autosave pausado"), "statusText distingue pause de offline");
+  assert(engineSrc.includes("Pausado: não atualiza o hash"), "pause não consome o hash antes do resume");
+
+  const shareSrc4 = fs.readFileSync(path.join(process.cwd(), "src/components/ShareModal.tsx"), "utf-8");
+  assert(shareSrc4.includes("autosavePaused"), "ShareModal recebe autosavePaused");
+  assert(shareSrc4.includes("onToggleAutosavePause"), "ShareModal pausa/retoma autosave");
+  assert(shareSrc4.includes("Retomar"), "ShareModal tem rótulo Retomar");
+  assert(!shareSrc4.includes("isSyncing"), "ShareModal não usa mais isSyncing como pause");
+  assert(!shareSrc4.includes("toggleSync"), "ShareModal não usa mais toggleSync");
 
   const childrenSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalChildren.ts"), "utf-8");
   assert(!childrenSrc.includes("from(\"procedure_transfers\").upsert"), "Autosave não grava procedure_transfers");
   assert(childrenSrc.includes("Transferências só entram via RPC"), "addClinicalEventItem recusa transfers locais");
 
   const migDir = path.join(process.cwd(), "supabase/migrations");
-  const migFiles = fs.readdirSync(migDir).filter((f) => f.includes("fase_4"));
+  const migFiles = fs.readdirSync(migDir).filter((f) => f.includes("fase_4")).sort();
   assert(migFiles.length >= 1, "Migration Fase 4 existe");
-  const mig = fs.readFileSync(path.join(migDir, migFiles[0]), "utf-8");
+  const migRequest = migFiles.find((f) => f.includes("fase_4_request")) || migFiles[0];
+  const mig = fs.readFileSync(path.join(migDir, migRequest), "utf-8");
   assert(mig.includes("private.request_transfer"), "Migration cria request_transfer");
   assert(mig.includes("private.decline_pending_transfer"), "Migration cria decline_pending_transfer");
   assert(mig.includes("pending_transfer = null"), "Claim limpa pending_transfer");
@@ -973,8 +1033,18 @@ try {
   assert(mig.includes("grant execute on function public.request_transfer"), "authenticated pode chamar request_transfer");
   assert(mig.includes("revoke all on function public.request_transfer") && mig.includes("anon"), "anon não executa request_transfer");
 
+  const mig4aName = migFiles.find((f) => f.includes("fase_4a"));
+  assert(!!mig4aName, "Migration Fase 4A existe");
+  const mig4a = fs.readFileSync(path.join(migDir, mig4aName as string), "utf-8");
+  assert(mig4a.includes("private.assume_responsibility"), "Migration 4A cria assume_responsibility");
+  assert(mig4a.includes("claim_requires_pending"), "claim exige pending_transfer");
+  assert(mig4a.includes("reason_required"), "assume exige motivo");
+  assert(mig4a.includes("assume_responsibility_exceptional"), "audit de assunção excepcional");
+
   const readme4 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
   assert(readme4.includes("Fase 4") && readme4.includes("request_transfer"), "README documenta Fase 4");
+  assert(readme4.includes("assume_responsibility"), "README documenta assume_responsibility");
+  assert(readme4.includes("pauseAutosave"), "README documenta pauseAutosave");
 } catch (err) {
   assert(false, `Falha na verificação da Fase 4: ${err}`);
 }

@@ -1,5 +1,10 @@
+import { ASSUME_REASON_REQUIRED_MESSAGE } from "./assumeResponsibility";
+
 export const STALE_REVISION_MESSAGE =
   "Esta ficha foi atualizada em outro lugar. Recarregamos a versão mais recente para não sobrescrever o que já está na nuvem.";
+
+export const CLAIM_REQUIRES_PENDING_MESSAGE =
+  "Não há transferência pendente para aceitar. Para assumir o caso sem convite, use Assumir responsabilidade e informe o motivo.";
 
 export function isStaleRevisionError(error: unknown): boolean {
   const err = error as { message?: string; details?: string; code?: string };
@@ -31,6 +36,12 @@ export function mapClinicalError(error: unknown, fallback = "Erro ao gravar a fi
   }
   if (raw.includes("pending_not_found")) {
     return new Error("Não há solicitação de transferência pendente nesta ficha.");
+  }
+  if (raw.includes("claim_requires_pending")) {
+    return new Error(CLAIM_REQUIRES_PENDING_MESSAGE);
+  }
+  if (raw.includes("reason_required")) {
+    return new Error(ASSUME_REASON_REQUIRED_MESSAGE);
   }
   if (raw.includes("incoming_required")) {
     return new Error("Informe o colega que vai assumir o caso.");

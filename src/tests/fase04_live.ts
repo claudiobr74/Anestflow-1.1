@@ -1,9 +1,10 @@
 /**
  * Live check da Fase 4 contra o projeto Anestflow.
  * Paciente fictício. Sem PHI. Um único usuário de teste:
- * claim na própria ficha = no-op; transfer/request para si mesmo falha;
+ * claim na própria ficha = no-op; assume na própria ficha = no-op após motivo;
+ * assume sem motivo = reason_required; transfer/request para si mesmo falha;
  * e-mail inexistente não resolve perfil. Sem segundo médico, não há
- * roundtrip real de handover.
+ * roundtrip real de handover nem claim_requires_pending.
  *
  * Uso: env de .env.local + ONDA3_TEST_EMAIL / ONDA3_TEST_PASSWORD
  */
@@ -12,6 +13,7 @@ import { getSupabase } from "../lib/supabase.ts";
 import {
   saveProcedure,
   getProcedureById,
+  assumeResponsibilityAtomic,
   claimResponsibilityAtomic,
   transferResponsibilityAtomic,
   requestTransferAtomic,
@@ -76,6 +78,36 @@ const claimed = await claimResponsibilityAtomic(
 if (claimed.currentResponsibleUid !== uid) fail("claim na própria ficha mudou o responsável");
 if (claimed.pendingTransfer) fail("claim na própria ficha inventou pending_transfer");
 console.log("claim no-op ok");
+
+try {
+  await assumeResponsibilityAtomic(
+    doc.id,
+    { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP", email },
+    { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP" },
+    "curto"
+  );
+  fail("assume com motivo curto deveria falhar");
+} catch (err) {
+  assertMsg(err, "motivo", "assume short reason");
+}
+
+const { error: rpcEmptyReason } = await supabase.rpc("assume_responsibility", {
+  p_procedure_id: doc.id,
+  p_reason: "   ",
+  p_handover: { incomingName: "Dr. Agente Fase Quatro" },
+});
+if (!rpcEmptyReason) fail("RPC assume_responsibility sem motivo deveria falhar");
+assertMsg(rpcEmptyReason, "motivo", "rpc assume empty reason");
+
+const assumed = await assumeResponsibilityAtomic(
+  doc.id,
+  { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP", email },
+  { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP" },
+  "Motivo excepcional de teste live."
+);
+if (assumed.currentResponsibleUid !== uid) fail("assume na própria ficha mudou o responsável");
+if (assumed.pendingTransfer) fail("assume na própria ficha inventou pending_transfer");
+console.log("assume no-op ok");
 
 try {
   await transferResponsibilityAtomic(

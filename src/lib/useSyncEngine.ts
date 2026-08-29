@@ -21,6 +21,7 @@ export function useSyncEngine(
     return navigator.onLine ? "saved" : "offline";
   });
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [autosavePaused, setAutosavePaused] = useState(false);
   const [pendingCount, setPendingCount] = useState<number>(() => SyncQueueManager.getPendingCount());
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export function useSyncEngine(
   const isLocalSavingRef = useRef<boolean>(false);
   const fichaRef = useRef<AnesthesiaDocument>(ficha);
   const lastDocStateHashRef = useRef<string>("");
+  const autosavePausedRef = useRef(false);
 
   // Keep ficha ref current to avoid stale closure issues in debounced save
   useEffect(() => {
@@ -37,8 +39,9 @@ export function useSyncEngine(
   }, [ficha]);
 
   // Status label calculation
-  const getStatusText = (st: SyncStatus, online: boolean): string => {
+  const getStatusText = (st: SyncStatus, online: boolean, paused: boolean): string => {
     if (!online || st === "offline") return "Offline — alterações nesta aba até sincronizar";
+    if (paused) return "Autosave pausado — alterações neste dispositivo";
     switch (st) {
       case "syncing":
         return "Sincronizando...";
@@ -51,7 +54,7 @@ export function useSyncEngine(
     }
   };
 
-  const statusText = getStatusText(status, isOnline);
+  const statusText = getStatusText(status, isOnline, autosavePaused);
 
   // Function to flush all queued pending documents to Supabase
   const flushPendingQueue = useCallback(async () => {
@@ -147,7 +150,7 @@ export function useSyncEngine(
       setStatus("offline");
     } else {
       setStatus("error");
-      if (hasFailure) {
+      if (hasFailure && !autosavePausedRef.current) {
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
         retryTimerRef.current = setTimeout(() => {
           flushPendingQueue();
@@ -160,6 +163,7 @@ export function useSyncEngine(
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
+      if (autosavePausedRef.current) return;
       if (status === "offline" || SyncQueueManager.getPendingCount() > 0) {
         flushPendingQueue();
       }
@@ -200,6 +204,12 @@ export function useSyncEngine(
     if (currentHash === lastDocStateHashRef.current) {
       return;
     }
+
+    // Pausado: não atualiza o hash para o resume enxergar as mudanças.
+    if (autosavePaused) {
+      return;
+    }
+
     lastDocStateHashRef.current = currentHash;
 
     // If ficha is signed or has no meaningful patient or clinical data, do NOT enqueue or save to cloud
@@ -239,7 +249,7 @@ export function useSyncEngine(
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [ficha, flushPendingQueue, isResponsible]);
+  }, [ficha, flushPendingQueue, isResponsible, autosavePaused]);
 
   // Real-time remote listener (Supabase postgres_changes)
   useEffect(() => {
@@ -266,14 +276,42 @@ export function useSyncEngine(
     flushPendingQueue();
   }, [flushPendingQueue]);
 
+  const pauseAutosave = useCallback(() => {
+    autosavePausedRef.current = true;
+    setAutosavePaused(true);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  const resumeAutosave = useCallback(() => {
+    autosavePausedRef.current = false;
+    setAutosavePaused(false);
+    void flushPendingQueue();
+  }, [flushPendingQueue]);
+
+  const toggleAutosavePause = useCallback(() => {
+    if (autosavePausedRef.current) resumeAutosave();
+    else pauseAutosave();
+  }, [pauseAutosave, resumeAutosave]);
+
   return {
     status,
     statusText,
     isOnline,
+    autosavePaused,
     pendingCount,
     lastSavedAt,
     errorMessage,
     retrySyncNow,
+    pauseAutosave,
+    resumeAutosave,
+    toggleAutosavePause,
     isResponsible
   };
 }

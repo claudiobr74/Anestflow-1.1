@@ -20,6 +20,7 @@ import ProceduresManagerModal from "./components/ProceduresManagerModal";
 import ShareModal from "./components/ShareModal";
 import SettingsModal, { AppSettings, DEFAULT_APP_SETTINGS } from "./components/SettingsModal";
 import TransferResponsibilityModal from "./components/TransferResponsibilityModal";
+import AssumeResponsibilityModal from "./components/AssumeResponsibilityModal";
 import { PRESET_TEMPLATES } from "./components/AnesthesiaTemplatesModalData";
 import { VoiceCommandButton } from "./components/VoiceCommandButton";
 import { VoiceCommandConfirmModal } from "./components/VoiceCommandConfirmModal";
@@ -32,6 +33,7 @@ import {
 import { useSyncEngine } from "./lib/useSyncEngine";
 import SyncStatusBadge from "./components/SyncStatusBadge";
 import {
+  assumeResponsibilityAtomic,
   claimResponsibilityAtomic,
   declinePendingTransferAtomic,
   requestTransferAtomic,
@@ -124,6 +126,7 @@ export default function App() {
   const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
   const overflowMenuRef = useRef<HTMLDivElement | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showAssumeModal, setShowAssumeModal] = useState(false);
   const [showSaveNotice, setShowSaveNotice] = useState(false);
   const saveNoticeTimer = React.useRef<NodeJS.Timeout | null>(null);
   
@@ -559,7 +562,7 @@ export default function App() {
     uf: ficha.team?.ufLead || ""
   });
 
-  const handleClaimResponsibility = async () => {
+  const handleClaimResponsibility = () => {
     if (!user || !user.uid) {
       alert("É necessário estar autenticado com um e-mail válido para assumir a responsabilidade clínica.");
       return;
@@ -568,18 +571,29 @@ export default function App() {
       alert("Esta ficha foi encerrada e assinada. Alterações não são permitidas.");
       return;
     }
+    if (ficha.currentResponsibleUid === user.uid) return;
     if (!requireCloudProcedure("Assumir a responsabilidade")) return;
+    setShowAssumeModal(true);
+  };
 
-    const currentLead = ficha.team?.anesthesiologistLead || "outro anestesiologista";
-    if (!confirm(`Deseja assumir formalmente a responsabilidade clínica desta ficha (atualmente com Dr(a). ${currentLead})?\n\nVocê (Dr(a). ${user.name}, CRM ${user.crm}/${user.uf}) passará a ser o único profissional autorizado a realizar alterações clínicas.`)) {
+  const handleConfirmAssume = async (reason: string) => {
+    if (!user || !user.uid) {
+      alert("É necessário estar autenticado com um e-mail válido para assumir a responsabilidade clínica.");
       return;
     }
+    if (!requireCloudProcedure("Assumir a responsabilidade")) return;
 
     setIsClaiming(true);
     try {
-      const updated = await claimResponsibilityAtomic(ficha.id, claimUserPayload(), outgoingFromDocument());
+      const updated = await assumeResponsibilityAtomic(
+        ficha.id,
+        claimUserPayload(),
+        outgoingFromDocument(),
+        reason
+      );
       setFicha(updated);
-      alert("Você agora é o Anestesiologista Responsável por esta ficha!");
+      setShowAssumeModal(false);
+      alert("Você agora é o Anestesiologista Responsável por esta ficha.");
     } catch (err: unknown) {
       console.error("Erro ao assumir responsabilidade:", err);
       alert(mapClinicalError(err).message);
@@ -1337,8 +1351,9 @@ export default function App() {
           isDark={isDark}
           onClose={() => setShowShareModal(false)}
           onUpdateDocument={updateDocumentDirectly}
-          isSyncing={syncEngine.isOnline}
-          toggleSync={syncEngine.retrySyncNow}
+          autosavePaused={syncEngine.autosavePaused}
+          onToggleAutosavePause={syncEngine.toggleAutosavePause}
+          isOnline={syncEngine.isOnline}
           onOpenTransferModal={openTransferModalIfResponsible}
         />
       )}
@@ -1349,6 +1364,16 @@ export default function App() {
           isDark={isDark}
           onClose={() => setShowTransferModal(false)}
           onConfirmTransfer={handleConfirmTransfer}
+        />
+      )}
+
+      {showAssumeModal && (
+        <AssumeResponsibilityModal
+          isDark={isDark}
+          leadName={ficha.team?.anesthesiologistLead || "outro anestesiologista"}
+          isSubmitting={isClaiming}
+          onClose={() => setShowAssumeModal(false)}
+          onConfirm={handleConfirmAssume}
         />
       )}
 

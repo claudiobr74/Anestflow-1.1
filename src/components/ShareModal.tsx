@@ -14,8 +14,9 @@ interface ShareModalProps {
   isDark: boolean;
   onClose: () => void;
   onUpdateDocument: (doc: Partial<AnesthesiaDocument>) => void;
-  isSyncing: boolean;
-  toggleSync: () => void;
+  autosavePaused: boolean;
+  onToggleAutosavePause: () => void;
+  isOnline?: boolean;
   onOpenTransferModal?: () => void;
 }
 
@@ -33,8 +34,9 @@ export default function ShareModal({
   isDark,
   onClose,
   onUpdateDocument,
-  isSyncing,
-  toggleSync,
+  autosavePaused,
+  onToggleAutosavePause,
+  isOnline = true,
   onOpenTransferModal
 }: ShareModalProps) {
   const [searchEmail, setSearchEmail] = useState("");
@@ -213,20 +215,25 @@ export default function ShareModal({
               Sincronização Nuvem
             </h3>
             <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {isSyncing ? "Ativa (Supabase Realtime)" : "Pausada"}
+              {!isOnline
+                ? "Offline — alterações neste dispositivo"
+                : autosavePaused
+                  ? "Pausada — alterações neste dispositivo até retomar"
+                  : "Ativa (autosave na nuvem)"}
             </p>
           </div>
           <button
-            onClick={toggleSync}
+            type="button"
+            onClick={onToggleAutosavePause}
             className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition ${
-              isSyncing
+              !autosavePaused
                 ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm"
                 : isDark
                   ? "bg-zinc-700 hover:bg-zinc-600 text-white"
                   : "bg-zinc-200 hover:bg-zinc-300 text-zinc-900"
             }`}
           >
-            {isSyncing ? "Ativa" : "Ativar"}
+            {autosavePaused ? "Retomar" : "Pausar"}
           </button>
         </div>
 
