@@ -11,13 +11,15 @@ import {
 } from "./clinicalChildren";
 import {
   amendmentFromRow,
+  expectedProcedureRevision,
   isMockProcedureId,
   isUuid,
   parentPayloadForWrite,
   ProcedureRow,
   rowToDocumentBase,
   samePatientDraft,
-  isMeaningfulDocument
+  isMeaningfulDocument,
+  toIso
 } from "./procedureMapper";
 
 export type { ClinicalSubcollectionName };
@@ -101,6 +103,22 @@ async function findExistingDraftId(cleanedDoc: AnesthesiaDocument, userId: strin
   return null;
 }
 
+function applyRevisionMeta(
+  ficha: AnesthesiaDocument,
+  cleanedDoc: AnesthesiaDocument,
+  row: { revision?: number | null; updated_at?: string | null } | null | undefined
+) {
+  const revision = expectedProcedureRevision({
+    revision: typeof row?.revision === "number" ? row.revision : cleanedDoc.revision
+  });
+  const updatedAt = row?.updated_at ? toIso(row.updated_at) : cleanedDoc.updatedAt;
+  cleanedDoc.revision = revision;
+  cleanedDoc.updatedAt = updatedAt;
+  ficha.revision = revision;
+  ficha.updatedAt = updatedAt;
+  ficha.id = cleanedDoc.id;
+}
+
 async function signOnServer(cleanedDoc: AnesthesiaDocument): Promise<void> {
   const canonical = cleanedDoc.signatureSnapshot;
   if (!canonical) {
@@ -155,7 +173,7 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
     if (isUuid(cleanedDoc.id)) {
       const { data: existing, error: readError } = await supabase
         .from("procedures")
-        .select("id, status, created_by, responsible_id")
+        .select("id, status, created_by, responsible_id, revision")
         .eq("id", cleanedDoc.id)
         .maybeSingle();
       if (readError) throwClinical(readError);
@@ -173,32 +191,72 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
           );
         }
 
-        const { error: updateError } = await supabase
+        const expected = expectedProcedureRevision(cleanedDoc);
+        const serverRevision = expectedProcedureRevision({
+          revision: existing.revision as number | null | undefined
+        });
+        if (serverRevision !== expected) {
+          throw new Error("stale_revision");
+        }
+
+        const { data: updated, error: updateError } = await supabase
           .from("procedures")
           .update(parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true }))
-          .eq("id", cleanedDoc.id);
+          .eq("id", cleanedDoc.id)
+          .eq("revision", expected)
+          .select("revision, updated_at")
+          .maybeSingle();
         if (updateError) throwClinical(updateError);
+        if (!updated) {
+          const { data: again, error: againError } = await supabase
+            .from("procedures")
+            .select("id, status, responsible_id, revision")
+            .eq("id", cleanedDoc.id)
+            .maybeSingle();
+          if (againError) throwClinical(againError);
+          if (!again) throw new Error("Ficha não encontrada na nuvem.");
+          if (again.status === "signed") {
+            throw new Error(
+              "Ficha Assinada e Imutável: O documento foi assinado digitalmente e não pode mais sofrer alterações diretamente. Para correções, utilize o recurso de Adendo Retificatório Imutável."
+            );
+          }
+          if (again.responsible_id && again.responsible_id !== userId) {
+            throw new Error(
+              `Edição bloqueada: A ficha está sob a responsabilidade de Dr(a). ${cleanedDoc.team?.anesthesiologistLead || "outro profissional"}.`
+            );
+          }
+          throw new Error("stale_revision");
+        }
+        applyRevisionMeta(ficha, cleanedDoc, updated);
       } else {
-        const { error: insertError } = await supabase.from("procedures").insert({
-          id: cleanedDoc.id,
-          created_by: userId,
-          responsible_id: userId,
-          ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
-        });
+        const { data: inserted, error: insertError } = await supabase
+          .from("procedures")
+          .insert({
+            id: cleanedDoc.id,
+            created_by: userId,
+            responsible_id: userId,
+            ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
+          })
+          .select("revision, updated_at")
+          .maybeSingle();
         if (insertError) throwClinical(insertError);
-        ficha.id = cleanedDoc.id;
+        applyRevisionMeta(ficha, cleanedDoc, inserted);
       }
     } else {
       const newId = crypto.randomUUID();
-      const { error: insertError } = await supabase.from("procedures").insert({
-        id: newId,
-        created_by: userId,
-        responsible_id: userId,
-        ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
-      });
+      const { data: inserted, error: insertError } = await supabase
+        .from("procedures")
+        .insert({
+          id: newId,
+          created_by: userId,
+          responsible_id: userId,
+          ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
+        })
+        .select("revision, updated_at")
+        .maybeSingle();
       if (insertError) throwClinical(insertError);
       cleanedDoc.id = newId;
-      ficha.id = newId;
+      applyRevisionMeta(ficha, cleanedDoc, inserted);
     }
 
     await persistClinicalChildren(cleanedDoc, userId);

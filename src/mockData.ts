@@ -884,6 +884,7 @@ export function getBlankDocument(): AnesthesiaDocument {
     status: "Draft",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    revision: 1,
     patient: {
       id: `pat-${Date.now()}`,
       fullName: "",

@@ -271,4 +271,14 @@ O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo cont
 
 Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` não foram fatiados.
 
+## Fase 6 (`revision` de concorrência)
+
+A última gravação **não** ganha mais por `id` sozinho. Cada linha em `procedures` tem `revision` (inteiro, começa em 1). Um trigger `BEFORE UPDATE` no servidor incrementa sempre — o cliente **não** manda o valor no payload (mesmo padrão de `pending_transfer`).
+
+`saveProcedure` faz `UPDATE … WHERE id = $1 AND revision = $esperado`. Zero linhas → `stale_revision`: a fila **não** retenta a cada 5s; recarrega a ficha da nuvem (servidor ganha, sem merge clínico) e o badge de sync mostra o erro. Fichas antigas e rascunhos em `sessionStorage` sem o campo tratam a revision esperada como **1**.
+
+Mudar só `revision` / `updatedAt` **não** altera `clinicalChangeFingerprint` — o autosave não entra em loop. `docVersion` / `schema_version` continuam sendo versão de schema, não token de linha. `updatedAtServer` não foi removido.
+
+Com um único usuário de teste o conflito é reproduzido gravando de novo com `revision` velha; duas abas reais ou um segundo médico não são necessários para validar o token.
+
 

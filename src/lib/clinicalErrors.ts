@@ -1,7 +1,22 @@
+export const STALE_REVISION_MESSAGE =
+  "Esta ficha foi atualizada em outro lugar. Recarregamos a versão mais recente para não sobrescrever o que já está na nuvem.";
+
+export function isStaleRevisionError(error: unknown): boolean {
+  const err = error as { message?: string; details?: string; code?: string };
+  const raw = `${err?.message || ""} ${err?.details || ""} ${err?.code || ""}`.toLowerCase();
+  if (raw.includes("stale_revision")) return true;
+  if (error instanceof Error && error.message.toLowerCase().includes("stale_revision")) return true;
+  if (raw.includes("atualizada em outro lugar")) return true;
+  return false;
+}
+
 export function mapClinicalError(error: unknown, fallback = "Erro ao gravar a ficha no Supabase."): Error {
   const err = error as { message?: string; code?: string; details?: string };
   const raw = `${err?.message || ""} ${err?.details || ""} ${err?.code || ""}`.toLowerCase();
 
+  if (raw.includes("stale_revision") || raw.includes("atualizada em outro lugar")) {
+    return new Error(STALE_REVISION_MESSAGE);
+  }
   if (raw.includes("signed_procedure_immutable") || raw.includes("already_signed")) {
     return new Error("Ficha assinada e imutável. Use um adendo retificatório para correções.");
   }

@@ -10,6 +10,7 @@ import { subscribeProcedureRealtime } from "./procedureRealtime";
 import { isUuid } from "./procedureMapper";
 import { clinicalChangeFingerprint } from "./clinicalChangeFingerprint";
 import { canEditDocument } from "./assertCanEdit";
+import { isStaleRevisionError, mapClinicalError } from "./clinicalErrors";
 
 export function useSyncEngine(
   ficha: AnesthesiaDocument,
@@ -28,6 +29,7 @@ export function useSyncEngine(
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLocalSavingRef = useRef<boolean>(false);
   const fichaRef = useRef<AnesthesiaDocument>(ficha);
+  const lastDocStateHashRef = useRef<string>("");
 
   // Keep ficha ref current to avoid stale closure issues in debounced save
   useEffect(() => {
@@ -74,6 +76,7 @@ export function useSyncEngine(
 
     let successCount = 0;
     let hasFailure = false;
+    let staleConflict = false;
 
     for (const docId of docIds) {
       const item = queue[docId];
@@ -88,15 +91,42 @@ export function useSyncEngine(
         await saveProcedure(cleanedDoc, userId);
         SyncQueueManager.dequeue(docId);
 
-        if (cleanedDoc.id !== item.doc.id && onRemoteUpdate) {
-          onRemoteUpdate(cleanedDoc);
-        }
+        const live = fichaRef.current;
+        const next: AnesthesiaDocument = {
+          ...live,
+          id: cleanedDoc.id,
+          revision: cleanedDoc.revision ?? live.revision,
+          updatedAt: cleanedDoc.updatedAt || live.updatedAt
+        };
+        fichaRef.current = next;
+        lastDocStateHashRef.current = clinicalChangeFingerprint(next);
+        if (onRemoteUpdate) onRemoteUpdate(next);
 
         successCount++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`[SyncEngine] Falha ao sincronizar documento ${docId}:`, err);
+        if (isStaleRevisionError(err)) {
+          SyncQueueManager.dequeue(docId);
+          staleConflict = true;
+          setErrorMessage(mapClinicalError(err).message);
+          const staleId = item.doc.id;
+          if (isUuid(staleId)) {
+            try {
+              const remote = await getProcedureById(staleId);
+              if (remote) {
+                lastDocStateHashRef.current = clinicalChangeFingerprint(remote);
+                fichaRef.current = remote;
+                if (onRemoteUpdate) onRemoteUpdate(remote);
+              }
+            } catch (reloadErr) {
+              console.warn("[SyncEngine] Falha ao recarregar ficha após conflito de revision:", reloadErr);
+            }
+          }
+          continue;
+        }
         hasFailure = true;
-        setErrorMessage(err?.message || "Erro de conexão ao salvar na nuvem");
+        const mapped = err instanceof Error ? err.message : mapClinicalError(err).message;
+        setErrorMessage(mapped || "Erro de conexão ao salvar na nuvem");
       }
     }
 
@@ -106,20 +136,25 @@ export function useSyncEngine(
     setPendingCount(remainingCount);
 
     if (!hasFailure && remainingCount === 0) {
-      setStatus("saved");
-      setLastSavedAt(new Date());
-      setErrorMessage(null);
+      if (staleConflict) {
+        setStatus("error");
+      } else {
+        setStatus("saved");
+        setLastSavedAt(new Date());
+        setErrorMessage(null);
+      }
     } else if (!navigator.onLine) {
       setStatus("offline");
     } else {
       setStatus("error");
-      // Schedule auto-retry in 5 seconds
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = setTimeout(() => {
-        flushPendingQueue();
-      }, 5000);
+      if (hasFailure) {
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => {
+          flushPendingQueue();
+        }, 5000);
+      }
     }
-  }, [userId]);
+  }, [userId, onRemoteUpdate]);
 
   // Network online/offline event listeners
   useEffect(() => {
@@ -148,7 +183,6 @@ export function useSyncEngine(
 
   // Continuous Autosave effect triggered on ficha changes (ONLY for current responsible)
   const currentDocIdRef = useRef<string>("");
-  const lastDocStateHashRef = useRef<string>("");
 
   useEffect(() => {
     if (!ficha || !ficha.id) return;
