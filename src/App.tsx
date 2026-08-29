@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnesthesiaDocument, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass, AnesthesiologistTransfer, PendingTransfer } from "./types";
 import { getMockDocument, getBlankDocument, calculateAge } from "./mockData";
 import PatientTab from "./components/PatientTab";
@@ -84,6 +84,8 @@ export default function App() {
   const [showProceduresModal, setShowProceduresModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+  const overflowMenuRef = useRef<HTMLDivElement | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showSaveNotice, setShowSaveNotice] = useState(false);
   const saveNoticeTimer = React.useRef<NodeJS.Timeout | null>(null);
@@ -96,6 +98,24 @@ export default function App() {
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showReloadConfirm, setShowReloadConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!overflowMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (overflowMenuRef.current && !overflowMenuRef.current.contains(event.target as Node)) {
+        setOverflowMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOverflowMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [overflowMenuOpen]);
 
   // Auto-save settings to localStorage (non-clinical UI settings)
   useEffect(() => {
@@ -1199,7 +1219,7 @@ export default function App() {
       )}
 
       {/* 1. CLINICAL HEADER & ACTIVE TIMER MONITOR */}
-      <header className={`relative shrink-0 transition-all duration-300 border-b z-10 backdrop-blur-md bg-white/80 dark:bg-zinc-950/80 ${
+      <header className={`relative shrink-0 transition-all duration-300 border-b z-30 backdrop-blur-md bg-white/80 dark:bg-zinc-950/80 ${
         isDark 
           ? "bg-zinc-950/90 border-zinc-800 text-zinc-100" 
           : "bg-white/95 backdrop-blur-md border-slate-200 text-slate-900"
@@ -1284,34 +1304,46 @@ export default function App() {
                 <span className="hidden sm:inline">Equipe</span>
               </button>
               
-              {/* Menu Secundário (Overflow) */}
-              <div className="relative group">
-                <button className="p-1.5 rounded-lg border border-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center">
+              {/* Menu secundário: clique (touch não tem hover). */}
+              <div className="relative" ref={overflowMenuRef}>
+                <button
+                  type="button"
+                  aria-label="Mais opções"
+                  aria-haspopup="menu"
+                  aria-expanded={overflowMenuOpen}
+                  onClick={() => setOverflowMenuOpen((open) => !open)}
+                  className="p-2.5 min-h-11 min-w-11 rounded-lg border border-transparent hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center"
+                >
                   <MoreHorizontal className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
                 </button>
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-lg border border-slate-200 dark:border-zinc-800 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                  <div className="py-1 flex flex-col text-sm text-zinc-700 dark:text-zinc-300">
-                    <button onClick={() => setShowProceduresModal(true)} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      <Database className="w-4 h-4" /> Arquivo
-                    </button>
-                    <button onClick={triggerReloadMockData} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      <FileText className="w-4 h-4" /> Modelo Exemplo
-                    </button>
-                    <button onClick={triggerResetToBlank} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
-                      <RotateCcw className="w-4 h-4" /> Limpar Tudo
-                    </button>
-                    <div className="h-px bg-slate-200 dark:bg-zinc-800 my-1"></div>
-                    <button onClick={() => setShowSettingsModal(true)} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      <Settings className="w-4 h-4" /> Configurações
-                    </button>
-                    <button onClick={toggleTheme} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
-                      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDark ? 'Modo Claro' : 'Modo Escuro'}
-                    </button>
-                    <button onClick={() => { void handleLogout(); }} className="px-4 py-2 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
-                      <LogOut className="w-4 h-4" /> Sair
-                    </button>
+                {overflowMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-lg border border-slate-200 dark:border-zinc-800 z-[80] overflow-hidden"
+                  >
+                    <div className="py-1 flex flex-col text-sm text-zinc-700 dark:text-zinc-300">
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); setShowProceduresModal(true); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
+                        <Database className="w-4 h-4" /> Arquivo
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); triggerReloadMockData(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Modelo Exemplo
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); triggerResetToBlank(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                        <RotateCcw className="w-4 h-4" /> Limpar Tudo
+                      </button>
+                      <div className="h-px bg-slate-200 dark:bg-zinc-800 my-1"></div>
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); setShowSettingsModal(true); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
+                        <Settings className="w-4 h-4" /> Configurações
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); toggleTheme(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
+                        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDark ? 'Modo Claro' : 'Modo Escuro'}
+                      </button>
+                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); void handleLogout(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                        <LogOut className="w-4 h-4" /> Sair
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>

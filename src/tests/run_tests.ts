@@ -263,6 +263,9 @@ try {
   assert(appContent.includes("beginSession"), "Login inicia o relógio de sessão");
   assert(loginContent.includes("consumeSessionEndMessage"), "Tela de login mostra o motivo do encerramento");
   assert(!fs.existsSync(path.join(process.cwd(), "src/lib/api.ts")), "src/lib/api.ts não voltou");
+  assert(appContent.includes("overflowMenuOpen"), "Menu de overflow do cabeçalho abre por clique");
+  assert(!appContent.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
+  assert(appContent.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
 } catch (err) {
   assert(false, `Falha na verificação da onda 7: ${err}`);
 }
