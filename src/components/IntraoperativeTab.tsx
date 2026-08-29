@@ -33,19 +33,26 @@ interface IntraoperativeTabProps {
   onClearPendingTemplate?: () => void;
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
   stopAiSupervisor?: (reason: string) => void;
+  canEdit?: boolean;
 }
 
 export default function IntraoperativeTab({
   ficha,
-  onUpdateDocument,
+  onUpdateDocument: applyDocument,
   selectedMinutes,
   onTimeSelect,
   theme = "light",
   pendingTemplateForReview,
   onClearPendingTemplate,
   startAiSupervisor,
-  stopAiSupervisor
+  stopAiSupervisor,
+  canEdit = true
 }: IntraoperativeTabProps) {
+  const onUpdateDocument = (updates: AnesthesiaDocumentPatch) => {
+    if (!canEdit) return;
+    applyDocument(updates);
+  };
+
   const { 
   vitals = [], 
   bolusDrugs = [], 
@@ -2690,12 +2697,12 @@ const handleTechniqueOtherTextChange = (text: string) => {
   return (
     <div className="space-y-4 w-full">
       {/* 1. CRONOLOGIA (TIMERS) ALWAYS OPEN AND FIXED ABOVE THE CHART */}
-      <div className="w-full">
+      <div className={`w-full ${!canEdit ? "pointer-events-none" : ""}`}>
         {renderTimers()}
       </div>
 
       {/* 2. CLINICAL CHART ALWAYS FIXED */}
-      <div className="w-full">
+      <div className={`w-full ${!canEdit ? "pointer-events-none" : ""}`}>
         {renderChart()}
       </div>
 
@@ -2736,7 +2743,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
       </div>
 
         {/* 4. ACTIVE SUB-PANELS */}
-        <div className="flex flex-col gap-4 w-full transition-all duration-200">
+        <div className={`flex flex-col gap-4 w-full transition-all duration-200 ${!canEdit ? "pointer-events-none" : ""}`}>
           {CLINICAL_TABS.map((tab) => {
             if (activeClinicalTabs.includes(tab.id)) {
               return (
@@ -2945,6 +2952,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
             if (onClearPendingTemplate) onClearPendingTemplate();
           }}
           onApplyTemplate={(template) => {
+            if (!canEdit) return;
             handleApplyTemplate(template); setShowTemplatesModal(false);
             if (onClearPendingTemplate) onClearPendingTemplate();
           }}

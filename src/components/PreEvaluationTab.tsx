@@ -8,11 +8,13 @@ import { AnesthesiaDocument, PreAnestheticEvaluation, ASAClass } from "../types"
 import { User, ClipboardList, ShieldAlert, Heart, Activity, Sliders, CheckCircle, Plus, Trash2, Minus } from "lucide-react";
 import { calculateIMC } from "../mockData";
 import { getThemeClasses } from "../lib/theme";
+import ClinicalEditorLock from "./ClinicalEditorLock";
 
 interface PreEvaluationTabProps {
   ficha: AnesthesiaDocument;
   onChange: (evalData: Partial<PreAnestheticEvaluation>) => void;
   theme?: "light" | "dark" | "dark-clean";
+  canEdit?: boolean;
 }
 
 const SYSTEM_OPTIONS = {
@@ -28,7 +30,7 @@ const SYSTEM_OPTIONS = {
   infectious: ["HIV"]
 };
 
-export default function PreEvaluationTab({ ficha, onChange, theme = "light" }: PreEvaluationTabProps) {
+export default function PreEvaluationTab({ ficha, onChange, theme = "light", canEdit = true }: PreEvaluationTabProps) {
   const data = ficha.preEvaluation;
   const tc = getThemeClasses(theme);
 
@@ -137,6 +139,7 @@ export default function PreEvaluationTab({ ficha, onChange, theme = "light" }: P
   };
 
   return (
+    <ClinicalEditorLock canEdit={canEdit}>
     <div className="space-y-6">
       {/* SECTION 1: GENERAL BIOMETRICS & VITALS */}
       <div className={tc.card}>
@@ -1105,5 +1108,6 @@ export default function PreEvaluationTab({ ficha, onChange, theme = "light" }: P
         </div>
       </div>
     </div>
+    </ClinicalEditorLock>
   );
 }

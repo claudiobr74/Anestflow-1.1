@@ -1,7 +1,7 @@
 import React from 'react';
 import { AnesthesiaDocument } from '../types';
 import { isCurrentResponsible } from '../lib/assertCanEdit';
-import { ShieldCheck, Lock, ArrowRightLeft, UserCheck, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowRightLeft, UserCheck } from 'lucide-react';
 
 interface ResponsibilityBannerProps {
   ficha: AnesthesiaDocument;
@@ -25,6 +25,24 @@ export default function ResponsibilityBanner({
   const leadName = ficha.team?.anesthesiologistLead || "Anestesiologista Responsável";
   const leadCRM = ficha.team?.crmLead ? `CRM ${ficha.team.crmLead}/${ficha.team.ufLead || 'SP'}` : "";
 
+  if (ficha.status === "Signed") {
+    return (
+      <div className={`w-full px-3 py-1.5 rounded-lg border flex flex-wrap items-center justify-center gap-2 transition-all ${
+        isDark
+          ? "bg-indigo-950/20 border-indigo-900/50 text-indigo-200"
+          : "bg-indigo-50 border-indigo-100 text-indigo-900"
+      }`}>
+        <Lock className="w-4 h-4 text-indigo-500 shrink-0" />
+        <span className="text-xs font-bold">
+          Ficha assinada. Modificações apenas via adendo.
+        </span>
+        <span className="text-xs font-medium opacity-90">
+          Responsável: Dr(a). {leadName}{leadCRM ? ` (${leadCRM})` : ""}
+        </span>
+      </div>
+    );
+  }
+
   if (isResponsible) {
     return (
       <div className={`w-full px-3 py-1.5 rounded-lg border flex flex-wrap items-center justify-between gap-2 transition-all ${
@@ -46,20 +64,18 @@ export default function ResponsibilityBanner({
           </div>
         </div>
 
-        {ficha.status !== "Signed" && (
-          <button
-            type="button"
-            onClick={onOpenTransferModal}
-            className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1.5 shrink-0 ${
-              isDark 
-                ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700" 
-                : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-sm"
-            }`}
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Transferir Responsabilidade</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onOpenTransferModal}
+          className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1.5 shrink-0 ${
+            isDark 
+              ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700" 
+              : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-sm"
+          }`}
+        >
+          <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-500" />
+          <span>Transferir Responsabilidade</span>
+        </button>
       </div>
     );
   }
@@ -89,23 +105,21 @@ export default function ResponsibilityBanner({
         </div>
       </div>
 
-      {ficha.status !== "Signed" && (
-        <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
-          <button
-            type="button"
-            onClick={onClaimResponsibility}
-            disabled={isClaiming}
-            className="px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500 rounded-lg shadow transition flex items-center gap-2 disabled:opacity-50"
-          >
-            {isClaiming ? (
-              <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-            ) : (
-              <UserCheck className="w-4 h-4" />
-            )}
-            <span>Assumir Responsabilidade Clínica</span>
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+        <button
+          type="button"
+          onClick={onClaimResponsibility}
+          disabled={isClaiming}
+          className="px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500 rounded-lg shadow transition flex items-center gap-2 disabled:opacity-50"
+        >
+          {isClaiming ? (
+            <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+          ) : (
+            <UserCheck className="w-4 h-4" />
+          )}
+          <span>Assumir Responsabilidade Clínica</span>
+        </button>
+      </div>
     </div>
   );
 }

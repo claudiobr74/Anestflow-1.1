@@ -15,7 +15,7 @@ import PdfPreviewModal from "./components/PdfPreviewModal";
 import AnestFlowLogo from "./components/AnestFlowLogo";
 import LoginScreen from "./components/LoginScreen";
 import WorkstationLockScreen from "./components/WorkstationLockScreen";
-import { Clock, Printer, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldAlert, FileText, Sun, Moon, LogOut, Download, Database, Users, BrainCircuit, Activity, Syringe, Droplet, Flag, Settings, ArrowRightLeft, MoreHorizontal, Lock, Eye, UserCheck } from "lucide-react";
+import { Clock, Printer, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldAlert, FileText, Sun, Moon, LogOut, Download, Database, Users, BrainCircuit, Activity, Syringe, Droplet, Flag, Settings, ArrowRightLeft, MoreHorizontal } from "lucide-react";
 import ProceduresManagerModal from "./components/ProceduresManagerModal";
 import ShareModal from "./components/ShareModal";
 import SettingsModal, { AppSettings, DEFAULT_APP_SETTINGS } from "./components/SettingsModal";
@@ -61,6 +61,12 @@ import {
   isClinicalEditor,
   isCurrentResponsible,
 } from "./lib/assertCanEdit";
+import {
+  anesthesiaProgressLabel,
+  isAnesthesiaInProgress,
+  withInProgressIfAnesthesiaStarted,
+} from "./lib/procedureStatus";
+import ResponsibilityBanner from "./components/ResponsibilityBanner";
 
 type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
 
@@ -362,7 +368,7 @@ export default function App() {
   const setFichaWithBroadcast = (docOrUpdater: React.SetStateAction<AnesthesiaDocument>) => {
     setFicha((prev) => {
       const nextDoc = typeof docOrUpdater === 'function' ? docOrUpdater(prev) : docOrUpdater;
-      return nextDoc;
+      return withInProgressIfAnesthesiaStarted(nextDoc);
     });
   };
 
@@ -488,6 +494,8 @@ export default function App() {
   };
 
   const handleSaveWorklist = async () => {
+    const gate = canEditDocument(ficha, user?.uid);
+    if (gate.ok === false) throw new Error(gate.message);
     const { saveToWorklist } = await import("./lib/worklistService");
     const cpf = ficha.patient?.cpf;
     if (!cpf) throw new Error("CPF é obrigatório para salvar");
@@ -925,6 +933,10 @@ export default function App() {
                 <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3" /> Assinado
                 </span>
+              ) : ficha.status === "InProgress" ? (
+                <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  Em andamento
+                </span>
               ) : (
                 <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
                   Rascunho
@@ -954,9 +966,9 @@ export default function App() {
               {getElapsedAnesthesiaString()}
             </div>
             <div className="flex items-center gap-1.5 text-xs font-medium">
-              <div className={`w-2 h-2 rounded-full ${ficha.timers.startAnesthesia ? "bg-emerald-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600"}`}></div>
+              <div className={`w-2 h-2 rounded-full ${isAnesthesiaInProgress(ficha.timers) ? "bg-emerald-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600"}`}></div>
               <span className="text-zinc-600 dark:text-zinc-400">
-                {ficha.timers.startAnesthesia ? "Anestesia em andamento" : "Aguardando início"}
+                {anesthesiaProgressLabel(ficha.timers)}
               </span>
             </div>
           </div>
@@ -1027,10 +1039,10 @@ export default function App() {
                       <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); setShowProceduresModal(true); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
                         <Database className="w-4 h-4" /> Arquivo
                       </button>
-                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); triggerReloadMockData(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2">
+                      <button type="button" role="menuitem" disabled={!canEdit} onClick={() => { if (!canEdit) return; setOverflowMenuOpen(false); triggerReloadMockData(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 disabled:opacity-50">
                         <FileText className="w-4 h-4" /> Modelo Exemplo
                       </button>
-                      <button type="button" role="menuitem" onClick={() => { setOverflowMenuOpen(false); triggerResetToBlank(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                      <button type="button" role="menuitem" disabled={!canEdit} onClick={() => { if (!canEdit) return; setOverflowMenuOpen(false); triggerResetToBlank(); }} className="px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-800 flex items-center gap-2 text-rose-600 dark:text-rose-400 disabled:opacity-50">
                         <RotateCcw className="w-4 h-4" /> Limpar Tudo
                       </button>
                       <div className="h-px bg-slate-200 dark:bg-zinc-800 my-1"></div>
@@ -1051,18 +1063,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      {/* 2. SUB-BANNER / WARNING BAR (E.G. ALERT IF LOCKED) */}
-      {ficha.status === "Signed" && (
-        <div className={`border-b px-3 sm:px-5 py-1.5 sm:py-2 text-center text-xs sm:text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 ${
-          isDark ? "bg-indigo-950/20 border-indigo-900/50 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-900"
-        }`}>
-          <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500 shrink-0" />
-          <span className="truncate">Ficha assinada. Modificações apenas via adendo.</span>
-        </div>
-      )}
-
-
 
       {/* 3. CORE LAYOUT NAVIGATION BAR (Responsive grid/flex wrap) */}
       <nav className={`border-b px-4 py-2 shrink-0 transition ${
@@ -1149,31 +1149,14 @@ export default function App() {
             </div>
           )}
 
-          {!canEdit && ficha.status !== "Signed" && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center justify-between gap-3 shadow-xs">
-              <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 shrink-0 text-amber-500" />
-                <span>
-                  <strong>Modo de Leitura (Visualização):</strong> Você está visualizando a ficha sob responsabilidade do Dr(a). {ficha.team?.anesthesiologistLead || "outro anestesiologista"}. Apenas o responsável atual pode editar os dados clínicos.
-                </span>
-              </div>
-              <button
-                onClick={handleClaimResponsibility}
-                disabled={isClaiming}
-                className="px-3 py-1 text-xs font-bold text-amber-900 dark:text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg shrink-0 transition disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                Assumir
-              </button>
-            </div>
-          )}
-
-          {ficha.status === "Signed" && (
-            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-bold flex items-center justify-center gap-2 shadow-sm">
-              <Lock className="w-4 h-4 shrink-0" />
-              <span>ESTA FICHA FOI ENCERRADA E ASSINADA — ALTERAÇÕES CLÍNICAS BLOQUEADAS PARA TODOS OS USUÁRIOS</span>
-            </div>
-          )}
+          <ResponsibilityBanner
+            ficha={ficha}
+            user={user}
+            isDark={isDark}
+            onOpenTransferModal={() => setShowTransferModal(true)}
+            onClaimResponsibility={handleClaimResponsibility}
+            isClaiming={isClaiming}
+          />
 
           {activeTab === "patient" && (
             <PatientTab
@@ -1193,6 +1176,7 @@ export default function App() {
               ficha={ficha}
               onChange={updatePreEvaluation}
               theme={theme}
+              canEdit={canEdit}
             />
           )}
 
@@ -1207,6 +1191,7 @@ export default function App() {
               onClearPendingTemplate={() => setPendingTemplateForReview(null)}
               startAiSupervisor={startAiSupervisor}
               stopAiSupervisor={stopAiSupervisor}
+              canEdit={canEdit}
             />
           )}
 
@@ -1215,6 +1200,7 @@ export default function App() {
               ficha={ficha}
               onUpdateRecovery={updateRecovery}
               theme={theme}
+              canEdit={canEdit}
             />
           )}
 
@@ -1227,6 +1213,7 @@ export default function App() {
               startAiSupervisor={startAiSupervisor}
               stopAiSupervisor={stopAiSupervisor}
               onOpenTransferModal={openTransferModalIfResponsible}
+              canEdit={canEdit}
             />
           )}
         </div>
@@ -1257,7 +1244,7 @@ export default function App() {
         onClose={() => setShowProceduresModal(false)}
         currentDocument={ficha}
         onLoadDocument={(loadedDoc) => {
-          setFicha(loadedDoc);
+          setFicha(withInProgressIfAnesthesiaStarted(loadedDoc));
           setActiveTab("patient");
         }}
         userId={user?.uid || ""}
@@ -1268,7 +1255,7 @@ export default function App() {
         isOpen={Boolean(pendingVoice)}
         transcription={pendingVoice?.transcription || ""}
         summaries={pendingVoice?.actions ? summarizeVoiceActions(pendingVoice.actions) : []}
-        canApply={Boolean(pendingVoice?.actions)}
+        canApply={Boolean(pendingVoice?.actions) && canEdit}
         isDark={isDark}
         onDismiss={() => setPendingVoice(null)}
         onConfirm={handleVoiceCommandConfirm}

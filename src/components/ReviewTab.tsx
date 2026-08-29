@@ -17,6 +17,7 @@ import {
 import { getSupabase } from "../lib/supabase";
 import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } from "../lib/signatureService";
 import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
+import { evaluateSigningReadiness } from "../lib/signingReadinessEngine";
 
 interface ReviewTabProps {
   ficha: AnesthesiaDocument;
@@ -26,6 +27,7 @@ interface ReviewTabProps {
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
   stopAiSupervisor?: (reason: string) => void;
   onOpenTransferModal?: () => void;
+  canEdit?: boolean;
 }
 
 interface ValidationAlert {
@@ -42,7 +44,8 @@ export default function ReviewTab({
   theme = "light",
   startAiSupervisor,
   stopAiSupervisor,
-  onOpenTransferModal
+  onOpenTransferModal,
+  canEdit = true
 }: ReviewTabProps) {
   const isDark = theme === "dark" || theme === "dark-clean";
   const isSigned = ficha.status === "Signed";
@@ -93,117 +96,8 @@ export default function ReviewTab({
     return list;
   }, [ficha.amendments, subcollectionAmendments]);
 
-  // Local Validation Engine
-  const runLocalValidation = (): ValidationAlert[] => {
-    const alerts: ValidationAlert[] = [];
-
-    // Timing validations
-    const t = ficha.timers;
-    if (!t.startAnesthesia) {
-      alerts.push({
-        type: "Critico",
-        title: "Início de Anestesia Pendente",
-        description: "O horário de início da anestesia deve ser obrigatoriamente preenchido.",
-        module: "Timing"
-      });
-    }
-    if (t.startAnesthesia && t.startSurgery && new Date(t.startSurgery) < new Date(t.startAnesthesia)) {
-      alerts.push({
-        type: "Critico",
-        title: "Incongruência Cronológica",
-        description: "O início da cirurgia não pode ser anterior ao início da anestesia.",
-        module: "Timing"
-      });
-    }
-    if (t.endSurgery && t.startSurgery && new Date(t.endSurgery) < new Date(t.startSurgery)) {
-      alerts.push({
-        type: "Critico",
-        title: "Incongruência de Cirurgia",
-        description: "O término da cirurgia não pode ser anterior ao início da mesma.",
-        module: "Timing"
-      });
-    }
-
-    // Patient info validations
-    const p = ficha.patient;
-    if (!p.fullName || p.fullName.length < 5) {
-      alerts.push({
-        type: "Critico",
-        title: "Nome do Paciente Incompleto",
-        description: "O nome completo do paciente deve ser fornecido para fins de identificação.",
-        module: "Patient"
-      });
-    }
-    if (!p.recordNumber) {
-      alerts.push({
-        type: "Importante",
-        title: "Número de Prontuário Ausente",
-        description: "O prontuário é um dado legal essencial para incorporação ao prontuário hospitalar.",
-        module: "Patient"
-      });
-    }
-    if (!p.weight || p.weight <= 0) {
-      alerts.push({
-        type: "Importante",
-        title: "Peso não cadastrado",
-        description: "O peso do paciente é fundamental para cálculos de dosagem de medicamentos e ventilação.",
-        module: "Patient"
-      });
-    }
-
-    // Team validations
-    const team = ficha.team;
-    if (!team.anesthesiologistLead || !team.crmLead) {
-      alerts.push({
-        type: "Critico",
-        title: "Anestesiologista não cadastrado",
-        description: "O nome e o CRM do anestesiologista principal responsável devem estar preenchidos.",
-        module: "Team"
-      });
-    }
-
-    // Clinical parameters validations
-    if (ficha.vitals.length === 0) {
-      alerts.push({
-        type: "Importante",
-        title: "Sem Sinais Vitais Lançados",
-        description: "Nenhum sinal vital foi anotado durante o intraoperatório na ficha gráfica.",
-        module: "Vitals"
-      });
-    }
-
-    if (ficha.bolusDrugs.length === 0) {
-      alerts.push({
-        type: "Informativo",
-        title: "Sem Medicamentos em Bolus",
-        description: "Não há registro de medicamentos administrados em bolus durante o procedimento.",
-        module: "Drugs"
-      });
-    }
-
-    // Check for open continuous infusions
-    const openInfusions = ficha.continuousInfusions.filter(inf => {
-      const lastHist = inf.history[inf.history.length - 1];
-      return lastHist && lastHist.status !== "Finalizado" && lastStateActive(lastHist.status);
-    });
-
-    if (openInfusions.length > 0) {
-      alerts.push({
-        type: "Importante",
-        title: "Infusões Contínuas Ativas",
-        description: "Existem bombas de infusão ativas que não foram finalizadas. Recomenda-se fechar todas ao término do procedimento.",
-        module: "Drugs"
-      });
-    }
-
-    return alerts;
-  };
-
-  const lastStateActive = (status: string) => {
-    return status === "Iniciado" || status === "Alterado";
-  };
-
-  const localAlerts = runLocalValidation();
+  const readiness = evaluateSigningReadiness(ficha);
+  const localAlerts: ValidationAlert[] = readiness.alerts;
 
   // Call server-side Gemini Clinical Review Assistant
   const handleAICheck = async () => {
@@ -302,8 +196,8 @@ export default function ReviewTab({
 
   // Sign and Lock documents
   const handleSignDocument = () => {
-    const criticalAlerts = localAlerts.filter(a => a.type === "Critico");
-    if (criticalAlerts.length > 0) {
+    if (!canEdit) return;
+    if (!readiness.canClose) {
       setShowCriticalAlert(true);
       return;
     }
@@ -407,7 +301,8 @@ export default function ReviewTab({
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleSignDocument}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 font-bold text-sm text-white rounded-lg transition shadow-sm flex items-center gap-2"
+                  disabled={!canEdit}
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 font-bold text-sm text-white rounded-lg transition shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
                   Encerrar Procedimento

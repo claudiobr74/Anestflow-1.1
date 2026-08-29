@@ -2,6 +2,7 @@ import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { getSupabase } from "./supabase";
 import { ensureUniqueClinicalEventIds } from "./syncEngine";
 import { throwClinical } from "./clinicalErrors";
+import { withInProgressIfAnesthesiaStarted } from "./procedureStatus";
 import { assertCanEdit } from "./assertCanEdit";
 import { lookupProfileByEmail } from "./profileService";
 import {
@@ -174,7 +175,11 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
   if (!isMeaningfulDocument(ficha)) return;
   if (isMockProcedureId(ficha.id)) return;
 
-  const cleanedDoc = ensureUniqueClinicalEventIds(ficha);
+  const uniqueDoc = ensureUniqueClinicalEventIds(ficha);
+  const cleanedDoc = withInProgressIfAnesthesiaStarted(uniqueDoc);
+  if (cleanedDoc.status === "InProgress" && ficha.status === "Draft") {
+    ficha.status = "InProgress";
+  }
 
   if (!isUuid(cleanedDoc.id) && (cleanedDoc.id.startsWith("doc-") || cleanedDoc.id.includes("temp"))) {
     const existingId = await findExistingDraftId(cleanedDoc, userId);

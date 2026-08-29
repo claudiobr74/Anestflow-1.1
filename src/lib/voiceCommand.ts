@@ -1,5 +1,6 @@
 import { calculateAge } from "../mockData";
 import { newClientId } from "./procedureMapper";
+import { withInProgressIfAnesthesiaStarted } from "./procedureStatus";
 import type {
   AnesthesiaDocument,
   BolusDrug,
@@ -713,5 +714,5 @@ export function applyVoiceActionsToDocument(
     };
   }
 
-  return newDoc;
+  return withInProgressIfAnesthesiaStarted(newDoc);
 }
