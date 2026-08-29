@@ -204,6 +204,9 @@ try {
 
   assert(!procService.includes("firebase/firestore"), "proceduresService não usa Firestore");
   assert(procService.includes("sign_procedure"), "Assinatura usa RPC sign_procedure");
+  assert(procService.includes("closeProcedureAtomic"), "Encerramento usa closeProcedureAtomic");
+  assert(!procService.includes("p_canonical"), "Cliente não envia p_canonical no encerramento");
+  assert(procService.includes("verify_procedure_integrity"), "Verificação de selo usa RPC verify_procedure_integrity");
   assert(procService.includes("transfer_responsibility"), "Transferência usa RPC transfer_responsibility");
   assert(!worklist.includes("firebase/firestore"), "worklistService não usa Firestore");
   assert(worklist.includes("cpf_hash"), "Worklist grava cpf_hash, não índice global de CPF");
@@ -1055,6 +1058,80 @@ try {
   assert(handoverLive.includes("claimResponsibilityAtomic"), "Live A→B aceita via claim");
 } catch (err) {
   assert(false, `Falha na verificação da Fase 4: ${err}`);
+}
+
+// 16b. FASE 4B — integridade documental V2
+console.log("\n16b. Verificando Fase 4B (selo SignedAnesthesiaRecordV1 no servidor)...");
+try {
+  const { mapClinicalError } = await import("../lib/clinicalErrors.ts");
+  const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  const pdfSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PdfPreviewModal.tsx"), "utf-8");
+  const drawerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
+  const sigSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/signatureService.ts"), "utf-8");
+  const readme4b = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  const onda3Live = fs.readFileSync(path.join(process.cwd(), "src/tests/onda3_live.ts"), "utf-8");
+  const live4b = fs.readFileSync(path.join(process.cwd(), "src/tests/fase04b_live.ts"), "utf-8");
+
+  const migDir = path.join(process.cwd(), "supabase/migrations");
+  const mig4bName = fs.readdirSync(migDir).find((f) => f.includes("fase_4b"));
+  assert(!!mig4bName, "Migration Fase 4B existe");
+  const mig4b = fs.readFileSync(path.join(migDir, mig4bName as string), "utf-8");
+  assert(mig4b.includes("private.build_signed_record_v1"), "Migration monta SignedAnesthesiaRecordV1 no servidor");
+  assert(mig4b.includes("private.assert_signing_readiness"), "Migration executa readiness CRITICAL no servidor");
+  assert(mig4b.includes("drop function if exists public.sign_procedure(uuid, text, jsonb)"), "Overload antigo com canonical é removido");
+  assert(mig4b.includes("create or replace function public.sign_procedure(p_procedure_id uuid)"), "sign_procedure público só recebe procedure_id");
+  assert(mig4b.includes("public.verify_procedure_integrity"), "Migration cria verify_procedure_integrity");
+  assert(mig4b.includes("snapshot_ok") && mig4b.includes("persisted_ok"), "Verify devolve checagens A e B");
+  assert(mig4b.includes("p_author_* do cliente não é fonte") || mig4b.includes("Identidade oficial do perfil"), "Adendo usa profiles, não o browser");
+
+  assert(procSrc.includes("closeProcedureAtomic"), "proceduresService exporta closeProcedureAtomic");
+  assert(procSrc.includes("rpc(\"sign_procedure\""), "close chama sign_procedure");
+  assert(!procSrc.includes("p_canonical"), "proceduresService não manda p_canonical");
+  assert(!procSrc.includes("p_signer"), "proceduresService não manda p_signer no close");
+  assert(procSrc.includes("verifyProcedureIntegrity"), "Cliente verifica selo via RPC");
+  assert(procSrc.includes("isProcedureIntegrityIntact"), "Íntegro só com A e B");
+  assert(procSrc.includes("p_author_name: \"\""), "Adendo não envia nome do navegador como fonte");
+
+  assert(appSrc.includes("closeProcedureAtomic"), "App encerra via closeProcedureAtomic");
+  assert(!appSrc.includes("signAndLockDocument"), "App não sela no navegador");
+  assert(!appSrc.includes("Assinatura Digital SHA-256"), "App não vende SHA-256 como assinatura digital");
+  assert(appSrc.includes("Selo criptográfico de integridade"), "App usa a terminologia de selo");
+
+  assert(reviewSrc.includes("verifyProcedureIntegrity"), "ReviewTab verifica pelo servidor");
+  assert(!reviewSrc.includes("signAndLockDocument"), "ReviewTab não sela no navegador");
+  assert(reviewSrc.includes("Selo criptográfico de integridade"), "ReviewTab usa selo, não assinatura digital");
+  assert(!reviewSrc.includes("Assinado Digitalmente (SHA-256)"), "ReviewTab não rotula SHA-256 como assinatura digital");
+
+  assert(pdfSrc.includes("SELO CRIPTOGRÁFICO DE INTEGRIDADE"), "PDF preview usa selo de integridade");
+  assert(!pdfSrc.includes("ASSINATURA DIGITAL VALIDADA"), "PDF preview não afirma assinatura digital validada");
+  assert(drawerSrc.includes("Selo de integridade"), "Drawer de descrição alinha a terminologia");
+
+  assert(sigSrc.includes("não é autoridade de encerramento"), "signAndLockDocument local não é o selo oficial");
+
+  assert(
+    mapClinicalError({ message: "signing_not_ready" }).message.toLowerCase().includes("encerramento"),
+    "signing_not_ready tem mensagem clínica"
+  );
+  assert(
+    mapClinicalError({ message: "canonical_required" }).message.toLowerCase().includes("servidor"),
+    "canonical_required explica que o selo é do servidor"
+  );
+
+  assert(readme4b.includes("Fase 4B") && readme4b.includes("SignedAnesthesiaRecordV1"), "README documenta Fase 4B");
+  assert(readme4b.includes("verify_procedure_integrity"), "README documenta verify A+B");
+  assert(readme4b.includes("fase04b_live"), "README aponta o live 4B");
+
+  assert(onda3Live.includes("closeProcedureAtomic"), "onda3_live encerra pelo servidor");
+  assert(!onda3Live.includes("signAndLockDocument"), "onda3_live não monta canonical no cliente");
+  assert(live4b.includes("signing_not_ready") || live4b.includes("critérios mínimos"), "Live 4B exercita readiness no servidor");
+  assert(live4b.includes("p_canonical"), "Live 4B tenta o overload antigo e espera recusa");
+  assert(live4b.includes("Hacker Fake Name"), "Live 4B tenta autor mentiroso no adendo");
+  assert(live4b.includes("verifyProcedureIntegrity"), "Live 4B chama verify A+B");
+  assert(live4b.includes("FASE04B_LIVE_OK"), "Live 4B tem sentinela de sucesso");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 4B: ${err}`);
 }
 
 // 17. FASE 5 — ficha não se chama mais document
