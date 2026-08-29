@@ -1,6 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Mic, Square, Loader2, Info, Zap } from "lucide-react";
-import { authenticatedFetch } from "../lib/api";
+import { invokeAiFunction } from "../lib/aiFunctions";
 export interface VoiceCommandButtonProps { 
   isDark?: boolean;
   onCommandProcessed?: (actions: any) => void;
@@ -113,16 +113,13 @@ export function VoiceCommandButton({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const response = await authenticatedFetch("/api/voice-command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64: base64data, mimeType: mimeTypeUsed }),
-        signal: controller.signal
-      });
+      const data = await invokeAiFunction<{ identifiedActions?: unknown }>(
+        "voice-command",
+        { audioBase64: base64data, mimeType: mimeTypeUsed },
+        controller.signal
+      );
       
       clearTimeout(timeoutId);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.details || data.error || "Failed");
       
       console.log("Comando de voz processado:", data);
       

@@ -97,7 +97,9 @@ try {
   assert(!loginContent.includes("firebase/auth"), "LoginScreen não usa mais Firebase Auth");
   assert(loginContent.includes("signInWithPassword"), "Login usa signInWithPassword do Supabase");
   assert(apiContent.includes("getSession"), "authenticatedFetch lê a sessão Supabase");
-  assert(serverContent.includes("auth.getUser"), "Express valida JWT via supabase.auth.getUser");
+  assert(serverContent.includes("/api/health"), "Express continua expondo health público");
+  assert(!serverContent.includes("@google/genai"), "Express não importa mais o SDK Gemini");
+  assert(!serverContent.includes("/api/review"), "Express não expõe mais /api/review");
   assert(!serverContent.includes("firebase-admin"), "Express não verifica mais ID token Firebase");
   assert(shareContent.includes("lookupProfileByEmail"), "ShareModal busca colega via RPC lookup_profile_by_email");
   assert(appContent.includes("getSupabase().auth.signOut"), "Logout do App encerra a sessão Supabase");
@@ -166,7 +168,45 @@ try {
   assert(false, `Falha no hash de CPF: ${err}`);
 }
 
-// 6. VERIFICAÇÃO FINAL DE RESULTADOS
+// 6. ONDA 5 — EDGE FUNCTIONS DE IA
+console.log("\n6. Verificando Edge Functions de IA (onda 5)...");
+try {
+  const reviewUi = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  const voiceUi = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandButton.tsx"), "utf-8");
+  const descUi = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
+  const aiLib = fs.readFileSync(path.join(process.cwd(), "src/lib/aiFunctions.ts"), "utf-8");
+  const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf-8");
+  const reviewFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/review/index.ts"), "utf-8");
+  const voiceFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/voice-command/index.ts"), "utf-8");
+  const descFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/generate-description/index.ts"), "utf-8");
+  const authFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/auth.ts"), "utf-8");
+  const geminiFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/gemini.ts"), "utf-8");
+  const configToml = fs.readFileSync(path.join(process.cwd(), "supabase/config.toml"), "utf-8");
+  const envExample = fs.readFileSync(path.join(process.cwd(), ".env.example"), "utf-8");
+  const pkg = fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8");
+
+  assert(aiLib.includes('functions.invoke'), "Cliente chama Edge Functions via functions.invoke");
+  assert(reviewUi.includes('invokeAiFunction') && reviewUi.includes('"review"'), "ReviewTab invoca a função review");
+  assert(!reviewUi.includes("/api/review"), "ReviewTab não chama /api/review");
+  assert(voiceUi.includes('"voice-command"') && !voiceUi.includes("/api/voice-command"), "Voz usa Edge Function, não Express");
+  assert(descUi.includes('"generate-description"') && !descUi.includes("/api/generate-description"), "Descrição usa Edge Function, não Express");
+  assert(!server.includes("GEMINI_API_KEY"), "Express não lê GEMINI_API_KEY");
+  assert(!server.includes("@google/genai"), "Express não depende de @google/genai");
+  assert(reviewFn.includes("email_confirmed_at") || authFn.includes("email_confirmed_at"), "Funções exigem e-mail confirmado");
+  assert(authFn.includes("getUser"), "Funções validam o JWT com auth.getUser");
+  assert(geminiFn.includes("GEMINI_API_KEY"), "Gemini lê o secret do runtime, não do Vite");
+  assert(!geminiFn.includes("console.log") || !geminiFn.includes("audioBase64"), "Helper Gemini não loga o corpo clínico");
+  assert(voiceFn.includes("audioBase64"), "voice-command espera o mesmo contrato de áudio");
+  assert(descFn.includes("description"), "generate-description devolve description");
+  assert(configToml.includes("[functions.review]") && configToml.includes("verify_jwt = true"), "verify_jwt permanece ligado");
+  assert(!envExample.includes("VITE_GEMINI"), "Nenhuma chave Gemini no bundle Vite");
+  assert(!pkg.includes("@google/genai"), "Dependência @google/genai removida do app Node");
+  assert(!reviewUi.includes("service_role") && !aiLib.includes("service_role"), "Cliente de IA não usa service_role");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 5: ${err}`);
+}
+
+// 7. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
