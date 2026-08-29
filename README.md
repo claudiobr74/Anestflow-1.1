@@ -242,10 +242,13 @@ A ficha clínica (paciente, vitais, fármacos, SRPA, fila offline) **não** é m
 
 Edição clínica é **fail-closed**: só o `currentResponsibleUid` grava. O criador que não é o responsável atual **não** salva. Sem UID ou sem responsável na ficha → não edita.
 
-- `canEditDocument` / `assertCanEdit` no cliente (App, voz, autosave) e em `saveProcedure`.
-- Ficha assinada bloqueia mutação; a gravação que fecha o caso usa `closingSignature`.
-- Claim e transferência **não** passam por `assertCanEdit` no sentido de mutação local: o cliente chama as RPCs da Fase 4.
-- Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
+- `canEditDocument` / `assertCanEdit` no cliente (App, voz, autosave, worklist) e em `saveProcedure`.
+- UI de colaborador é somente leitura de verdade: `ClinicalEditorLock` (fieldset) em admissão, pré e SRPA; intra bloqueia pointer nos timers, gráfico e painéis (as abas de visualização continuam clicáveis). Voice Scribe não aplica.
+- Banner único: `ResponsibilityBanner` (responsável / modo leitura + assumir / ficha assinada). Não há faixas duplicadas de “ficha assinada” no `App`.
+- Ao registrar o início da anestesia, `Draft` vira `InProgress`. O header só diz “Anestesia em andamento” se existe `startAnesthesia` **e** não existe `endAnesthesia`.
+- Encerramento usa `evaluateSigningReadiness` (`SigningReadinessEngine`) fora do `ReviewTab`: CRITICAL / IMPORTANT / INFO. Capnografia **não** é bloqueio universal. Técnica ausente é IMPORTANT. Sem responsável autenticado é CRITICAL.
+
+Ficha assinada bloqueia mutação; a gravação que fecha o caso usa `closingSignature`. Claim e transferência **não** passam por `assertCanEdit` no sentido de mutação local: o cliente chama as RPCs da Fase 4. Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
 
 ## Fase 4 (claim/transfer só via RPC)
 

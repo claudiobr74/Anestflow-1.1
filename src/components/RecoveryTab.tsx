@@ -8,6 +8,7 @@ import {
   qmentumRange,
   resolveRecoveryBaseline,
 } from "../lib/clinicalDisplay";
+import ClinicalEditorLock from "./ClinicalEditorLock";
 
 interface RecoveryTabProps {
   ficha: AnesthesiaDocument;
@@ -15,9 +16,10 @@ interface RecoveryTabProps {
     recData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
   ) => void;
   theme?: "light" | "dark" | "dark-clean";
+  canEdit?: boolean;
 }
 
-export default function RecoveryTab({ ficha, onUpdateRecovery, theme = "light" }: RecoveryTabProps) {
+export default function RecoveryTab({ ficha, onUpdateRecovery, theme = "light", canEdit = true }: RecoveryTabProps) {
   const recovery = ficha.recovery;
   const records = recovery.records || [];
 
@@ -217,6 +219,7 @@ export default function RecoveryTab({ ficha, onUpdateRecovery, theme = "light" }
   };
 
   return (
+    <ClinicalEditorLock canEdit={canEdit}>
     <div className="space-y-6">
       
       {/* SRPA INTAKE DETAILS */}
@@ -798,5 +801,6 @@ export default function RecoveryTab({ ficha, onUpdateRecovery, theme = "light" }
       </div>
 
     </div>
+    </ClinicalEditorLock>
   );
 }

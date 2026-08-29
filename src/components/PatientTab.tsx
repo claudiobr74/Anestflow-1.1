@@ -10,6 +10,7 @@ import { calculateAge } from "../mockData";
 import TcleModal from "./TcleModal";
 import { getThemeClasses } from "../lib/theme";
 import { isClinicalEditor } from "../lib/assertCanEdit";
+import ClinicalEditorLock from "./ClinicalEditorLock";
 
 export const formatCPF = (value: string) => {
   const numericValue = value.replace(/\D/g, "");
@@ -55,7 +56,7 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
   }, []);
 
   const handleSearchWorklist = async () => {
-    if (!onLoadWorklist) return;
+    if (!onLoadWorklist || isClosed) return;
     setIsSearching(true);
     setWorklistMsg("");
     try {
@@ -70,7 +71,7 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
   };
 
   const handleSaveWorklist = async () => {
-    if (!onSaveWorklist) return;
+    if (!onSaveWorklist || isClosed) return;
     onChangePatient({ cpf });
     setIsSaving(true);
     setWorklistMsg("");
@@ -105,6 +106,7 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
   const iconClass = `w-5 h-5 ${isDark ? "text-indigo-400" : "text-indigo-600"}`;
 
   return (
+    <ClinicalEditorLock canEdit={!isClosed}>
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
       {/* COLUMN 1: PATIENT DEMOGRAPHICS (Col 7) */}
@@ -132,7 +134,7 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
             {onLoadWorklist && (
               <button 
                 onClick={handleSearchWorklist} 
-                disabled={isSearching || !cpf}
+                disabled={isClosed || isSearching || !cpf}
                 className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition disabled:opacity-50"
               >
                 {isSearching ? "Buscando..." : "Buscar na Worklist"}
@@ -141,7 +143,7 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
             {onSaveWorklist && (
               <button 
                 onClick={handleSaveWorklist} 
-                disabled={isSaving || !cpf}
+                disabled={isClosed || isSaving || !cpf}
                 className={`px-4 py-2.5 text-sm font-semibold rounded-lg transition disabled:opacity-50 border ${isDark ? "border-zinc-700 hover:bg-zinc-800 text-zinc-200" : "border-indigo-200 hover:bg-indigo-100 text-indigo-700 bg-white"}`}
               >
                 {isSaving ? "Salvando..." : "Criar Novo Paciente"}
@@ -509,5 +511,6 @@ export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoa
       </div>
 
     </div>
+    </ClinicalEditorLock>
   );
 }

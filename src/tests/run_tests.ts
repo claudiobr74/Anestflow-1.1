@@ -822,9 +822,94 @@ try {
 
   const patientSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PatientTab.tsx"), "utf-8");
   assert(patientSrc.includes("isClinicalEditor"), "Aba paciente fecha campos pelo gate único");
+  assert(patientSrc.includes("ClinicalEditorLock"), "Admissão usa fieldset de somente leitura");
+  assert(patientSrc.includes("isClosed || isSaving || !cpf"), "Salvar worklist exige editor clínico");
+  assert(patientSrc.includes("isClosed || isSearching || !cpf"), "Buscar worklist exige editor clínico");
+
+  assert(appSrc.includes("<ResponsibilityBanner"), "App monta o banner único de responsabilidade");
+  assert(!appSrc.includes("ESTA FICHA FOI ENCERRADA E ASSINADA"), "App não duplica faixa de ficha assinada");
+  assert(!appSrc.includes("Ficha assinada. Modificações apenas via adendo."), "Texto de ficha assinada vive só no banner único");
+  assert(appSrc.includes("canEditDocument(ficha, user?.uid)"), "Worklist save passa por canEditDocument");
+  assert(appSrc.includes("anesthesiaProgressLabel"), "Header usa rótulo de andamento centralizado");
+  assert(appSrc.includes("withInProgressIfAnesthesiaStarted"), "App promove Draft → InProgress");
+
+  const reviewSrc3 = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  assert(reviewSrc3.includes("evaluateSigningReadiness"), "ReviewTab usa SigningReadinessEngine");
+  assert(!reviewSrc3.includes("runLocalValidation"), "Validação de encerramento saiu do ReviewTab");
+  assert(reviewSrc3.includes("disabled={!canEdit}"), "Encerrar procedimento respeita canEdit");
+
+  const intraSrc3 = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  assert(intraSrc3.includes("canEdit = true"), "Intra recebe canEdit");
+  assert(intraSrc3.includes("if (!canEdit) return"), "Intra não aplica mutação sem canEdit");
+  assert(intraSrc3.includes("pointer-events-none"), "Intra bloqueia pointer nos painéis clínicos");
+
+  const recSrc3 = fs.readFileSync(path.join(process.cwd(), "src/components/RecoveryTab.tsx"), "utf-8");
+  assert(recSrc3.includes("ClinicalEditorLock"), "SRPA usa fieldset de somente leitura");
+  const preSrc3 = fs.readFileSync(path.join(process.cwd(), "src/components/PreEvaluationTab.tsx"), "utf-8");
+  assert(preSrc3.includes("ClinicalEditorLock"), "Pré-anestésica usa fieldset de somente leitura");
+
+  const {
+    withInProgressIfAnesthesiaStarted,
+    isAnesthesiaInProgress,
+    anesthesiaProgressLabel,
+  } = await import("../lib/procedureStatus.ts");
+  const draftNoTimer = getBlankDocument();
+  draftNoTimer.status = "Draft";
+  assert(withInProgressIfAnesthesiaStarted(draftNoTimer).status === "Draft", "Sem início permanece Draft");
+  draftNoTimer.timers = { startAnesthesia: "2026-08-29T12:00:00Z" };
+  assert(withInProgressIfAnesthesiaStarted(draftNoTimer).status === "InProgress", "Início da anestesia promove Draft → InProgress");
+  const signedStay = { ...getBlankDocument(), status: "Signed" as const, timers: { startAnesthesia: "2026-08-29T12:00:00Z" } };
+  assert(withInProgressIfAnesthesiaStarted(signedStay).status === "Signed", "Signed não é rebaixado");
+  const inProgressStay = { ...getBlankDocument(), status: "InProgress" as const, timers: {} };
+  assert(withInProgressIfAnesthesiaStarted(inProgressStay).status === "InProgress", "Limpar timer não volta para Draft");
+  assert(isAnesthesiaInProgress({ startAnesthesia: "x" }) === true, "Em andamento exige início sem término");
+  assert(isAnesthesiaInProgress({ startAnesthesia: "x", endAnesthesia: "y" }) === false, "Com término não está em andamento");
+  assert(anesthesiaProgressLabel({ startAnesthesia: "x", endAnesthesia: "y" }) === "Anestesia encerrada", "Header com término não diz em andamento");
+  assert(anesthesiaProgressLabel({}) === "Aguardando início", "Sem início aguarda");
+
+  const {
+    evaluateSigningReadiness,
+    hasSelectedAnestheticTechnique,
+  } = await import("../lib/signingReadinessEngine.ts");
+  const blankReady = getBlankDocument();
+  const blankEval = evaluateSigningReadiness(blankReady);
+  assert(blankEval.canClose === false, "Ficha em branco não encerra");
+  assert(blankEval.alerts.some((a) => a.level === "CRITICAL" && a.title.includes("Início")), "Falta de início é CRITICAL");
+  assert(blankEval.alerts.some((a) => a.level === "CRITICAL" && a.title.includes("Responsável")), "Responsável ausente é CRITICAL");
+  assert(blankEval.alerts.some((a) => a.level === "IMPORTANT" && a.module === "Technique"), "Técnica ausente é IMPORTANT, não bloqueio universal");
+  assert(!blankEval.alerts.some((a) => /capno|EtCO|etco2/i.test(`${a.title} ${a.description}`)), "Capnografia não é critério de encerramento");
+  assert(hasSelectedAnestheticTechnique(blankReady.technique) === false, "Blank não tem técnica selecionada");
+  assert(hasSelectedAnestheticTechnique({ ...blankReady.technique, spinal: true }) === true, "Raqui conta como técnica");
+
+  const closeable = getBlankDocument();
+  closeable.currentResponsibleUid = "alice-uid";
+  closeable.patient.fullName = "Maria da Silva Santos";
+  closeable.patient.recordNumber = "123";
+  closeable.patient.weight = 70;
+  closeable.team.anesthesiologistLead = "Alice";
+  closeable.team.crmLead = "12345";
+  closeable.timers.startAnesthesia = "2026-08-29T12:00:00Z";
+  closeable.technique.balanced = true;
+  closeable.vitals = [{ id: "v1", timestamp: "2026-08-29T12:05:00Z", minutesFromStart: 5, fc: 72 }];
+  closeable.bolusDrugs = [{ id: "d1", name: "Fentanil", timestamp: "2026-08-29T12:05:00Z" } as any];
+  closeable.airway = { ...closeable.airway, capnographyConfirmed: false, ventilationType: "Intubação Orotraqueal" };
+  closeable.monitorConfig = { ...closeable.monitorConfig, capnography: false };
+  const readyEval = evaluateSigningReadiness(closeable);
+  assert(readyEval.canClose === true, "Mínimo contextual permite encerrar");
+  assert(!readyEval.alerts.some((a) => a.level === "CRITICAL"), "Sem CRITICAL no caso mínimo");
+  assert(!readyEval.alerts.some((a) => /capno|EtCO|etco2/i.test(`${a.title} ${a.description}`)), "IOT sem capnografia registrada não bloqueia");
+
+  const chrono = { ...closeable, timers: { startAnesthesia: "2026-08-29T13:00:00Z", startSurgery: "2026-08-29T12:00:00Z" } };
+  assert(evaluateSigningReadiness(chrono).canClose === false, "Cirurgia antes da anestesia é CRITICAL");
+
+  const saveSrcStatus = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  assert(saveSrcStatus.includes("withInProgressIfAnesthesiaStarted"), "saveProcedure promove Draft → InProgress");
+  const voiceSrc3 = fs.readFileSync(path.join(process.cwd(), "src/lib/voiceCommand.ts"), "utf-8");
+  assert(voiceSrc3.includes("withInProgressIfAnesthesiaStarted"), "Voz promove Draft → InProgress");
 
   const readme3 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
   assert(readme3.includes("Fase 3") && readme3.includes("assertCanEdit"), "README documenta Fase 3");
+  assert(readme3.includes("SigningReadinessEngine") || readme3.includes("evaluateSigningReadiness"), "README documenta o engine de encerramento");
 } catch (err) {
   assert(false, `Falha na verificação da Fase 3: ${err}`);
 }
