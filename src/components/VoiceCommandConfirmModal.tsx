@@ -1,10 +1,15 @@
 import React from "react";
 import { Mic, X } from "lucide-react";
+import { VOICE_PARSE_INCOMPLETE_MESSAGE } from "../lib/aiErrorCodes";
 
 export interface VoiceCommandConfirmModalProps {
   isOpen: boolean;
   transcription: string;
   summaries: string[];
+  warnings?: string[];
+  unparsedFragments?: string[];
+  missingEntities?: string[];
+  incomplete?: boolean;
   canApply: boolean;
   isDark?: boolean;
   onConfirm: () => void;
@@ -15,6 +20,10 @@ export function VoiceCommandConfirmModal({
   isOpen,
   transcription,
   summaries,
+  warnings = [],
+  unparsedFragments = [],
+  missingEntities = [],
+  incomplete = false,
   canApply,
   isDark = false,
   onConfirm,
@@ -58,6 +67,13 @@ export function VoiceCommandConfirmModal({
           </button>
         </div>
 
+        {incomplete && (
+          <p className="mb-3 text-sm text-amber-800 dark:text-amber-300">
+            {VOICE_PARSE_INCOMPLETE_MESSAGE}
+            {missingEntities.length > 0 ? ` Itens não extraídos: ${missingEntities.join(", ")}.` : ""}
+          </p>
+        )}
+
         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Transcrição original</p>
         <div
           className={`max-h-32 overflow-y-auto rounded-lg border p-3 text-sm leading-relaxed ${
@@ -87,6 +103,21 @@ export function VoiceCommandConfirmModal({
           </p>
         )}
 
+        {(warnings.length > 0 || unparsedFragments.length > 0) && (
+          <div className="mt-3 space-y-1">
+            {warnings.map((line, index) => (
+              <p key={`w-${index}`} className="text-xs text-amber-700 dark:text-amber-400">
+                {line}
+              </p>
+            ))}
+            {unparsedFragments.map((line, index) => (
+              <p key={`u-${index}`} className="text-xs text-zinc-500">
+                Trecho não estruturado: {line}
+              </p>
+            ))}
+          </div>
+        )}
+
         <div className="mt-5 flex gap-3">
           <button
             type="button"
@@ -102,10 +133,10 @@ export function VoiceCommandConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={!canApply}
+            disabled={!canApply || incomplete}
             className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition shadow-xs"
           >
-            Lançar na ficha
+            {incomplete ? "Confirmar tudo indisponível" : "Lançar na ficha"}
           </button>
         </div>
       </div>

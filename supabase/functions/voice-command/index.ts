@@ -1,147 +1,102 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { VOICE_PARSER_JSON_SCHEMA } from "../_shared/aiJsonSchemas.ts";
+import {
+  AI_MODEL_CONFIG,
+  VOICE_PROMPT_VERSION,
+  VOICE_SCHEMA_VERSION,
+} from "../_shared/aiModelConfig.ts";
+import { transcriptionVocabulary } from "../_shared/anesthesiaVocabulary.ts";
 import { jsonResponse } from "../_shared/cors.ts";
-import { generateJsonWithRetry } from "../_shared/gemini.ts";
+import { GeminiFeatureError } from "../_shared/gemini.ts";
+import { invokeGeminiGateway, parseTranscriptText } from "../_shared/geminiGateway.ts";
 import { serveAiFunction } from "../_shared/serve.ts";
+import { validateVoiceCommandCoverage } from "../_shared/voiceCommandCoverage.ts";
 
-const VOICE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    transcript_original: {
-      type: "STRING",
-      description:
-        "O que foi ouvido, sem corrigir jargão fonético. NÃO converta 'tem ta' em 'fenta' neste campo.",
-    },
-    transcription: {
-      type: "STRING",
-      description:
-        "Texto clínico opcionalmente normalizado. Nunca substitui transcript_original.",
-    },
-    identifiedActions: {
-      type: "OBJECT",
-      properties: {
-        bolusDrugs: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              name: { type: "STRING" },
-              dose: { type: "STRING" },
-              unit: { type: "STRING", description: "mg, mcg, g, ml, UI" },
-              route: { type: "STRING", description: "EV, IM, SC, IN" },
-            },
-          },
-        },
-        continuousInfusions: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              name: { type: "STRING" },
-              rate: { type: "STRING" },
-              rateUnit: { type: "STRING", description: "mcg/kg/min, mg/h, ml/h" },
-            },
-          },
-        },
-        inhalationAgents: {
-          type: "ARRAY",
-          items: { type: "OBJECT", properties: { name: { type: "STRING" } } },
-        },
-        events: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              name: { type: "STRING" },
-              category: {
-                type: "STRING",
-                description:
-                  "Procedimento, Via Aérea, Bloqueio, Acesso, Marcador Temporal, Intercorrência, Outro",
-              },
-            },
-          },
-        },
-        vitals: {
-          type: "OBJECT",
-          properties: {
-            hr: { type: "NUMBER", description: "Frequência Cardíaca" },
-            systolic: { type: "NUMBER", description: "Pressão Arterial Sistólica" },
-            diastolic: { type: "NUMBER", description: "Pressão Arterial Diastólica" },
-            spo2: { type: "NUMBER", description: "Saturação de O2 (%)" },
-            etco2: { type: "NUMBER", description: "Capnografia (EtCO2)" },
-            temp: { type: "NUMBER", description: "Temperatura" },
-          },
-        },
-        patient: {
-          type: "OBJECT",
-          description: "Dados do paciente identificados no áudio.",
-          properties: {
-            fullName: {
-              type: "STRING",
-              description: "Nome completo do paciente ou identificação (ex: 'João Silva' ou 'Paciente A').",
-            },
-            age: { type: "STRING", description: "Idade em anos (ex: '45')." },
-            weight: { type: "STRING", description: "Peso em kg (ex: '70')." },
-            recordNumber: {
-              type: "STRING",
-              description: "Número do prontuário ou número do registro ou número do paciente (ex: 'GH-90210' ou '1234').",
-            },
-            admissionNumber: {
-              type: "STRING",
-              description: "Número de atendimento ou número de internação ou número de admissão (ex: '44093').",
-            },
-            bed: {
-              type: "STRING",
-              description: "Leito, quarto ou enfermaria do paciente (ex: 'UTI 2' ou 'Leito 15').",
-            },
-            dob: {
-              type: "STRING",
-              description: "Data de nascimento do paciente formatada estritamente como YYYY-MM-DD (ex: '1980-05-10').",
-            },
-          },
-        },
-        templates: {
-          type: "ARRAY",
-          items: { type: "STRING" },
-          description: "Nomes de templates ou protocolos a serem ativados (ex: 'cesariana', 'apendicectomia').",
-        },
-        timers: {
-          type: "OBJECT",
-          properties: {
-            startAnesthesia: { type: "BOOLEAN", description: "True se foi solicitado início da anestesia." },
-            startSurgery: { type: "BOOLEAN", description: "True se foi solicitado início da cirurgia." },
-            startSurgeryMinutes: {
-              type: "NUMBER",
-              description: "Minutos a partir de agora para início da cirurgia (ex: 'em 10 minutos').",
-            },
-            endSurgery: { type: "BOOLEAN", description: "True se foi solicitado fim da cirurgia." },
-            endAnesthesia: { type: "BOOLEAN", description: "True se foi solicitado fim da anestesia." },
-          },
-        },
-      },
-    },
-  },
-  required: ["transcript_original", "identifiedActions"],
+const VOICE_PARSER_PROMPT = `Você é o Voice Parser do AnestFlow. Recebe APENAS o transcript verbatim já produzido pelo modelo de transcrição.
+
+CADEIA: áudio → transcrição verbatim → interpretação → proposta → confirmação humana → registro.
+Você NÃO altera a ficha. Você NÃO recebe áudio. Você NÃO reescreve o transcript.
+NÃO converta o transcript verbatim: "tem ta" permanece "tem ta"; a interpretação clínica vai só em identifiedActions.
+
+Retorne SOMENTE o JSON do schema. Sem explicações, sem justificativas, sem raciocínio visível em qualquer campo.
+
+MULTI-AÇÃO: uma mesma fala frequentemente contém vários lançamentos.
+Extraia TODAS as ações clínicas explicitamente mencionadas no transcript.
+Produza UM item independente para CADA medicamento, infusão, gás, fluido, sinal vital ou evento explicitamente mencionado.
+Preserve a ordem em que aparecem no transcript.
+Nunca resuma uma lista de ações em um único item.
+Nunca omita uma ação apenas porque outra ação da mesma categoria já foi extraída.
+Nunca escolha só a primeira, só a última ou a "mais importante".
+
+Exemplo: "Fentanil cem microgramas, dipirona dois gramas e dexametasona quatro miligramas."
+→ três bolus distintos (fentanil, dipirona, dexametasona).
+
+Antes de finalizar, confira internamente se cada entidade clínica explicitamente mencionada no transcript possui representação correspondente no output. Não exponha essa conferência.
+
+PROIBIDO inferir silenciosamente:
+dose, unidade, concentração, diluição, volume preparado, fluxo, FiO2, concentração de volátil, rota, frequência, diagnóstico, valor de monitor, horário não informado.
+
+Ausência na fala → null / omitir o campo. Nunca preencher por costume anestésico.
+Exemplo: "noradrenalina zero vírgula um micrograma por quilo por minuto"
+→ rate 0.1, rateUnit mcg/kg/min, concentration null.
+
+NORMALIZAÇÃO permitida (inequívoca): "microgramas"→"mcg". "endovenoso"→"EV" só se a palavra foi dita.
+unit e rateUnit aceitam SOMENTE os valores do schema (enum). Nunca escreva frase, comentário ou raciocínio nesses campos.
+Se houver ambiguidade, preserve e coloque o trecho em unparsedFragments com warning.
+
+Jargão brasileiro para INTERPRETAR (sem alterar o transcript, que você não devolve):
+fenta=fentanil; remi=remifentanil; nora/norinha=noradrenalina; sevo=sevoflurano; des=desflurano; keta=cetamina.
+
+Devolva identifiedActions no domínio AnestFlow (bolusDrugs, continuousInfusions, inhalationAgents, events, vitals, patient, templates, timers), mais unparsedFragments e warnings.
+Não invente medicamento que o transcript não suporte.`;
+
+const INCOMPLETE_MESSAGE =
+  "Não foi possível interpretar todos os itens mencionados. Revise o transcript e faça os lançamentos manualmente ou repita o comando.";
+
+type ParsedVoice = {
+  identifiedActions: Record<string, unknown>;
+  unparsedFragments: string[];
+  warnings: string[];
 };
 
-const VOICE_PROMPT = `Você é um assistente de IA atuando como 'Escriba Anestésico' avançado, especializado no contexto médico brasileiro.
-Seu objetivo é ouvir e interpretar com altíssima precisão o comando de voz do anestesiologista durante a cirurgia, extraindo as ações clínicas de forma estruturada.
+function asParsedVoice(parsed: Record<string, unknown>): ParsedVoice | null {
+  if (!parsed.identifiedActions || typeof parsed.identifiedActions !== "object" || Array.isArray(parsed.identifiedActions)) {
+    return null;
+  }
+  return {
+    identifiedActions: parsed.identifiedActions as Record<string, unknown>,
+    unparsedFragments: Array.isArray(parsed.unparsedFragments) ? parsed.unparsedFragments.map(String) : [],
+    warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String) : [],
+  };
+}
 
-CADEIA OBRIGATÓRIA: áudio → transcrição original → interpretação clínica → ações propostas → confirmação humana → comando clínico.
-Nunca substitua silenciosamente o que foi ouvido pela interpretação.
-
-ATENÇÃO REDOBRADA AOS JARGÕES E ATALHOS VERBAIS DO BRASIL:
-- Fármacos: "propofol", "fenta" (fentanil), "remi" (remifentanil), "nora" ou "norinha" (noradrenalina), "sevo" (sevoflurano), "des" (desflurano), "keta" (cetamina), "cis" ou "nimbium" (cisatracúrio), "esmeron" ou "rocu" (rocurônio), "dex" ou "precedex" (dexmedetomidina), "adrena" (adrenalina), "atropo" (atropina).
-- Doses e Taxas: "150 de propofol e 100 de fenta", "nora a zero zero cinco" (0.05 mcg/kg/min), "remi a zero um" (0.1 mcg/kg/min).
-- Sinais Vitais: "pressão 12 por 8" (Sistólica 120, Diastólica 80), "frequência" ou "FC" (Frequência Cardíaca), "saturação" ou "sap" ou "sat" (SpO2), "capno" ou "etco2" (EtCO2). Ex: "pressão 115 por 70 com frequência de 65, saturação 99".
-- Eventos: "intubado", "IOT", "máscara laríngea", "incisão", "bloqueio", "raqui", "peridural", "extubado".
-- Paciente: Identificação do paciente como nome completo (fullName), idade (age), data de nascimento (dob, convertida para o formato AAAA-MM-DD, ex: "1980-05-10"), peso (weight), número do prontuário (recordNumber), número de atendimento (admissionNumber) ou leito (bed). Ex: "Paciente João Silva, 45 anos, data de nascimento 10 de maio de 1980, prontuário GH-90210, atendimento 44093, leito UTI 2".
-- Tempos/Timers: "iniciar anestesia agora" (startAnesthesia: true), "cirurgia em 10 minutos" (startSurgeryMinutes: 10, e não true em startSurgery), "iniciar cirurgia agora" (startSurgery: true), "fim da anestesia" (endAnesthesia: true).
-- Templates: Quando o usuário pedir para carregar/ativar um "protocolo" ou "template", retorne APENAS o nome base do protocolo (ex: se pedir "ativar protocolo de cesariana", retorne "cesariana"; se "carregar template de revascularização", retorne "revascularização").
-
-INSTRUÇÕES:
-1. Campo 'transcript_original': transcreva exatamente o que foi ouvido, em português do Brasil, SEM corrigir jargão fonético. NÃO converta "tem ta" em "fenta" nem "nora adrenalina" em "noradrenalina" neste campo. Preserve a fala original.
-2. Campo 'transcription': opcional. Aqui você PODE normalizar termos clínicos (ex: "tem ta" → "fenta"). Este campo NUNCA substitui transcript_original e NÃO é a fonte da ficha.
-3. Preencha as estruturas relevantes (campo 'identifiedActions') com a interpretação clínica. Se algo não for falado, deixe vazio. Extraia o máximo de informações e cruze os jargões para as categorias corretas.`;
+async function runVoiceParser(
+  transcript: string,
+  thinkingLevel: "minimal" | "low",
+  extraInstruction?: string,
+) {
+  const interpreted = await invokeGeminiGateway({
+    feature: "voiceParser",
+    promptVersion: VOICE_PROMPT_VERSION,
+    schemaVersion: VOICE_SCHEMA_VERSION,
+    errorCode: "VOICE_PARSE_FAILED",
+    thinkingLevel,
+    systemInstruction: "Retorne exclusivamente JSON válido no schema pedido. Apenas dados. Sem chain-of-thought. Sem explicações em qualquer campo.",
+    input: `${VOICE_PARSER_PROMPT}\n\n${extraInstruction ?? ""}\nTRANSCRIPT VERBATIM (não altere, não corrija jargão fonético):\n${transcript}`,
+    responseSchema: VOICE_PARSER_JSON_SCHEMA as unknown as Record<string, unknown>,
+  });
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(interpreted.text || "") as Record<string, unknown>;
+  } catch {
+    throw new SyntaxError("VOICE_SCHEMA_INVALID");
+  }
+  const voice = asParsedVoice(parsed);
+  if (!voice) {
+    throw new SyntaxError("VOICE_SCHEMA_INVALID");
+  }
+  return { voice, meta: interpreted.meta };
+}
 
 serveAiFunction("voice-command", async (_user, body) => {
   const payload = body as { audioBase64?: string; mimeType?: string } | null;
@@ -149,25 +104,128 @@ serveAiFunction("voice-command", async (_user, body) => {
     return jsonResponse({ error: "Áudio não fornecido." }, 400);
   }
 
-  const { text, meta } = await generateJsonWithRetry(
-    [
-      { text: VOICE_PROMPT },
-      {
-        inlineData: {
-          data: payload.audioBase64,
-          mimeType: payload.mimeType || "audio/webm",
-        },
-      },
-    ],
-    "Retorne EXCLUSIVAMENTE um objeto JSON válido seguindo estritamente a estrutura solicitada. Nenhuma palavra a mais.",
-    VOICE_SCHEMA,
-    { prompt_version: "voice-v2", schema_version: "voice-actions-v2" },
-  );
-
+  let transcriptOriginal = "";
+  let transcribeMeta;
   try {
-    const parsed = JSON.parse(text || "{}") as Record<string, unknown>;
-    return jsonResponse({ ...parsed, ai: meta });
-  } catch {
-    return jsonResponse({ ai: { ...meta, success: false } });
+    const transcribed = await invokeGeminiGateway({
+      feature: "transcription",
+      promptVersion: "transcribe-verbatim-v1",
+      schemaVersion: "transcript-verbatim-v1",
+      errorCode: "VOICE_TRANSCRIPTION_FAILED",
+      audio: {
+        mimeType: payload.mimeType || "audio/webm",
+        data: payload.audioBase64,
+        vocabulary: transcriptionVocabulary(),
+      },
+    });
+    transcribeMeta = transcribed.meta;
+    transcriptOriginal = parseTranscriptText(transcribed.text);
+  } catch (error) {
+    if (error instanceof GeminiFeatureError) throw error;
+    throw new GeminiFeatureError(
+      "VOICE_TRANSCRIPTION_FAILED",
+      error instanceof Error ? error.message : "Falha na transcrição de voz.",
+      502,
+    );
   }
+
+  if (!transcriptOriginal) {
+    throw new GeminiFeatureError(
+      "VOICE_TRANSCRIPTION_FAILED",
+      "A transcrição verbatim veio vazia.",
+      502,
+    );
+  }
+
+  let parseMeta;
+  let voice: ParsedVoice;
+  try {
+    const primary = await runVoiceParser(transcriptOriginal, "minimal");
+    parseMeta = primary.meta;
+    voice = primary.voice;
+  } catch (error) {
+    if (error instanceof GeminiFeatureError) throw error;
+    if (error instanceof SyntaxError) {
+      return jsonResponse({
+        error: "VOICE_SCHEMA_INVALID",
+        transcript_original: transcriptOriginal,
+        ai: { ...transcribeMeta, success: false, error_code: "VOICE_SCHEMA_INVALID" },
+      }, 502);
+    }
+    throw new GeminiFeatureError(
+      "VOICE_PARSE_FAILED",
+      error instanceof Error ? error.message : "Falha na interpretação de voz.",
+      502,
+    );
+  }
+
+  let coverage = validateVoiceCommandCoverage(transcriptOriginal, voice.identifiedActions);
+  let repairAttempted = false;
+
+  if (!coverage.ok) {
+    repairAttempted = true;
+    const repairInstruction = `MODO coverage-repair.
+Sua resposta anterior omitiu entidades explicitamente presentes no transcript:
+${coverage.missing.map((name) => `- ${name}`).join("\n")}
+
+Output anterior:
+${JSON.stringify(voice)}
+
+Reextraia TODAS as ações do transcript. Não invente informações não presentes. Não explique.\n\n`;
+    try {
+      const repaired = await runVoiceParser(transcriptOriginal, "low", repairInstruction);
+      parseMeta = repaired.meta;
+      voice = repaired.voice;
+      coverage = validateVoiceCommandCoverage(transcriptOriginal, voice.identifiedActions);
+    } catch (error) {
+      if (error instanceof GeminiFeatureError) throw error;
+      if (error instanceof SyntaxError) {
+        return jsonResponse({
+          error: "VOICE_SCHEMA_INVALID",
+          transcript_original: transcriptOriginal,
+          ai: { ...parseMeta, success: false, error_code: "VOICE_SCHEMA_INVALID", repair_attempted: true },
+        }, 502);
+      }
+      throw new GeminiFeatureError(
+        "VOICE_PARSE_FAILED",
+        error instanceof Error ? error.message : "Falha na interpretação de voz.",
+        502,
+      );
+    }
+  }
+
+  const ai = {
+    ...parseMeta,
+    transcription_model: AI_MODEL_CONFIG.transcription.model,
+    transcription: transcribeMeta,
+    coverage,
+    repair_attempted: repairAttempted,
+  };
+
+  if (!coverage.ok) {
+    return jsonResponse({
+      error: "VOICE_PARSE_INCOMPLETE",
+      status: "incomplete",
+      transcript_original: transcriptOriginal,
+      transcription: transcriptOriginal,
+      missingEntities: coverage.missing,
+      identifiedActions: voice.identifiedActions,
+      proposedActions: voice.identifiedActions,
+      actionable: false,
+      unparsedFragments: voice.unparsedFragments,
+      warnings: [...voice.warnings, INCOMPLETE_MESSAGE],
+      ai: { ...ai, success: false, status: "error", error_code: "VOICE_PARSE_INCOMPLETE" },
+    }, 200);
+  }
+
+  return jsonResponse({
+    transcript_original: transcriptOriginal,
+    transcription: transcriptOriginal,
+    identifiedActions: voice.identifiedActions,
+    unparsedFragments: voice.unparsedFragments,
+    warnings: voice.warnings,
+    actionable: true,
+    status: "ok",
+    ai,
+  });
 }, "O tempo limite para processamento do áudio foi excedido.");

@@ -4,6 +4,7 @@ import {
   FunctionsRelayError,
 } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
+import { isAiReviewErrorCode, isVoiceAiErrorCode } from "./aiErrorCodes";
 
 export type AiFunctionName = "review" | "voice-command" | "generate-description";
 
@@ -28,6 +29,10 @@ async function mapFunctionsError(error: unknown): Promise<Error> {
       payload = await error.context.json();
     } catch {
       payload = null;
+    }
+    const code = payload?.error;
+    if (typeof code === "string" && (isAiReviewErrorCode(code) || isVoiceAiErrorCode(code) || code.startsWith("AI_") || code.startsWith("VOICE_"))) {
+      return new Error(code);
     }
     const message = payload?.details || payload?.error || error.message || "Falha ao comunicar com o assistente de IA.";
     return new Error(message);

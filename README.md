@@ -388,11 +388,15 @@ A onda 7 permanece: **12h** de timebox e **8h** ociosas **encerram a sessão** (
 
 ### 7E — IA
 
-`toAIClinicalContext(ficha)` omite CPF, nome, prontuário, admissão, leito, UIDs e **transcrições originais de voz**. `ReviewTab` e a descrição enviam esse contexto; a chave `document` da Edge `generate-description` não muda. A Edge ainda stripa na entrada (`_shared/aiStrip.ts`). Parse falho de review continua `AI_REVIEW_PARSE_FAILED` (HTTP 502), **não** `alerts: []`.
+`toAIClinicalContext(ficha)` omite CPF, nome, prontuário, admissão, leito, UIDs e **transcrições originais de voz**. `ReviewTab` e a descrição enviam esse contexto; a chave `document` da Edge `generate-description` não muda. A Edge ainda stripa na entrada (`_shared/aiStrip.ts`). Falha de auditoria usa códigos explícitos (`AI_REVIEW_FAILED`, `AI_REVIEW_SCHEMA_INVALID`, `AI_REVIEW_PARSE_FAILED` HTTP 502) e **nunca** `alerts: []`. A UI distingue "Auditoria de IA indisponível. Nenhuma conclusão foi produzida." de "Nenhum alerta encontrado."
 
-Modelo pinado: `gemini-3.1-flash-lite` (sem alias `gemini-flash-latest`). Cada função manda `prompt_version` (`review-v1`, `description-v1`, `voice-v2`) e devolve metadados técnicos (`provider`, `model`, `prompt_version`, `schema_version`, `timestamp`, `latency_ms`, `success`). JWT das Edge Functions permanece (`verify_jwt = true`).
+Configuração canônica: `src/lib/aiModelConfig.ts` + `supabase/functions/_shared/aiModelConfig.ts`. Transcrição unary verbatim: `gemini-3.5-transcribe` (o fluxo atual **não** usa `gemini-3.5-transcribe-live`). Parser, supervisor e narrativa: `gemini-3.6-flash` com `thinking_level` `minimal` / `medium` / `low`. Sem `gemini-flash-latest`, sem preview, sem Gemini 3.7 nesta versão. Sem fallback silencioso de modelo.
 
-Cadeia do escriba: áudio → `transcript_original` (o que foi ouvido, sem correção de jargão) → interpretação clínica (`identifiedActions`) → confirmação humana → comando na ficha. A transcrição original é persistida em `procedures.voice_transcripts` e entra no selo 4B só quando há itens (selos antigos sem a chave continuam byte-idênticos na checagem B). A interpretação **nunca** substitui o que foi ouvido.
+React não chama Gemini. Fluxo: React → Edge Function (JWT) → `GeminiGateway` (Interactions API, `store: false`, sem `previous_interaction_id`) → Gemini. A `GEMINI_API_KEY` permanece só no servidor. Cada invocação registra metadados técnicos (`feature`, `provider`, `model`, `prompt_version`, `schema_version`, `thinking_level`, `latency_ms`, `status`) — sem áudio, transcript integral, prompt com PHI ou chain-of-thought.
+
+Prompts/schemas desta versão: `voice-parser-v4` / `voice-command-schema-v4`, `clinical-review-v4` / `clinical-review-schema-v2`, `anesthesia-narrative-v2`. JWT das Edge Functions permanece (`verify_jwt = true`).
+
+Cadeia do escriba: áudio → transcrição verbatim (`transcript_original`) → parser 3.6 (proposta) → Zod + validação semântica → confirmação humana → comando na ficha. Structured output garante estrutura, não verdade clínica. Ausência na fala permanece ausência (via/concentração/dose não ditas não são inventadas). A transcrição original é persistida em `procedures.voice_transcripts` e entra no selo 4B só quando há itens (selos antigos sem a chave continuam byte-idênticos na checagem B). A interpretação **nunca** substitui o que foi ouvido.
 
 ### 7F — PDF final
 

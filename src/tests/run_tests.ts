@@ -674,7 +674,7 @@ try {
   assert(AI_REVIEW_UNAVAILABLE_MESSAGE.includes("Nenhuma conclusão"), "Mensagem de IA indisponível não finge zero alertas");
 
   const reviewFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/review/index.ts"), "utf-8");
-  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED"), "Edge review devolve erro explícito de parse");
+  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED") || reviewFn.includes("AI_REVIEW_SCHEMA_INVALID"), "Edge review devolve erro explícito de parse");
   assert(reviewFn.includes("502"), "Edge review usa status de falha no parse");
   assert(!/JSON\.parse\(\s*text\s*\|\|\s*['"]\{\s*"alerts"\s*:\s*\[\s*\]/.test(reviewFn), "Edge review não mascara parse falho com alerts vazios");
 
@@ -1542,12 +1542,17 @@ try {
   assert(drawerUi.includes("document: toAIClinicalContext(ficha)"), "Chave document da Edge permanece");
 
   const geminiSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/gemini.ts"), "utf-8");
+  const gatewaySrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/geminiGateway.ts"), "utf-8");
+  const edgeModelSrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/aiModelConfig.ts"), "utf-8");
   assert(!geminiSrc.includes("gemini-flash-latest"), "Modelo gemini-flash-latest foi removido");
-  assert(geminiSrc.includes("gemini-3.1-flash-lite"), "Modelo pinado é gemini-3.1-flash-lite");
+  assert(!geminiSrc.includes("PRIMARY_MODELS"), "gemini.ts não escolhe modelo por lista de fallback");
+  assert(edgeModelSrc.includes("gemini-3.6-flash") && edgeModelSrc.includes("gemini-3.5-transcribe"), "Config da Edge pina 3.6-flash e 3.5-transcribe");
   assert(geminiSrc.includes("prompt_version") && geminiSrc.includes("GeminiInvocationMeta"), "Gemini devolve metadados versionados");
+  assert(gatewaySrc.includes("store: false") && gatewaySrc.includes("thinking_level"), "Gateway usa store false e thinking_level");
   const reviewFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/review/index.ts"), "utf-8");
-  assert(reviewFn.includes("prompt_version: \"review-v1\""), "review declara prompt_version");
-  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED"), "Parse falho de review continua explícito");
+  assert(reviewFn.includes("CLINICAL_REVIEW_PROMPT_VERSION"), "review declara prompt_version versionado");
+  assert(reviewFn.includes("AI_REVIEW_PARSE_FAILED") || reviewFn.includes("AI_REVIEW_SCHEMA_INVALID"), "Parse falho de review continua explícito");
+  assert(reviewFn.includes("AI_REVIEW_FAILED"), "Falha de API de review é explícita");
   assert(reviewFn.includes("stripClinicalIdentifiers"), "Edge review stripa identificadores");
   const { parseAiReviewPayload, AI_REVIEW_PARSE_FAILED } = await import("../lib/aiReviewParse.ts");
   assert(parseAiReviewPayload({ alerts: [], ai: { model: "gemini-3.1-flash-lite" } }).ok === true, "Metadados extras não viram parse falho");
@@ -1622,8 +1627,9 @@ try {
   assert(modalSrc.includes("Transcrição original"), "Modal rotula transcrição original");
   const voiceFn7 = fs.readFileSync(path.join(process.cwd(), "supabase/functions/voice-command/index.ts"), "utf-8");
   assert(voiceFn7.includes("transcript_original"), "Edge declara transcript_original");
-  assert(voiceFn7.includes("voice-v2") && voiceFn7.includes("voice-actions-v2"), "Edge bumpou prompt/schema da voz");
+  assert(voiceFn7.includes("VOICE_PROMPT_VERSION") && voiceFn7.includes("VOICE_SCHEMA_VERSION"), "Edge usa prompt/schema versionados da voz");
   assert(voiceFn7.includes("NÃO converta"), "Prompt proíbe corrigir fonema em transcript_original");
+  assert(voiceFn7.includes("transcription"), "voice-command ainda transcreve antes de interpretar");
 
   const mig7eName = fs.readdirSync(path.join(process.cwd(), "supabase/migrations")).find((f) => f.includes("voice_transcripts"));
   assert(!!mig7eName, "Migration voice_transcripts existe");
@@ -1815,7 +1821,353 @@ try {
   assert(false, `Falha na verificação do header responsivo: ${err}`);
 }
 
-// 22. VERIFICAÇÃO FINAL DE RESULTADOS
+// 22. ARQUITETURA DEFINITIVA GEMINI
+console.log("\n22. Verificando arquitetura definitiva da IA Gemini...");
+try {
+  const {
+    AI_MODEL_CONFIG,
+    FORBIDDEN_CLINICAL_MODELS,
+    VOICE_PROMPT_VERSION,
+    CLINICAL_REVIEW_PROMPT_VERSION,
+    NARRATIVE_PROMPT_VERSION,
+    VOICE_SCHEMA_VERSION,
+    CLINICAL_REVIEW_SCHEMA_VERSION,
+    NARRATIVE_SCHEMA_VERSION,
+    assertProductionAiModels,
+    isForbiddenClinicalModel,
+  } = await import("../lib/aiModelConfig.ts");
+  const { transcriptionVocabulary, canonicalAnesthesiaTerms } = await import("../lib/anesthesiaVocabulary.ts");
+  const { finalizeVoiceParse, parseSpokenPortugueseNumber, normalizeDoseUnit } = await import("../lib/voiceParserSemantics.ts");
+  const { validateVoiceCommandCoverage } = await import("../lib/voiceCommandCoverage.ts");
+  const {
+    parseAiReviewPayload,
+    AI_REVIEW_FAILED,
+    AI_REVIEW_SCHEMA_INVALID,
+    AI_REVIEW_PARSE_FAILED,
+    AI_REVIEW_UNAVAILABLE_MESSAGE,
+  } = await import("../lib/aiReviewParse.ts");
+  const { AI_REVIEW_NO_ALERTS_MESSAGE } = await import("../lib/aiErrorCodes.ts");
+  const {
+    buildGemini36InteractionBody,
+    buildTranscriptionInteractionBody,
+    assertNoObsoleteGemini36Sampling,
+    extractInteractionText,
+  } = await import("../lib/geminiInteraction.ts");
+  const { getBlankDocument, FAVORITE_DRUGS } = await import("../mockData.ts");
+  const { applyVoiceActionsToDocument } = await import("../lib/voiceCommand.ts");
+
+  assertProductionAiModels();
+  assert(AI_MODEL_CONFIG.transcription.model === "gemini-3.5-transcribe", "Transcrição unary é gemini-3.5-transcribe");
+  assert(AI_MODEL_CONFIG.transcription.mode === "verbatim", "Transcrição auditável é verbatim");
+  assert(AI_MODEL_CONFIG.voiceParser.model === "gemini-3.6-flash" && AI_MODEL_CONFIG.voiceParser.thinkingLevel === "minimal", "Parser 3.6 minimal");
+  assert(AI_MODEL_CONFIG.clinicalReview.model === "gemini-3.6-flash" && AI_MODEL_CONFIG.clinicalReview.thinkingLevel === "medium", "Supervisor 3.6 medium");
+  assert(AI_MODEL_CONFIG.narrative.model === "gemini-3.6-flash" && AI_MODEL_CONFIG.narrative.thinkingLevel === "low", "Narrativa 3.6 low");
+  assert(VOICE_PROMPT_VERSION === "voice-parser-v4", "Prompt de voz v4");
+  assert(CLINICAL_REVIEW_PROMPT_VERSION === "clinical-review-v4", "Prompt de review v4");
+  assert(NARRATIVE_PROMPT_VERSION === "anesthesia-narrative-v2", "Prompt de narrativa v2");
+  assert(VOICE_SCHEMA_VERSION === "voice-command-schema-v4", "Schema de voz v4");
+  assert(CLINICAL_REVIEW_SCHEMA_VERSION === "clinical-review-schema-v2", "Schema de review v2");
+  assert(NARRATIVE_SCHEMA_VERSION === "narrative-schema-v2", "Schema de narrativa v2");
+  assert((FORBIDDEN_CLINICAL_MODELS as readonly string[]).includes("gemini-flash-latest"), "Lista de proibidos inclui flash-latest");
+  assert(isForbiddenClinicalModel("gemini-3-flash-preview"), "preview é proibido");
+  assert(isForbiddenClinicalModel("gemini-3.1-flash-lite"), "3.1-flash-lite antigo é proibido no runtime");
+  assert(isForbiddenClinicalModel("gemini-3.7-flash"), "3.7 não entra sem benchmark");
+  assert(!isForbiddenClinicalModel("gemini-3.6-flash"), "3.6-flash é o modelo clínico desta versão");
+  assert(!isForbiddenClinicalModel("gemini-3.5-transcribe"), "3.5-transcribe é permitido");
+
+  const edgeCfg = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/aiModelConfig.ts"), "utf-8");
+  const srcCfg = fs.readFileSync(path.join(process.cwd(), "src/lib/aiModelConfig.ts"), "utf-8");
+  for (const id of ["gemini-3.5-transcribe", "gemini-3.6-flash", "voice-parser-v4", "clinical-review-v4", "anesthesia-narrative-v2"]) {
+    assert(edgeCfg.includes(id) && srcCfg.includes(id), `Config src e Edge compartilham ${id}`);
+  }
+  assert(!edgeCfg.includes("gemini-flash-latest"), "Edge config não usa flash-latest");
+  assert(!edgeCfg.includes("gemini-3.1-flash-lite"), "Edge config não usa 3.1-flash-lite");
+
+  const gatewaySrc = fs.readFileSync(path.join(process.cwd(), "supabase/functions/_shared/geminiGateway.ts"), "utf-8");
+  assert(gatewaySrc.includes("v1beta/interactions"), "Gateway fala Interactions API");
+  assert(gatewaySrc.includes("store: false"), "Gateway pede store false");
+  assert(gatewaySrc.includes("thinking_level"), "Gateway usa thinking_level");
+  assert(!gatewaySrc.includes("thinking_budget"), "Gateway não usa thinking_budget");
+  assert(!gatewaySrc.includes("previous_interaction_id"), "Gateway não usa memória remota Gemini");
+  assert(gatewaySrc.includes('type === "model_output"') || gatewaySrc.includes("isModelOutputStepType"), "Gateway extrai somente model_output");
+  assert(gatewaySrc.includes("thought"), "Gateway ignora thought steps");
+  assert(gatewaySrc.includes("thinking_summaries") && gatewaySrc.includes("none"), "Gateway não pede resumo de thinking");
+
+  const clinical36 = buildGemini36InteractionBody({
+    model: "gemini-3.6-flash",
+    input: "ping",
+    thinkingLevel: "minimal",
+    responseSchema: { type: "object" },
+    systemInstruction: "json",
+  });
+  assertNoObsoleteGemini36Sampling(clinical36);
+  assert((clinical36.generation_config as { thinking_level: string }).thinking_level === "minimal", "thinking_level no body 3.6");
+  const asr = buildTranscriptionInteractionBody({
+    model: "gemini-3.5-transcribe",
+    mimeType: "audio/webm",
+    data: "AAAA",
+    vocabulary: ["fentanil"],
+  });
+  assertNoObsoleteGemini36Sampling(asr);
+  const asrCfg = asr.generation_config as {
+    thinking_level?: unknown;
+    transcription_config?: {
+      language_codes?: string[];
+      language_hints?: unknown;
+      mode?: { type?: string };
+      custom_vocabulary?: string[];
+    };
+  };
+  assert(asrCfg.thinking_level === undefined, "Transcrição não envia thinking_level");
+  assert(asrCfg.transcription_config?.mode?.type === "verbatim", "ASR verbatim");
+  assert(
+    JSON.stringify(asrCfg.transcription_config?.language_codes) === JSON.stringify(["pt-BR"]),
+    "buildTranscriptionBody/espelho envia language_codes = [pt-BR]",
+  );
+  assert(
+    asrCfg.transcription_config?.language_hints === undefined,
+    "buildTranscriptionBody/espelho NÃO envia language_hints",
+  );
+  assert(!JSON.stringify(asr).includes("language_hints"), "payload ASR serializado não contém language_hints");
+  assert(
+    JSON.stringify(asrCfg.transcription_config?.custom_vocabulary) === JSON.stringify(["fentanil"]),
+    "custom_vocabulary permanece em transcription_config",
+  );
+  assert(gatewaySrc.includes("language_codes: [\"pt-BR\"]"), "gateway buildTranscriptionBody usa language_codes");
+  assert(!gatewaySrc.includes("language_hints"), "gateway buildTranscriptionBody não usa language_hints");
+  const runtimeTsFiles: string[] = [];
+  const walkRuntime = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "tests") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walkRuntime(full);
+      else if (/\.(ts|tsx|js)$/.test(entry.name)) runtimeTsFiles.push(full);
+    }
+  };
+  walkRuntime(path.join(process.cwd(), "src"));
+  walkRuntime(path.join(process.cwd(), "supabase/functions"));
+  const languageHintsHits = runtimeTsFiles.filter((file) => fs.readFileSync(file, "utf-8").includes("language_hints"));
+  assert(
+    languageHintsHits.length === 0,
+    `runtime sem language_hints (${languageHintsHits.map((f) => path.relative(process.cwd(), f)).join(", ") || "ok"})`,
+  );
+  assert(extractInteractionText({ output_text: "ok" }) === "ok", "extract usa output_text na ausência de steps");
+  assert(
+    extractInteractionText({
+      output_text: "SECRET_THOUGHT {\"ok\":true}",
+      steps: [
+        { type: "thought", content: { text: "SECRET_THOUGHT" } },
+        { type: "model_output", content: { text: '{"ok":true}' } },
+      ],
+    }) === '{"ok":true}',
+    "extract usa somente model_output e ignora thought",
+  );
+  assert(
+    !extractInteractionText({
+      steps: [
+        { type: "thought", content: { text: "assinatura-interna" } },
+        { type: "model_output", content: { text: '{"unit":"mcg"}' } },
+      ],
+    }).includes("assinatura"),
+    "thought não entra em JSON/unit/sourceText",
+  );
+  assert(
+    extractInteractionText({
+      steps: [
+        { type: "thought", content: { text: "segredo" } },
+        { type: "message", content: { text: "fala" } },
+      ],
+    }) === "",
+    "step message sem model_output não vira texto clínico",
+  );
+
+  const vocab = transcriptionVocabulary();
+  assert(vocab.length > 40 && vocab.length <= 100, "Vocabulário ASR cabe no limite recomendado");
+  assert(!vocab.some((term) => /\d+\s*(mg|mcg)/i.test(term)), "Vocabulário não inclui doses padrão");
+  const canonical = canonicalAnesthesiaTerms().map((n) => n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase());
+  for (const drug of FAVORITE_DRUGS) {
+    const head = drug.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(" ")[0];
+    assert(canonical.some((term) => term.includes(head) || head.includes(term.split(" ")[0])), `Catálogo ${drug.name} está no vocabulário`);
+  }
+  assert(canonical.some((t) => t.includes("fenilefrina")), "Fenilefrina no vocabulário");
+  assert(canonical.some((t) => t.includes("vasopressina")), "Vasopressina no vocabulário");
+  assert(canonical.some((t) => t.includes("cetorolaco")), "Cetorolaco no vocabulário");
+
+  assert(parseSpokenPortugueseNumber("cem") === 100, "cem → 100");
+  assert(parseSpokenPortugueseNumber("zero vírgula um") === 0.1, "zero vírgula um → 0.1");
+  assert(normalizeDoseUnit("microgramas") === "mcg", "microgramas → mcg");
+
+  const voice1 = finalizeVoiceParse("fentanil cem microgramas", {
+    identifiedActions: { bolusDrugs: [{ name: "fentanil", dose: "cem", unit: "microgramas", route: "EV" }] },
+    unparsedFragments: [],
+    warnings: [],
+  });
+  assert(voice1.ok, "VOICE TEST 1 schema ok");
+  const bolus1 = voice1.ok ? voice1.result.commands.bolusDrugs?.[0] : undefined;
+  assert(bolus1?.name.toLowerCase() === "fentanil", "VOICE TEST 1 drug = fentanil");
+  assert(bolus1?.dose === "100", "VOICE TEST 1 dose = 100");
+  assert(bolus1?.unit === "mcg", "VOICE TEST 1 unit = mcg");
+  assert(!bolus1?.route, "VOICE TEST 1 não inventa rota");
+
+  const voice2 = finalizeVoiceParse("começar sevo", {
+    identifiedActions: { inhalationAgents: [{ name: "sevoflurano", concentration: 2 }] },
+    unparsedFragments: [],
+    warnings: [],
+  });
+  assert(voice2.ok, "VOICE TEST 2 schema ok");
+  const gas2 = voice2.ok ? voice2.result.commands.inhalationAgents?.[0] : undefined;
+  assert(gas2 && /sevo/i.test(gas2.name), "VOICE TEST 2 agent = sevoflurano");
+  assert(gas2?.concentration == null && gas2?.inspiredConc == null, "VOICE TEST 2 concentration = null");
+
+  const voice3 = finalizeVoiceParse("noradrenalina zero vírgula um micrograma por quilo por minuto", {
+    identifiedActions: {
+      continuousInfusions: [{
+        name: "noradrenalina",
+        rate: "zero vírgula um",
+        rateUnit: "mcg/kg/min",
+        concentration: "8 mg/ml",
+      }],
+    },
+    unparsedFragments: [],
+    warnings: [],
+  });
+  assert(voice3.ok, "VOICE TEST 3 schema ok");
+  const inf3 = voice3.ok ? voice3.result.commands.continuousInfusions?.[0] : undefined;
+  assert(inf3?.rate === "0.1", "VOICE TEST 3 rate = 0.1");
+  assert(inf3?.rateUnit === "mcg/kg/min", "VOICE TEST 3 unit = mcg/kg/min");
+  assert(!inf3?.concentration, "VOICE TEST 3 concentration = null");
+
+  const voice4 = finalizeVoiceParse("aquele negócio que a gente sempre usa", {
+    identifiedActions: { bolusDrugs: [{ name: "propofol", dose: 150, unit: "mg", route: "EV" }] },
+    unparsedFragments: [],
+    warnings: [],
+  });
+  assert(voice4.ok, "VOICE TEST 4 schema ok");
+  assert(!voice4.ok || !voice4.result.commands.bolusDrugs?.length, "VOICE TEST 4 não inventa medicamento");
+  assert(voice4.ok && (voice4.result.warnings.length > 0 || voice4.result.unparsedFragments.length > 0), "VOICE TEST 4 warning/unparsed");
+
+  const cov1 = validateVoiceCommandCoverage("Fentanil 100 microgramas.", {
+    bolusDrugs: [{ name: "fentanil", dose: 100, unit: "mcg" }],
+  });
+  assert(cov1.ok && cov1.mentioned.includes("fentanil") && cov1.missing.length === 0, "COVERAGE 1 fentanil completo");
+
+  const cov2 = validateVoiceCommandCoverage(
+    "Fentanil 100 microgramas, dipirona 2 gramas e dexametasona 4 miligramas.",
+    { bolusDrugs: [{ name: "fentanil", dose: 100, unit: "mcg" }] },
+  );
+  assert(!cov2.ok, "COVERAGE 2 incompleto falha");
+  assert(cov2.missing.includes("dipirona") && cov2.missing.includes("dexametasona"), "COVERAGE 2 missing dipirona e dexametasona");
+  assert(!cov2.missing.includes("fentanil"), "COVERAGE 2 fentanil coberto");
+
+  const cov3 = validateVoiceCommandCoverage(
+    "Fentanil 100 microgramas, dipirona 2 gramas e dexametasona 4 miligramas.",
+    {
+      bolusDrugs: [
+        { name: "fentanil", dose: 100, unit: "mcg" },
+        { name: "dipirona", dose: 2, unit: "g" },
+        { name: "dexametasona", dose: 4, unit: "mg" },
+      ],
+    },
+  );
+  assert(cov3.ok && cov3.missing.length === 0, "COVERAGE 3 três medicamentos completos");
+
+  const cov4 = validateVoiceCommandCoverage("Passa aquela medicação de sempre.", { bolusDrugs: [] });
+  assert(cov4.ok && cov4.mentioned.length === 0 && cov4.missing.length === 0, "COVERAGE 4 ambíguo não exige medicamento");
+
+  const cotUnit = finalizeVoiceParse("fentanil cem microgramas", {
+    identifiedActions: {
+      bolusDrugs: [{
+        name: "fentanil",
+        dose: 100,
+        unit: "mcg Christopher/mg/mcg check: microgramas -> mcg per instructions",
+      }],
+    },
+    unparsedFragments: [],
+    warnings: [],
+  });
+  assert(cotUnit.ok, "CoT em unit não invalida o schema inteiro");
+  const cotBolus = cotUnit.ok ? cotUnit.result.commands.bolusDrugs?.[0] : undefined;
+  assert(cotBolus?.name.toLowerCase() === "fentanil", "CoT unit preserva o medicamento");
+  assert(!cotBolus?.unit || cotBolus.unit === "mcg", "CoT unit é descartado ou vira enum curto");
+  assert(String(cotBolus?.unit ?? "").length <= 16, "unit não retém raciocínio");
+
+  const fichaVoice = getBlankDocument();
+  const beforeVoice = JSON.stringify(fichaVoice);
+  if (voice1.ok) {
+    applyVoiceActionsToDocument(fichaVoice, {}, null, new Date("2026-08-29T12:00:00Z"));
+  }
+  assert(JSON.stringify(fichaVoice) === beforeVoice, "Parser de voz não muta a ficha sem apply real");
+
+  const coherent = parseAiReviewPayload({ alerts: [] });
+  assert(coherent.ok === true && coherent.ok && coherent.alerts.length === 0, "Fixture coerente: schema válido e zero alertas");
+  const inconsistent = parseAiReviewPayload({
+    alerts: [{ type: "Importante", title: "Cirurgia antes da anestesia", description: "Timer de cirurgia precede o de anestesia.", module: "Timing" }],
+  });
+  assert(inconsistent.ok === true && inconsistent.ok && inconsistent.alerts[0].module === "Timing", "Fixture com inconsistência gera alerta");
+  const apiFail = parseAiReviewPayload({ error: AI_REVIEW_FAILED });
+  assert(apiFail.ok === false && apiFail.error === AI_REVIEW_FAILED, "API failure → AI_REVIEW_FAILED");
+  const schemaFail = parseAiReviewPayload({ error: AI_REVIEW_SCHEMA_INVALID });
+  assert(schemaFail.ok === false && schemaFail.error === AI_REVIEW_SCHEMA_INVALID, "Schema failure → AI_REVIEW_SCHEMA_INVALID");
+  const schemaMissing = parseAiReviewPayload({ foo: 1 });
+  assert(schemaMissing.ok === false && schemaMissing.error === AI_REVIEW_SCHEMA_INVALID, "Objeto sem alerts é schema inválido, não zero alertas");
+  const fichaReview = getBlankDocument();
+  const beforeReview = JSON.stringify(fichaReview);
+  parseAiReviewPayload({ alerts: [{ type: "Critico", title: "X", description: "Y", module: "Drugs" }] });
+  parseAiReviewPayload({ error: AI_REVIEW_FAILED });
+  assert(JSON.stringify(fichaReview) === beforeReview, "Nenhum cenário do supervisor altera a ficha");
+  assert(String(AI_REVIEW_UNAVAILABLE_MESSAGE) !== String(AI_REVIEW_NO_ALERTS_MESSAGE), "Indisponível ≠ nenhum alerta");
+  assert(AI_REVIEW_PARSE_FAILED === "AI_REVIEW_PARSE_FAILED", "Código legado de parse permanece");
+
+  const reviewUi = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  assert(reviewUi.includes("Nenhum alerta encontrado") || reviewUi.includes("AI_REVIEW_NO_ALERTS_MESSAGE"), "UI de zero alertas existe");
+  assert(reviewUi.includes("Auditoria de IA indisponível") || reviewUi.includes("AI_REVIEW_UNAVAILABLE_MESSAGE"), "UI de falha de auditoria existe");
+  assert(reviewUi.includes("Gemini 3.6"), "Loading do supervisor cita 3.6");
+
+  const reactFiles = [
+    "src/App.tsx",
+    "src/components/ReviewTab.tsx",
+    "src/components/VoiceCommandButton.tsx",
+    "src/components/AnesthesiaDescriptionDrawer.tsx",
+    "src/lib/aiFunctions.ts",
+  ];
+  for (const file of reactFiles) {
+    const src = fs.readFileSync(path.join(process.cwd(), file), "utf-8");
+    assert(!src.includes("generativelanguage.googleapis.com"), `${file} não chama Gemini direto`);
+    assert(!src.includes("VITE_GEMINI"), `${file} não lê VITE_GEMINI`);
+    assert(!src.includes("GEMINI_API_KEY"), `${file} não embute GEMINI_API_KEY`);
+  }
+  const aiFn = fs.readFileSync(path.join(process.cwd(), "src/lib/aiFunctions.ts"), "utf-8");
+  assert(!aiFn.includes("GEMINI_API_KEY"), "Cliente invoke não lê GEMINI_API_KEY");
+  assert(aiFn.includes("functions.invoke"), "Cliente continua no Edge");
+
+  const voiceBtn = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandButton.tsx"), "utf-8");
+  assert(voiceBtn.includes("sendToVoiceEdge"), "Botão de voz chama a Edge, não Gemini");
+  assert(!voiceBtn.includes("sendToGemini("), "Nome sendToGemini saiu do cliente");
+  const headerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AppHeader.tsx"), "utf-8");
+  assert(headerSrc.includes("unparsedFragments"), "Header encaminha fragments da voz");
+  const appSrc = clinicalShellSrc();
+  assert(appSrc.includes("finalizeVoiceParse"), "Confirmação de voz passa por validação semântica");
+  const modalSrc = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandConfirmModal.tsx"), "utf-8");
+  assert(modalSrc.includes("warnings"), "Modal mostra warnings da proposta");
+
+  const voiceFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/voice-command/index.ts"), "utf-8");
+  assert(voiceFn.includes('feature: "transcription"') && voiceFn.includes('feature: "voiceParser"'), "Voz separa transcrição e interpretação");
+  assert(voiceFn.includes("VOICE_TRANSCRIPTION_FAILED") && voiceFn.includes("VOICE_PARSE_FAILED") && voiceFn.includes("VOICE_SCHEMA_INVALID") && voiceFn.includes("VOICE_PARSE_INCOMPLETE"), "Voz tem códigos fail-closed");
+  assert(voiceFn.includes("validateVoiceCommandCoverage") && voiceFn.includes("coverage-repair"), "Parser tem coverage + um repair");
+  assert(voiceFn.includes('thinkingLevel,') || voiceFn.includes('thinkingLevel: "low"'), "Repair usa thinking low");
+  const incompleteUi = fs.readFileSync(path.join(process.cwd(), "src/components/VoiceCommandConfirmModal.tsx"), "utf-8");
+  assert(incompleteUi.includes("VOICE_PARSE_INCOMPLETE_MESSAGE") || incompleteUi.includes("Não foi possível interpretar todos os itens"), "UI comunica captura incompleta");
+  assert(incompleteUi.includes("incomplete"), "Modal distingue proposta incompleta");
+  const descFn = fs.readFileSync(path.join(process.cwd(), "supabase/functions/generate-description/index.ts"), "utf-8");
+  assert(!descFn.includes('description: ""') || descFn.includes("AI_NARRATIVE_SCHEMA_INVALID"), "Narrativa não mascara falha com string vazia");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme.includes("gemini-3.6-flash") && readme.includes("GeminiGateway"), "README 7E documenta a arquitetura nova");
+  assert(readme.includes("store: false"), "README documenta store false");
+} catch (err) {
+  assert(false, `Falha na verificação da arquitetura Gemini: ${err}`);
+}
+
+// 23. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

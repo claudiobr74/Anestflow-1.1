@@ -1,7 +1,7 @@
 import { jsonResponse, optionsResponse } from "./cors.ts";
 import { requireConfirmedUser, type AuthedUser } from "./auth.ts";
 import { allowRequest } from "./rateLimit.ts";
-import { GeminiConfigError, GeminiError, GeminiTimeoutError } from "./gemini.ts";
+import { GeminiConfigError, GeminiError, GeminiFeatureError, GeminiTimeoutError } from "./gemini.ts";
 
 /** Hosted Edge Functions typically cap bodies around 6MB; stay under that. */
 const MAX_BODY_BYTES = 5_500_000;
@@ -51,6 +51,9 @@ export function serveAiFunction(name: string, handler: AiHandler, timeoutMessage
       const message = error instanceof Error ? error.message : "Erro desconhecido";
       console.error(`[${name}] uid=${user.id} error=${message}`);
 
+      if (error instanceof GeminiFeatureError) {
+        return jsonResponse({ error: error.errorCode, details: error.message }, error.status);
+      }
       if (error instanceof GeminiTimeoutError) {
         return jsonResponse({ error: timeoutMessage }, 504);
       }

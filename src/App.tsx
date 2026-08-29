@@ -16,9 +16,9 @@ import { AppSettings, DEFAULT_APP_SETTINGS } from "./components/SettingsModal";
 import { PRESET_TEMPLATES } from "./components/AnesthesiaTemplatesModalData";
 import {
   applyVoiceActionsToDocument,
-  sanitizeVoiceCommand,
   type SanitizedVoiceActions,
 } from "./lib/voiceCommand";
+import { finalizeVoiceParse } from "./lib/voiceParserSemantics";
 import { useSyncEngine } from "./lib/useSyncEngine";
 import { useSessionGuard } from "./lib/useSessionGuard";
 import {
@@ -60,6 +60,10 @@ export default function App() {
   const [pendingVoice, setPendingVoice] = useState<{
     transcription: string;
     actions: SanitizedVoiceActions | null;
+    warnings?: string[];
+    unparsedFragments?: string[];
+    actionable?: boolean;
+    missingEntities?: string[];
   } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark" | "dark-clean">(() => {
     const saved = localStorage.getItem("anesthesia_theme");
@@ -303,7 +307,7 @@ export default function App() {
   const handleVoiceCommandConfirm = () => {
     const pending = pendingVoice;
     setPendingVoice(null);
-    if (!pending) return;
+    if (!pending || pending.actionable === false) return;
     const gate = canEditDocument(ficha, user?.uid);
     if (gate.ok === false) {
       alert(gate.message);
@@ -401,10 +405,41 @@ export default function App() {
         syncEngine={syncEngine}
         startAiSupervisor={startAiSupervisor}
         stopAiSupervisor={stopAiSupervisor}
-        onVoiceProcessed={({ transcription, identifiedActions }) => {
+        onVoiceProcessed={({ transcription, identifiedActions, warnings, unparsedFragments, actionable, missingEntities }) => {
+          if (actionable === false) {
+            setPendingVoice({
+              transcription,
+              actions: null,
+              warnings: warnings?.length
+                ? warnings
+                : ["Não foi possível interpretar todos os itens mencionados. Revise o transcript e faça os lançamentos manualmente ou repita o comando."],
+              unparsedFragments: unparsedFragments ?? [],
+              actionable: false,
+              missingEntities: missingEntities ?? [],
+            });
+            return;
+          }
+          const finalized = finalizeVoiceParse(transcription, {
+            identifiedActions,
+            warnings,
+            unparsedFragments,
+          });
+          if (!finalized.ok) {
+            setPendingVoice({
+              transcription,
+              actions: null,
+              warnings: ["Estrutura de voz inválida. Nenhum lançamento será aplicado."],
+              unparsedFragments: unparsedFragments ?? [],
+              actionable: false,
+            });
+            return;
+          }
           setPendingVoice({
-            transcription,
-            actions: sanitizeVoiceCommand(identifiedActions),
+            transcription: finalized.result.transcript,
+            actions: Object.keys(finalized.result.commands).length ? finalized.result.commands : null,
+            warnings: finalized.result.warnings,
+            unparsedFragments: finalized.result.unparsedFragments,
+            actionable: true,
           });
         }}
         onOpenPdf={() => setShowPrintModal(true)}
