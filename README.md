@@ -117,7 +117,7 @@ O cliente grava no schema da onda 1:
 
 - `saveProcedure` → `public.procedures` + tabelas filhas (`procedure_vitals`, `medications`, `fluids`, `infusions`, `events`)
 - Assinatura → RPC `sign_procedure` (hash SHA-256 no servidor). O cliente **não** faz UPDATE para `signed`.
-- Troca / assunção → `transfer_responsibility` / `claim_responsibility` / `request_transfer` / `decline_pending_transfer`
+- Troca / assunção → `transfer_responsibility` / `request_transfer` / `claim_responsibility` (aceite) / `assume_responsibility` (assunção excepcional) / `decline_pending_transfer`
 - Adendo → `add_procedure_amendment`
 - Participantes → `add_participant_by_email`, `list_procedure_participant_profiles`, `remove_procedure_collaborator`
 - Worklist → `worklist_entries` com `cpf_hash` SHA-256 hex minúsculo (sem índice global de CPF)
@@ -258,13 +258,17 @@ Troca e assunção de responsabilidade **não** mutam `currentResponsibleUid` no
 |---|---|---|
 | Transferir já | `transfer_responsibility` | Responsável atual; `p_incoming_user_id` é o UID do colega (lookup por e-mail) |
 | Solicitar aceite | `request_transfer` | Responsável atual; inclui o colega como participante e grava `pending_transfer` |
-| Aceitar | `claim_responsibility` | Participante (o colega indicado) |
+| Aceitar | `claim_responsibility` | Só o UID em `pending_transfer.incomingUid`. Sem pendência → `claim_requires_pending` |
 | Recusar | `decline_pending_transfer` | Responsável atual **ou** o UID em `pending_transfer.incomingUid` |
-| Assumir | `claim_responsibility` | Participante da ficha |
+| Assumir | `assume_responsibility` | Participante da ficha; motivo obrigatório (≥ 10 caracteres). Auditoria `assume_responsibility_exceptional` |
+
+Aceitar (transferência normal) e Assumir (exceção) **não** compartilham o mesmo RPC. O botão Assumir abre o modal de motivo e chama `assume_responsibility`. `claim_responsibility` ficou só para o aceite da pendência.
 
 O e-mail do entrante é **obrigatório**. O cliente resolve o perfil com `lookup_profile_by_email` e nunca envia o UID de quem transfere como incoming (`incoming_must_differ` no servidor). Autosave **não** grava `pending_transfer` nem `procedure_transfers` — essas colunas só mudam nas RPCs (e na assinatura, que zera a pendência).
 
-Com um único usuário de teste não dá para completar o handover entre dois médicos. Claim na própria ficha é no-op; transferir/solicitar para o próprio UID falha com `incoming_must_differ`; e-mail inexistente falha com `profile_not_found`.
+O botão Sincronização do `ShareModal` pausa de verdade o **autosave de saída** (`pauseAutosave` / `resumeAutosave`). Offline continua offline; pausado não se disfarça de offline. Realtime de entrada segue ativo. `retrySyncNow` no badge continua sendo flush explícito.
+
+O live `fase04_live.ts` (um usuário) cobre no-op, self-transfer, perfil ausente e `reason_required`. Com `ONDA3_TEST_EMAIL_B` + `ONDA3_TEST_PASSWORD_B`, `fase04_handover_live.ts` exercita participante sem pendência (`claim_requires_pending`), `request_transfer` A→B, aceite via `claim_responsibility` e `assume_responsibility` excepcional.
 
 ## Fase 5 (renomear `document` → `ficha`)
 

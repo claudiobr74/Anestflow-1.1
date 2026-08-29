@@ -1,9 +1,11 @@
 /**
  * Live check da Fase 4 contra o projeto Anestflow.
  * Paciente fictício. Sem PHI. Um único usuário de teste:
- * claim na própria ficha = no-op; transfer/request para si mesmo falha;
- * e-mail inexistente não resolve perfil. Sem segundo médico, não há
- * roundtrip real de handover.
+ * claim na própria ficha = no-op; assume na própria ficha = no-op após motivo;
+ * assume sem motivo = reason_required; transfer/request para si mesmo falha;
+ * e-mail inexistente não resolve perfil. Com ONDA3_TEST_EMAIL_B +
+ * ONDA3_TEST_PASSWORD_B, `fase04_handover_live.ts` exercita aceite A→B e
+ * `claim_requires_pending`.
  *
  * Uso: env de .env.local + ONDA3_TEST_EMAIL / ONDA3_TEST_PASSWORD
  */
@@ -12,6 +14,7 @@ import { getSupabase } from "../lib/supabase.ts";
 import {
   saveProcedure,
   getProcedureById,
+  assumeResponsibilityAtomic,
   claimResponsibilityAtomic,
   transferResponsibilityAtomic,
   requestTransferAtomic,
@@ -57,8 +60,9 @@ doc.currentResponsibleUid = uid;
 doc.participantUids = [uid];
 doc.userId = uid;
 doc.status = "Draft";
-doc.patient.fullName = "Paciente Teste Fase Quatro";
-doc.patient.recordNumber = "FASE04-001";
+const stamp = Date.now();
+doc.patient.fullName = `Paciente Teste Fase Quatro ${stamp}`;
+doc.patient.recordNumber = `FASE04-${stamp}`;
 doc.patient.hospital = "Hospital Teste Fase 04";
 doc.team.anesthesiologistLead = "Dr. Agente Fase Quatro";
 doc.team.crmLead = "000001";
@@ -76,6 +80,36 @@ const claimed = await claimResponsibilityAtomic(
 if (claimed.currentResponsibleUid !== uid) fail("claim na própria ficha mudou o responsável");
 if (claimed.pendingTransfer) fail("claim na própria ficha inventou pending_transfer");
 console.log("claim no-op ok");
+
+try {
+  await assumeResponsibilityAtomic(
+    doc.id,
+    { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP", email },
+    { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP" },
+    "curto"
+  );
+  fail("assume com motivo curto deveria falhar");
+} catch (err) {
+  assertMsg(err, "motivo", "assume short reason");
+}
+
+const { error: rpcEmptyReason } = await supabase.rpc("assume_responsibility", {
+  p_procedure_id: doc.id,
+  p_reason: "   ",
+  p_handover: { incomingName: "Dr. Agente Fase Quatro" },
+});
+if (!rpcEmptyReason) fail("RPC assume_responsibility sem motivo deveria falhar");
+assertMsg(rpcEmptyReason, "motivo", "rpc assume empty reason");
+
+const assumed = await assumeResponsibilityAtomic(
+  doc.id,
+  { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP", email },
+  { uid, name: "Dr. Agente Fase Quatro", crm: "000001", uf: "SP" },
+  "Motivo excepcional de teste live."
+);
+if (assumed.currentResponsibleUid !== uid) fail("assume na própria ficha mudou o responsável");
+if (assumed.pendingTransfer) fail("assume na própria ficha inventou pending_transfer");
+console.log("assume no-op ok");
 
 try {
   await transferResponsibilityAtomic(
@@ -137,7 +171,7 @@ const reloaded = await getProcedureById(doc.id);
 if (!reloaded) fail("getProcedureById vazio");
 if (reloaded.currentResponsibleUid !== uid) fail("responsável mudou sem handover real");
 if (reloaded.pendingTransfer) fail("pending_transfer ficou sujo após os erros");
-if (reloaded.patient.fullName !== "Paciente Teste Fase Quatro") fail("paciente fictício perdido");
+if (reloaded.patient.fullName !== doc.patient.fullName) fail("paciente fictício perdido");
 console.log("estado final ok", reloaded.id);
 
 console.log("FASE04_LIVE_OK", doc.id);
