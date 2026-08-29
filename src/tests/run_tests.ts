@@ -58,21 +58,44 @@ assert(
   "A ordenação determinística das chaves gera a mesma string canônica independentemente do objeto JS"
 );
 
-// 2. AUDITORIA DE REGRAS DO FIRESTORE (firestore.rules vs firebase-blueprint.json)
-console.log("\n2. Auditando consistência de Regras Firestore vs Blueprint...");
+// 2. ONDA 6 — FIREBASE REMOVIDO DO APP
+console.log("\n2. Verificando remoção do Firebase (onda 6)...");
+
+function listSourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listSourceFiles(full));
+    else if (/\.(ts|tsx|js|jsx|json)$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
 
 try {
-  const rulesContent = fs.readFileSync(path.join(process.cwd(), "firestore.rules"), "utf-8");
-  const blueprintContent = fs.readFileSync(path.join(process.cwd(), "firebase-blueprint.json"), "utf-8");
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf-8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  assert(!pkg.dependencies?.firebase, "package.json não declara firebase");
+  assert(!pkg.dependencies?.["firebase-admin"], "package.json não declara firebase-admin");
+  assert(!pkg.devDependencies?.firebase && !pkg.devDependencies?.["firebase-admin"], "firebase não voltou como devDependency");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/lib/firebase.ts")), "src/lib/firebase.ts removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "src/lib/firestoreUtils.ts")), "src/lib/firestoreUtils.ts removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "firebase-applet-config.json")), "firebase-applet-config.json removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "firebase-blueprint.json")), "firebase-blueprint.json removido");
+  assert(!fs.existsSync(path.join(process.cwd(), "firestore.rules")), "firestore.rules removido");
 
-  assert(rulesContent.includes("function isParticipant"), "Regra de permissão por responsável/participante/admin está presente em firestore.rules");
-  assert(rulesContent.includes("match /amendments/{amendmentId}"), "Subcoleção /amendments está mapeada e protegida no Firestore");
-  assert(rulesContent.includes("allow update: if false;"), "Bloqueio de alteração em adendos assinados implementado em firestore.rules");
-  assert(rulesContent.includes("match /vitals/{vitalId}"), "Subcoleção granular /vitals mapeada");
-  assert(rulesContent.includes("match /medications/{medicationId}"), "Subcoleção granular /medications mapeada");
-  assert(blueprintContent.includes("procedures/{procedureId}/vitals"), "Blueprint inclui declaração das subcoleções para indexação");
+  const importRe = /from\s+['"]firebase(?:\/[^'"]*)?['"]|require\(\s*['"]firebase(?:-admin)?['"]/;
+  const runtimeFiles = [
+    ...listSourceFiles(path.join(process.cwd(), "src")).filter((f) => !f.includes(`${path.sep}tests${path.sep}`)),
+    path.join(process.cwd(), "server.ts"),
+  ];
+  const offenders = runtimeFiles.filter((file) => importRe.test(fs.readFileSync(file, "utf-8")));
+  assert(offenders.length === 0, "Nenhum módulo de runtime importa firebase / firebase-admin");
 } catch (err) {
-  assert(false, `Falha na leitura das regras de segurança: ${err}`);
+  assert(false, `Falha na verificação da onda 6: ${err}`);
 }
 
 // 3. AUDITORIA DE LIMPEZA DE SESSÃO / LOGOUT

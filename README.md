@@ -1,6 +1,6 @@
 <div align="center">
 <h1>AnestFlow</h1>
-<p>Registro anestésico digital (PWA) — migração de Firebase para Supabase em andamento.</p>
+<p>Registro anestésico digital (PWA) — runtime no Supabase (Auth, Postgres, Realtime, Edge Functions).</p>
 </div>
 
 ## Projeto Supabase (canônico)
@@ -15,11 +15,11 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**.
 
 ## Onda 0 (fundação)
 
-Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth saiu na onda 2; fichas e worklist saíram do Firestore na onda 3.
+Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth saiu na onda 2; fichas e worklist saíram do Firestore na onda 3; o pacote Firebase saiu na onda 6.
 
 ### Auth (espelhar no Dashboard)
 
@@ -58,7 +58,7 @@ Requer Docker. API local em `http://127.0.0.1:54321`. App em `http://127.0.0.1:3
 3. IA (opcional): `npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc`
 4. `npm run dev`
 
-Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Assistentes de IA chamam Edge Functions (onda 5). Não adicione documentos Firestore novos nem copie PHI de produção.
+Login e perfil usam Supabase Auth + tabela `profiles`. Fichas, eventos clínicos e worklist gravam no Postgres do Anestflow (onda 3). Assistentes de IA chamam Edge Functions (onda 5). O SDK Firebase não faz mais parte do app (onda 6). Não copie PHI de produção.
 
 ## Onda 1 (schema, RLS, RPCs)
 
@@ -141,8 +141,14 @@ npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc
 
 Sem o secret de Edge Function, as funções tentam o fallback no Vault (`private.read_gemini_api_key`, só `service_role`). Não coloque a chave no Vite nem em migration.
 
+## Onda 6 (Firebase fora do app)
+
+O cliente não importa mais `firebase` / `firebase-admin`. Removidos `src/lib/firebase.ts`, `src/lib/firestoreUtils.ts`, `firebase-applet-config.json`, `firebase-blueprint.json` e `firestore.rules`.
+
+PDF da ficha e TCLE continuam **download local** (`jspdf` + `html-to-image`). Assinatura digital é hash SHA-256 no Postgres. Áudio de voz vai só para a Edge Function, sem arquivo persistido. Por isso esta onda **não** abre bucket de Storage — não havia upload para migrar.
+
 ## Segurança imediata (fora do código)
 
 1. Tornar o repositório GitHub **privado**.
-2. Rotacionar a API key Firebase já commitada em `firebase-applet-config.json`.
+2. Rotacionar no Google Cloud a API key Firebase que já esteve em `firebase-applet-config.json` (o arquivo saiu da árvore; o histórico do git ainda tem o valor).
 3. Confirmar e-mail ON e anônimo OFF no Dashboard do Anestflow.
