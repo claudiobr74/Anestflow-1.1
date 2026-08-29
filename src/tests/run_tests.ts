@@ -21,8 +21,11 @@ import {
   matchHibpRangeBody,
   sha1HexUpper,
 } from "../lib/leakedPassword.ts";
+import { installMemoryStorage, storageDump } from "./memoryStorage.ts";
 import fs from "fs";
 import path from "path";
+
+installMemoryStorage();
 
 console.log("=================================================");
 console.log("🧪 INICIANDO TESTES AUTOMÁTICOS DE SEGURANÇA E DADOS");
@@ -117,9 +120,10 @@ try {
   const appContent = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
   const policy = fs.readFileSync(path.join(process.cwd(), "src/lib/sessionPolicy.ts"), "utf-8");
   const cacheKeys = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalStorageKeys.ts"), "utf-8");
-  assert(appContent.includes("clearClinicalBrowserCache"), "Logout remove rascunhos clínicos do localStorage");
-  assert(cacheKeys.includes("anestflow_doc_local_") && policy.includes("CLINICAL_STORAGE_KEYS"), "Cache local de ficha é apagado no encerramento");
-  assert(cacheKeys.includes("anestflow_pending_sync_queue") && policy.includes("pendingSyncQueue"), "Fila de sync pendente é apagada no encerramento");
+  assert(appContent.includes("clearClinicalBrowserCache"), "Logout remove rascunhos clínicos do navegador");
+  assert(appContent.includes("purgeClinicalPhiFromLocalStorage"), "App apaga PHI legado do localStorage na subida");
+  assert(cacheKeys.includes("anestflow_doc_local_") && policy.includes("purgeClinicalPhiFromLocalStorage"), "Cache local de ficha é apagado no encerramento");
+  assert(cacheKeys.includes("anestflow_pending_sync_queue") && policy.includes("clearClinicalSessionDrafts"), "Fila de sync da aba é apagada no encerramento");
 } catch (err) {
   assert(false, `Falha na verificação de logout: ${err}`);
 }
@@ -653,7 +657,87 @@ try {
   assert(false, `Falha na verificação da Fase 0+1: ${err}`);
 }
 
-// 14. VERIFICAÇÃO FINAL DE RESULTADOS
+// 14. FASE 2 — PHI FORA DO LOCALSTORAGE
+console.log("\n14. Verificando Fase 2 (PHI fora do localStorage)...");
+try {
+  const { getBlankDocument } = await import("../mockData.ts");
+  const {
+    CLINICAL_STORAGE_KEYS,
+    localDocStorageKey,
+    localStorageHoldsClinicalPhi,
+    clearClinicalSessionDrafts,
+    activeDocSessionKey,
+  } = await import("../lib/clinicalStorageKeys.ts");
+  const { SyncQueueManager } = await import("../lib/syncEngine.ts");
+  const { clearClinicalBrowserCache } = await import("../lib/sessionPolicy.ts");
+
+  const PHI = "PACIENTE_PHI_FASE2_XYZ";
+  const themeKeep = "dark-clean";
+  localStorage.setItem("anesthesia_theme", themeKeep);
+  localStorage.setItem("anesthesia_user", JSON.stringify({ name: "Dr Teste", uid: "u1" }));
+  localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify({ patient: { fullName: PHI } }));
+  localStorage.setItem(localDocStorageKey("proc-legado"), JSON.stringify({ patient: { fullName: PHI } }));
+  localStorage.setItem(
+    CLINICAL_STORAGE_KEYS.pendingSyncQueue,
+    JSON.stringify({ "proc-legado": { doc: { patient: { fullName: PHI } }, timestamp: "2026-08-29T12:00:00Z" } })
+  );
+
+  assert(localStorageHoldsClinicalPhi(), "Antes do purge o localStorage ainda tem PHI legado");
+
+  const doc = getBlankDocument();
+  doc.id = "fase02-doc";
+  doc.status = "Draft";
+  doc.patient.fullName = PHI;
+  doc.patient.recordNumber = "FASE02-001";
+  SyncQueueManager.enqueue(doc);
+
+  assert(!localStorageHoldsClinicalPhi(), "enqueue apaga PHI legado do localStorage");
+  assert(!storageDump(localStorage).includes(PHI), "Nenhum valor no localStorage contém o nome do paciente");
+  assert(localStorage.getItem("anesthesia_theme") === themeKeep, "Tema (não-PHI) permanece no localStorage");
+  assert(localStorage.getItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc) === null, "anesthesia_doc legado foi apagado");
+  assert(localStorage.getItem(localDocStorageKey("proc-legado")) === null, "anestflow_doc_local_* legado foi apagado");
+  assert(localStorage.getItem(CLINICAL_STORAGE_KEYS.pendingSyncQueue) === null, "fila legado saiu do localStorage");
+
+  const sessionDump = storageDump(sessionStorage);
+  assert(sessionDump.includes(PHI), "Fila de sync na aba ainda tem a ficha (sessionStorage)");
+  assert(sessionStorage.getItem(CLINICAL_STORAGE_KEYS.pendingSyncQueue)?.includes(PHI), "Fila vive em sessionStorage");
+  assert(SyncQueueManager.getPendingCount() === 1, "Fila tem um documento pendente");
+
+  sessionStorage.setItem(activeDocSessionKey("u1"), JSON.stringify(doc));
+  const clearedDrafts = clearClinicalSessionDrafts();
+  assert(clearedDrafts.includes(CLINICAL_STORAGE_KEYS.pendingSyncQueue), "Limpar rascunho da aba remove a fila");
+  assert(SyncQueueManager.getPendingCount() === 0, "Fila da aba ficou vazia");
+  assert(!storageDump(sessionStorage).includes(PHI), "Rascunho ativo da aba também saiu");
+
+  localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify({ patient: { fullName: PHI } }));
+  sessionStorage.setItem(CLINICAL_STORAGE_KEYS.pendingSyncQueue, JSON.stringify({ x: { doc: { patient: { fullName: PHI } } } }));
+  clearClinicalBrowserCache();
+  assert(!localStorageHoldsClinicalPhi(), "Logout purga PHI do localStorage");
+  assert(localStorage.getItem("anesthesia_user") === null, "Logout apaga anesthesia_user");
+  assert(localStorage.getItem("anesthesia_theme") === themeKeep, "Logout não apaga o tema");
+  assert(!storageDump(sessionStorage).includes(PHI), "Logout limpa sessionStorage clínico");
+
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/syncEngine.ts"), "utf-8");
+  assert(!syncSrc.includes("localStorage.setItem"), "SyncQueueManager não grava localStorage");
+  assert(syncSrc.includes("sessionStorage"), "SyncQueueManager usa sessionStorage");
+  assert(!syncSrc.includes("saveLocalCopy"), "Cópia local de ficha no disco foi removida");
+
+  const settingsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/SettingsModal.tsx"), "utf-8");
+  assert(settingsSrc.includes("purgeClinicalPhiFromLocalStorage"), "Configurações purgam PHI legado");
+  assert(settingsSrc.includes("clearClinicalSessionDrafts"), "Configurações limpam rascunho da aba");
+  assert(!settingsSrc.includes("sessionStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc)"), "Limpar cache não usa a chave errada");
+
+  const badgeSrc = fs.readFileSync(path.join(process.cwd(), "src/components/SyncStatusBadge.tsx"), "utf-8");
+  assert(badgeSrc.includes("nesta aba"), "Badge offline não promete persistência em disco");
+  assert(!badgeSrc.includes("protegidos localmente no seu dispositivo"), "Tooltip offline não afirma proteção em disco");
+
+  const readme2 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme2.includes("Fase 2") && readme2.includes("PHI fora do localStorage"), "README documenta Fase 2");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 2: ${err}`);
+}
+
+// 15. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

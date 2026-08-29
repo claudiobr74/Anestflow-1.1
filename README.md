@@ -225,12 +225,16 @@ Testes do comportamento correto (Fase 0) e correções (Fase 1) na mesma linha:
 - ID clínico duplicado **regenera** o segundo item; não descarta o lançamento.
 - E-mail de assinatura/claim vem do Auth (`user.email`), não do hospital.
 
-Chaves de cache atuais (inventário; a limpeza correta de PHI é a **Fase 2**):
+## Fase 2 (PHI fora do localStorage)
 
-| Chave | Onde |
-|---|---|
-| `anesthesia_doc` | `localStorage` |
-| `anestflow_doc_local_<procedureId>` | `localStorage` |
-| `anestflow_pending_sync_queue` | `localStorage` |
-| `anestflow_active_doc_<uid>` | `sessionStorage` |
+A ficha clínica (paciente, vitais, fármacos, SRPA, fila offline) **não** é mais gravada em `localStorage`. Posto compartilhado: fechar a aba some com o rascunho.
+
+| Chave | Onde | Uso |
+|---|---|---|
+| `anestflow_pending_sync_queue` | `sessionStorage` | Fila de sync da aba |
+| `anestflow_active_doc_<uid>` | `sessionStorage` | Rascunho ativo da aba |
+| `anesthesia_doc` | `localStorage` | Legado — só apagada na subida/logout |
+| `anestflow_doc_local_<procedureId>` | `localStorage` | Legado — só apagada na subida/logout |
+
+`tema`, presets de bomba, templates e o relógio de sessão continuam no `localStorage` (não são PHI do paciente). O botão **Limpar Cache** nas configurações chama o mesmo purge. Offline: as alterações ficam nesta aba até sincronizar; fechar a aba antes do flush perde a fila.
 

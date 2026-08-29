@@ -4,7 +4,10 @@ import {
   Volume2, VolumeX, Moon, Sun, LayoutGrid, Cloud, 
   CheckCircle2, Trash2, ShieldCheck, Save
 } from 'lucide-react';
-import { CLINICAL_STORAGE_KEYS } from '../lib/clinicalStorageKeys';
+import {
+  clearClinicalSessionDrafts,
+  purgeClinicalPhiFromLocalStorage,
+} from '../lib/clinicalStorageKeys';
 
 export interface AppSettings {
   defaultHospital: string;
@@ -60,7 +63,8 @@ export default function SettingsModal({
 
   const handleClearLocalCache = () => {
     try {
-      sessionStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
+      purgeClinicalPhiFromLocalStorage();
+      clearClinicalSessionDrafts();
       setShowClearSuccess(true);
       setTimeout(() => setShowClearSuccess(false), 3000);
     } catch (e) {
@@ -327,7 +331,7 @@ export default function SettingsModal({
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">Cache Local Temporário</h4>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Limpa o rascunho temporário do navegador sem apagar fichas salvas na nuvem.</p>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Apaga o rascunho desta aba e qualquer cópia legado no disco. Fichas já salvas na nuvem permanecem.</p>
                   </div>
                   <button
                     type="button"

@@ -2,7 +2,7 @@ import { AnesthesiaDocument } from "../types";
 import { newClientId } from "./procedureMapper";
 import {
   CLINICAL_STORAGE_KEYS,
-  localDocStorageKey,
+  purgeClinicalPhiFromLocalStorage,
 } from "./clinicalStorageKeys";
 
 export type SyncStatus = "saved" | "syncing" | "offline" | "error";
@@ -17,6 +17,23 @@ export interface SyncEngineState {
 }
 
 const PENDING_QUEUE_KEY = CLINICAL_STORAGE_KEYS.pendingSyncQueue;
+
+function readSessionJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionJson(key: string, value: unknown): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn("Error writing session draft:", e);
+  }
+}
 
 /**
  * Garante IDs únicos nos arrays clínicos. Duplicata regenera ID — nunca descarta o lançamento.
@@ -55,63 +72,31 @@ export function ensureUniqueClinicalEventIds(doc: AnesthesiaDocument): Anesthesi
 }
 
 /**
- * Manages local persistence for pending changes queue in localStorage
+ * Fila de sync pendente — só sessionStorage (some ao fechar a aba).
+ * Nunca grava ficha em localStorage.
  */
 export class SyncQueueManager {
   static getPendingQueue(): Record<string, { doc: AnesthesiaDocument; timestamp: string }> {
-    try {
-      const raw = localStorage.getItem(PENDING_QUEUE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch (e) {
-      console.warn("Error reading pending sync queue:", e);
-      return {};
-    }
+    return readSessionJson(PENDING_QUEUE_KEY, {});
   }
 
   static enqueue(document: AnesthesiaDocument) {
-    try {
-      const queue = this.getPendingQueue();
-      queue[document.id] = {
-        doc: document,
-        timestamp: new Date().toISOString()
-      };
-      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(queue));
-      
-      // Also cache local document
-      localStorage.setItem(localDocStorageKey(document.id), JSON.stringify(document));
-      localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify(document));
-    } catch (e) {
-      console.warn("Error enqueueing pending document:", e);
-    }
+    purgeClinicalPhiFromLocalStorage();
+    const queue = this.getPendingQueue();
+    queue[document.id] = {
+      doc: document,
+      timestamp: new Date().toISOString()
+    };
+    writeSessionJson(PENDING_QUEUE_KEY, queue);
   }
 
   static dequeue(docId: string) {
-    try {
-      const queue = this.getPendingQueue();
-      delete queue[docId];
-      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(queue));
-    } catch (e) {
-      console.warn("Error dequeueing pending document:", e);
-    }
+    const queue = this.getPendingQueue();
+    delete queue[docId];
+    writeSessionJson(PENDING_QUEUE_KEY, queue);
   }
 
   static getPendingCount(): number {
     return Object.keys(this.getPendingQueue()).length;
-  }
-
-  static saveLocalCopy(document: AnesthesiaDocument) {
-    try {
-      localStorage.setItem(localDocStorageKey(document.id), JSON.stringify(document));
-      localStorage.setItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc, JSON.stringify(document));
-    } catch (e) {}
-  }
-
-  static getLocalCopy(docId: string): AnesthesiaDocument | null {
-    try {
-      const raw = localStorage.getItem(localDocStorageKey(docId));
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      return null;
-    }
   }
 }
