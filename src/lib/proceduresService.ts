@@ -119,6 +119,36 @@ function applyRevisionMeta(
   ficha.id = cleanedDoc.id;
 }
 
+async function insertProcedureParent(
+  supabase: ReturnType<typeof getSupabase>,
+  ficha: AnesthesiaDocument,
+  cleanedDoc: AnesthesiaDocument,
+  userId: string,
+  procedureId: string
+) {
+  const { error: insertError } = await supabase.from("procedures").insert({
+    id: procedureId,
+    created_by: userId,
+    responsible_id: userId,
+    ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
+  });
+  if (insertError) throwClinical(insertError);
+  // INSERT ... RETURNING cai no RLS de SELECT antes do trigger que inclui o criador
+  // em procedure_participants. Lê a linha depois, quando o participante já existe.
+  const { data: inserted, error: readError } = await supabase
+    .from("procedures")
+    .select("revision, updated_at")
+    .eq("id", procedureId)
+    .maybeSingle();
+  if (readError) throwClinical(readError);
+  cleanedDoc.id = procedureId;
+  applyRevisionMeta(
+    ficha,
+    cleanedDoc,
+    inserted || { revision: 1, updated_at: new Date().toISOString() }
+  );
+}
+
 async function signOnServer(cleanedDoc: AnesthesiaDocument): Promise<void> {
   const canonical = cleanedDoc.signatureSnapshot;
   if (!canonical) {
@@ -229,34 +259,10 @@ export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): 
         }
         applyRevisionMeta(ficha, cleanedDoc, updated);
       } else {
-        const { data: inserted, error: insertError } = await supabase
-          .from("procedures")
-          .insert({
-            id: cleanedDoc.id,
-            created_by: userId,
-            responsible_id: userId,
-            ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
-          })
-          .select("revision, updated_at")
-          .maybeSingle();
-        if (insertError) throwClinical(insertError);
-        applyRevisionMeta(ficha, cleanedDoc, inserted);
+        await insertProcedureParent(supabase, ficha, cleanedDoc, userId, cleanedDoc.id);
       }
     } else {
-      const newId = crypto.randomUUID();
-      const { data: inserted, error: insertError } = await supabase
-        .from("procedures")
-        .insert({
-          id: newId,
-          created_by: userId,
-          responsible_id: userId,
-          ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
-        })
-        .select("revision, updated_at")
-        .maybeSingle();
-      if (insertError) throwClinical(insertError);
-      cleanedDoc.id = newId;
-      applyRevisionMeta(ficha, cleanedDoc, inserted);
+      await insertProcedureParent(supabase, ficha, cleanedDoc, userId, crypto.randomUUID());
     }
 
     await persistClinicalChildren(cleanedDoc, userId);

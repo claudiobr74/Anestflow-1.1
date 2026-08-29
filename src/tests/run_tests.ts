@@ -977,6 +977,8 @@ try {
   assert(saveSrc.includes('.eq("revision"'), "saveProcedure condiciona o UPDATE à revision esperada");
   assert(saveSrc.includes("stale_revision"), "saveProcedure lança stale_revision");
   assert(saveSrc.includes("applyRevisionMeta"), "saveProcedure devolve revision/updated_at ao cliente");
+  assert(saveSrc.includes("insertProcedureParent"), "INSERT da ficha não usa RETURNING (RLS de participante)");
+  assert(saveSrc.includes("INSERT ... RETURNING cai no RLS"), "Comentário explica por que o INSERT não faz select encadeado");
 
   const mapperSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/procedureMapper.ts"), "utf-8");
   assert(mapperSrc.includes("expectedProcedureRevision"), "Mapper expõe expectedProcedureRevision");
