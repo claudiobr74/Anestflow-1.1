@@ -1,4 +1,5 @@
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
+import { assertCanEdit } from "./assertCanEdit";
 
 export const CURRENT_SCHEMA_VERSION = "2.0.0";
 
@@ -164,11 +165,13 @@ export async function signAndLockDocument(
     email?: string;
   }
 ): Promise<AnesthesiaDocument> {
+  assertCanEdit(doc, signer.uid);
+
   const signedAt = new Date().toISOString();
   const docVersion = CURRENT_SCHEMA_VERSION;
 
   const signedBy = {
-    uid: signer.uid || doc.currentResponsibleUid || doc.createdByUid || "",
+    uid: signer.uid || "",
     name: signer.name || doc.team?.anesthesiologistLead || "Anestesiologista Responsável",
     crm: signer.crm || doc.team?.crmLead || "",
     uf: signer.uf || doc.team?.ufLead || "SP",

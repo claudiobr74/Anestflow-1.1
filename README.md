@@ -238,3 +238,13 @@ A ficha clínica (paciente, vitais, fármacos, SRPA, fila offline) **não** é m
 
 `tema`, presets de bomba, templates e o relógio de sessão continuam no `localStorage` (não são PHI do paciente). O botão **Limpar Cache** nas configurações chama o mesmo purge. Offline: as alterações ficam nesta aba até sincronizar; fechar a aba antes do flush perde a fila.
 
+## Fase 3 (`assertCanEdit`)
+
+Edição clínica é **fail-closed**: só o `currentResponsibleUid` grava. O criador que não é o responsável atual **não** salva. Sem UID ou sem responsável na ficha → não edita.
+
+- `canEditDocument` / `assertCanEdit` no cliente (App, voz, autosave) e em `saveProcedure`.
+- Ficha assinada bloqueia mutação; a gravação que fecha o caso usa `closingSignature`.
+- Claim e transferência **não** passam por `assertCanEdit` (são o mecanismo para passar a ser responsável; RPC na Fase 4).
+- Adendo retificatório em ficha já assinada continua no caminho próprio (`add_procedure_amendment`).
+
+

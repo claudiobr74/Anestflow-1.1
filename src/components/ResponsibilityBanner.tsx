@@ -1,5 +1,6 @@
 import React from 'react';
 import { AnesthesiaDocument } from '../types';
+import { isCurrentResponsible } from '../lib/assertCanEdit';
 import { ShieldCheck, Lock, ArrowRightLeft, UserCheck, AlertTriangle } from 'lucide-react';
 
 interface ResponsibilityBannerProps {
@@ -19,8 +20,7 @@ export default function ResponsibilityBanner({
   onClaimResponsibility,
   isClaiming = false
 }: ResponsibilityBannerProps) {
-  const currentResponsibleUid = document.currentResponsibleUid || document.createdByUid || document.userId;
-  const isResponsible = !user || !user.uid || !currentResponsibleUid || currentResponsibleUid === user.uid;
+  const isResponsible = isCurrentResponsible(document, user?.uid);
 
   const leadName = document.team?.anesthesiologistLead || "Anestesiologista Responsável";
   const leadCRM = document.team?.crmLead ? `CRM ${document.team.crmLead}/${document.team.ufLead || 'SP'}` : "";

@@ -9,6 +9,7 @@ import { User, FileText, Clipboard, Heart, CheckSquare, ArrowRightLeft, ShieldCh
 import { calculateAge } from "../mockData";
 import TcleModal from "./TcleModal";
 import { getThemeClasses } from "../lib/theme";
+import { isClinicalEditor } from "../lib/assertCanEdit";
 
 export const formatCPF = (value: string) => {
   const numericValue = value.replace(/\D/g, "");
@@ -40,7 +41,7 @@ export default function PatientTab({ document, onChangePatient, onChangeTeam, on
   const [isTcleOpen, setIsTcleOpen] = useState(false);
   const [cpf, setCpf] = useState(document.patient?.cpf || "");
 
-  const isClosed = document.status === "Signed" || (Boolean(user?.uid) && Boolean(document.currentResponsibleUid) && document.currentResponsibleUid !== user?.uid);
+  const isClosed = !isClinicalEditor(document, user?.uid);
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [worklistMsg, setWorklistMsg] = useState("");
