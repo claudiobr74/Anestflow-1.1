@@ -139,7 +139,7 @@ Limite de body nas Edge Functions é ~5,5MB (o Express permitia 10MB). Áudio mu
 npx supabase secrets set GEMINI_API_KEY=... --project-ref plciototnjsdjzhudptc
 ```
 
-Sem o secret, as funções autenticadas respondem 500 com mensagem clara — não 401.
+Sem o secret de Edge Function, as funções tentam o fallback no Vault (`private.read_gemini_api_key`, só `service_role`). Não coloque a chave no Vite nem em migration.
 
 ## Segurança imediata (fora do código)
 

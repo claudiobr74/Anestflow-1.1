@@ -196,6 +196,7 @@ try {
   assert(reviewFn.includes("email_confirmed_at") || authFn.includes("email_confirmed_at"), "Funções exigem e-mail confirmado");
   assert(authFn.includes("getUser"), "Funções validam o JWT com auth.getUser");
   assert(geminiFn.includes("GEMINI_API_KEY"), "Gemini lê o secret do runtime, não do Vite");
+  assert(geminiFn.includes("read_gemini_api_key"), "Fallback lê a chave no Vault via RPC do service_role");
   assert(!geminiFn.includes("console.log") || !geminiFn.includes("audioBase64"), "Helper Gemini não loga o corpo clínico");
   assert(voiceFn.includes("audioBase64"), "voice-command espera o mesmo contrato de áudio");
   assert(descFn.includes("description"), "generate-description devolve description");

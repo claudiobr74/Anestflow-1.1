@@ -70,11 +70,7 @@ try {
   console.log("   review ok, alerts=", review.alerts.length);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  const missingKey =
-    message.includes("GEMINI_API_KEY") ||
-    message.includes("não configurada");
-  if (!missingKey) fail(`review falhou de forma inesperada: ${message}`);
-  console.log("   review autenticado chegou na função; secret Gemini ausente (500 esperado):", message);
+  fail(`review autenticado falhou: ${message}`);
 }
 
 console.log("4) invoke voice-command sem áudio deve ser 400");
@@ -101,11 +97,7 @@ try {
   console.log("   generate-description ok, chars=", generated.description.length);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  const missingKey =
-    message.includes("GEMINI_API_KEY") ||
-    message.includes("não configurada");
-  if (!missingKey) fail(`generate-description falhou de forma inesperada: ${message}`);
-  console.log("   generate-description autenticado; secret Gemini ausente (500 esperado):", message);
+  fail(`generate-description autenticado falhou: ${message}`);
 }
 
 await supabase.auth.signOut();

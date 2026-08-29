@@ -119,6 +119,37 @@ async function generateOnce(
   return fence ? fence[1].trim() : text;
 }
 
+async function getGeminiApiKey(): Promise<string> {
+  const fromEnv = Deno.env.get("GEMINI_API_KEY")?.trim();
+  if (fromEnv) return fromEnv;
+
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!url || !service) throw new GeminiConfigError();
+
+  const response = await fetch(`${url}/rest/v1/rpc/read_gemini_api_key`, {
+    method: "POST",
+    headers: {
+      apikey: service,
+      Authorization: `Bearer ${service}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  if (!response.ok) {
+    console.error(`[gemini] vault rpc failed status=${response.status}`);
+    throw new GeminiConfigError();
+  }
+
+  const payload = await response.json();
+  const key = typeof payload === "string" ? payload.trim() : "";
+  if (!key) {
+    console.error("[gemini] vault rpc returned empty key");
+    throw new GeminiConfigError();
+  }
+  return key;
+}
+
 /**
  * Calls Gemini with the same retry/fallback chain as the former Express routes.
  * Never log `parts` — they may contain PHI or audio.
@@ -128,8 +159,7 @@ export async function generateJsonWithRetry(
   systemInstruction: string,
   responseSchema: Record<string, unknown>,
 ): Promise<string> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-  if (!apiKey) throw new GeminiConfigError();
+  const apiKey = await getGeminiApiKey();
 
   const models = PRIMARY_MODELS.filter((m, i, arr) => m && arr.indexOf(m) === i);
   let lastError: unknown = null;
