@@ -15,7 +15,7 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**.
 
 ## Onda 0 (fundação)
 
@@ -91,7 +91,7 @@ Advisors de segurança no projeto: **0 lints** depois da onda 1.
 - Perfil clínico em `public.profiles` (CRM, UF, hospital)
 - Confirmação de e-mail obrigatória; senha mínima 12 caracteres com maiúsculas, minúsculas e dígito
 - Google OAuth continua **desligado** até Client ID/Secret no Dashboard
-- Rotas `/api/*` validam o access token do Supabase (`auth.getUser`)
+- Rotas `/api/*` autenticadas saíram; resta só `GET /api/health` público
 - Busca de colega em `ShareModal` usa `lookup_profile_by_email`
 
 ### Limite de e-mail no cadastro (`over_email_send_rate_limit`)
@@ -146,6 +146,14 @@ Sem o secret de Edge Function, as funções tentam o fallback no Vault (`private
 O cliente não importa mais `firebase` / `firebase-admin`. Removidos `src/lib/firebase.ts`, `src/lib/firestoreUtils.ts`, `firebase-applet-config.json`, `firebase-blueprint.json` e `firestore.rules`.
 
 PDF da ficha e TCLE continuam **download local** (`jspdf` + `html-to-image`). Assinatura digital é hash SHA-256 no Postgres. Áudio de voz vai só para a Edge Function, sem arquivo persistido. Por isso esta onda **não** abre bucket de Storage — não havia upload para migrar.
+
+## Onda 7 (sessão do posto compartilhado)
+
+O SPA espelha `[auth.sessions]` do `config.toml`: **12 horas** de timebox e **8 horas** sem atividade. Ao estourar o limite, o app faz `signOut`, limpa o cache clínico e mostra o motivo na tela de login. Isso cobre o posto hospitalar mesmo se o refresh token do Auth ainda for válido.
+
+O wrapper morto `authenticatedFetch` (`src/lib/api.ts`) saiu — não restava rota Express autenticada. `GET /api/health` continua público.
+
+No Dashboard, vale conferir Authentication → Settings com os mesmos 12h / 8h (o CLI não aplica `config.toml` no projeto hospedado).
 
 ## Segurança imediata (fora do código)
 
