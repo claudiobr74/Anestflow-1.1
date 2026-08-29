@@ -136,9 +136,9 @@ export function parentPayloadForWrite(
     outputs: doc.outputs || [],
     inhalation_agents: doc.inhalationAgents || [],
     narratives: doc.narrativeLaunches || [],
-    pending_transfer: doc.pendingTransfer || null,
     schema_version: doc.docVersion || "2.0.0"
   };
+  // pending_transfer e responsible_id só mudam via RPC de handover.
   if (options.includeStatus) {
     const writeStatus = doc.status === "Signed" ? "in_progress" : toDbStatus(doc.status);
     payload.status = writeStatus === "signed" ? "in_progress" : writeStatus;

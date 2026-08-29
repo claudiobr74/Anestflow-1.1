@@ -825,7 +825,72 @@ try {
   assert(false, `Falha na verificação da Fase 3: ${err}`);
 }
 
-// 16. VERIFICAÇÃO FINAL DE RESULTADOS
+// 16. FASE 4 — claim/transfer só via RPC
+console.log("\n16. Verificando Fase 4 (claim/transfer só via RPC)...");
+try {
+  const { mapClinicalError } = await import("../lib/clinicalErrors.ts");
+  const { parentPayloadForWrite } = await import("../lib/procedureMapper.ts");
+  const { getBlankDocument } = await import("../mockData.ts");
+
+  assert(
+    mapClinicalError({ message: "incoming_must_differ" }).message.includes("Assumir"),
+    "incoming_must_differ aponta para Assumir responsabilidade"
+  );
+  assert(
+    mapClinicalError({ message: "pending_not_found" }).message.includes("pendente"),
+    "pending_not_found tem mensagem específica"
+  );
+  assert(
+    mapClinicalError({ message: "profile_not_found" }).message.includes("perfil"),
+    "profile_not_found pede perfil confirmado"
+  );
+
+  const payload = parentPayloadForWrite(getBlankDocument(), "alice-uid", { includeStatus: true });
+  assert(!("pending_transfer" in payload), "autosave não envia pending_transfer");
+
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  assert(appSrc.includes("resolveIncomingDoctorByEmail"), "Transferência resolve o colega por e-mail");
+  assert(appSrc.includes("requestTransferAtomic"), "Solicitar transferência usa RPC");
+  assert(appSrc.includes("declinePendingTransferAtomic"), "Recusar pendência usa RPC");
+  assert(appSrc.includes("claimResponsibilityAtomic"), "Aceitar/assumir usa claim RPC");
+  assert(appSrc.includes("requireCloudProcedure"), "Claim/transfer recusam ficha só local ou offline");
+  assert(!/incomingUid:\s*user\??\.uid/.test(appSrc), "App não usa o UID do sainte como incoming");
+  assert(!/currentResponsibleUid:\s*user\??\.uid/.test(appSrc), "App não muta currentResponsibleUid no cliente");
+  assert(!appSrc.includes("Solicitar Troca"), "Modo leitura não abre o modal de transfer do responsável");
+  assert(appSrc.includes("handleClaimResponsibility"), "Modo leitura oferece Assumir via claim");
+
+  const modalSrc = fs.readFileSync(path.join(process.cwd(), "src/components/TransferResponsibilityModal.tsx"), "utf-8");
+  assert(modalSrc.includes("lookupProfileByEmail"), "Modal consulta perfil pelo e-mail");
+  assert(modalSrc.includes("type=\"email\"") && modalSrc.includes("required"), "E-mail do entrante é obrigatório");
+  assert(!modalSrc.includes("(opcional)"), "E-mail não é mais opcional no modal");
+
+  const procSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  assert(procSrc.includes("rpc(\"request_transfer\""), "requestTransferAtomic chama request_transfer");
+  assert(procSrc.includes("rpc(\"decline_pending_transfer\""), "declinePendingTransferAtomic chama decline_pending_transfer");
+  assert(procSrc.includes("incomingDoctor.uid === currentUserId"), "Cliente recusa transferir para si mesmo");
+
+  const childrenSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/clinicalChildren.ts"), "utf-8");
+  assert(!childrenSrc.includes("from(\"procedure_transfers\").upsert"), "Autosave não grava procedure_transfers");
+  assert(childrenSrc.includes("Transferências só entram via RPC"), "addClinicalEventItem recusa transfers locais");
+
+  const migDir = path.join(process.cwd(), "supabase/migrations");
+  const migFiles = fs.readdirSync(migDir).filter((f) => f.includes("fase_4"));
+  assert(migFiles.length >= 1, "Migration Fase 4 existe");
+  const mig = fs.readFileSync(path.join(migDir, migFiles[0]), "utf-8");
+  assert(mig.includes("private.request_transfer"), "Migration cria request_transfer");
+  assert(mig.includes("private.decline_pending_transfer"), "Migration cria decline_pending_transfer");
+  assert(mig.includes("pending_transfer = null"), "Claim limpa pending_transfer");
+  assert(mig.includes("security definer") && mig.includes("security invoker"), "DEFINER no private, wrapper invoker no public");
+  assert(mig.includes("grant execute on function public.request_transfer"), "authenticated pode chamar request_transfer");
+  assert(mig.includes("revoke all on function public.request_transfer") && mig.includes("anon"), "anon não executa request_transfer");
+
+  const readme4 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(readme4.includes("Fase 4") && readme4.includes("request_transfer"), "README documenta Fase 4");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 4: ${err}`);
+}
+
+// 17. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

@@ -95,37 +95,6 @@ export async function persistClinicalChildren(
     upsertChildren("procedure_infusions", doc.id, userId, doc.continuousInfusions as unknown as Record<string, unknown>[], false),
     upsertChildren("procedure_events", doc.id, userId, doc.events as unknown as Record<string, unknown>[], false)
   ]);
-
-  if (doc.transfers && doc.transfers.length > 0) {
-    const existing = await loadExisting("procedure_transfers", doc.id);
-    const byClientId = new Map<string, ExistingChild>();
-    for (const row of existing) {
-      const clientId = row.payload?.id;
-      if (typeof clientId === "string") byClientId.set(clientId, row);
-      byClientId.set(row.id, row);
-    }
-    const rows = doc.transfers.filter(Boolean).map((item) => {
-      const payload = { ...item } as Record<string, unknown>;
-      const existingRow = item.id ? byClientId.get(item.id) : undefined;
-      if (existingRow) return null;
-      if (item.id && isUuid(item.id) && byClientId.has(item.id)) return null;
-      const id = isUuid(item.id) ? item.id : newClientId();
-      payload.id = item.id || id;
-      return {
-        id,
-        procedure_id: doc.id,
-        created_by: userId,
-        outgoing_user_id: isUuid(item.outgoingUid) ? item.outgoingUid : null,
-        incoming_user_id: isUuid(item.incomingUid) ? item.incomingUid : userId,
-        clinical_at: clinicalAtFromItem(payload),
-        payload
-      };
-    }).filter(Boolean);
-    if (rows.length > 0) {
-      const { error } = await getSupabase().from("procedure_transfers").upsert(rows, { onConflict: "id" });
-      if (error) throwClinical(error, "Erro ao gravar transferências.");
-    }
-  }
 }
 
 export async function loadClinicalChildren(procedureId: string): Promise<{
@@ -208,10 +177,7 @@ export async function addClinicalEventItem(
     row.minutes_from_start = minutesFrom(payload);
   }
   if (subcollectionName === "transfers") {
-    const outgoing = payload.outgoingUid as string | undefined;
-    const incoming = payload.incomingUid as string | undefined;
-    row.outgoing_user_id = isUuid(outgoing) ? outgoing : null;
-    row.incoming_user_id = isUuid(incoming) ? incoming : userId;
+    throw new Error("Transferências só entram via RPC de responsabilidade.");
   }
   const { error } = await getSupabase().from(table).upsert(row, { onConflict: "id" });
   if (error) throwClinical(error);

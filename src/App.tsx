@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AnesthesiaDocument, AnesthesiaDocumentPatch, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass, AnesthesiologistTransfer, PendingTransfer } from "./types";
+import { AnesthesiaDocument, AnesthesiaDocumentPatch, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass } from "./types";
 import { getMockDocument, getBlankDocument } from "./mockData";
 import PatientTab from "./components/PatientTab";
 import PreEvaluationTab from "./components/PreEvaluationTab";
@@ -14,7 +14,7 @@ import ReviewTab from "./components/ReviewTab";
 import PdfPreviewModal from "./components/PdfPreviewModal";
 import AnestFlowLogo from "./components/AnestFlowLogo";
 import LoginScreen from "./components/LoginScreen";
-import { Clock, Printer, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldAlert, FileText, Sun, Moon, LogOut, Download, Database, Users, BrainCircuit, Activity, Syringe, Droplet, Flag, Settings, ArrowRightLeft, MoreHorizontal, Lock, Eye } from "lucide-react";
+import { Clock, Printer, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldAlert, FileText, Sun, Moon, LogOut, Download, Database, Users, BrainCircuit, Activity, Syringe, Droplet, Flag, Settings, ArrowRightLeft, MoreHorizontal, Lock, Eye, UserCheck } from "lucide-react";
 import ProceduresManagerModal from "./components/ProceduresManagerModal";
 import ShareModal from "./components/ShareModal";
 import SettingsModal, { AppSettings, DEFAULT_APP_SETTINGS } from "./components/SettingsModal";
@@ -30,7 +30,15 @@ import {
 } from "./lib/voiceCommand";
 import { useSyncEngine } from "./lib/useSyncEngine";
 import SyncStatusBadge from "./components/SyncStatusBadge";
-import { claimResponsibilityAtomic, transferResponsibilityAtomic } from "./lib/proceduresService";
+import {
+  claimResponsibilityAtomic,
+  declinePendingTransferAtomic,
+  requestTransferAtomic,
+  resolveIncomingDoctorByEmail,
+  transferResponsibilityAtomic,
+} from "./lib/proceduresService";
+import { mapClinicalError } from "./lib/clinicalErrors";
+import { isUuid } from "./lib/procedureMapper";
 import { useSessionGuard } from "./lib/useSessionGuard";
 import {
   beginSession,
@@ -48,6 +56,7 @@ import {
   assignNewDocumentOwner,
   canEditDocument,
   isClinicalEditor,
+  isCurrentResponsible,
 } from "./lib/assertCanEdit";
 
 type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
@@ -417,6 +426,15 @@ export default function App() {
 
   // State modification wrappers
   const canEdit = isClinicalEditor(document, user?.uid);
+  const pendingIncomingUid = document.pendingTransfer?.incomingUid;
+  const isPendingIncoming = Boolean(
+    user?.uid && (!pendingIncomingUid || user.uid === pendingIncomingUid)
+  );
+  const showAcceptPending = Boolean(document.pendingTransfer) && !isCurrentResponsible(document, user?.uid) && isPendingIncoming;
+  const showDeclinePending = Boolean(document.pendingTransfer) && (
+    isCurrentResponsible(document, user?.uid) || isPendingIncoming
+  );
+  const openTransferModalIfResponsible = canEdit ? () => setShowTransferModal(true) : undefined;
 
   const updatePatient = (patientData: Partial<PatientInfo>) => {
     if (!canEdit) return;
@@ -494,6 +512,33 @@ export default function App() {
 
   const [isClaiming, setIsClaiming] = useState(false);
 
+  const requireCloudProcedure = (action: string): boolean => {
+    if (!syncEngine.isOnline) {
+      alert(`${action} exige conexão com a nuvem.`);
+      return false;
+    }
+    if (!isUuid(document.id)) {
+      alert(`Salve a ficha na nuvem antes de ${action.toLowerCase()}.`);
+      return false;
+    }
+    return true;
+  };
+
+  const claimUserPayload = () => ({
+    uid: user?.uid || "",
+    name: user?.name || "",
+    crm: user?.crm || "",
+    uf: user?.uf || "",
+    email: user?.email || undefined
+  });
+
+  const outgoingFromDocument = () => ({
+    uid: document.currentResponsibleUid,
+    name: document.team?.anesthesiologistLead || "",
+    crm: document.team?.crmLead || "",
+    uf: document.team?.ufLead || ""
+  });
+
   const handleClaimResponsibility = async () => {
     if (!user || !user.uid) {
       alert("É necessário estar autenticado com um e-mail válido para assumir a responsabilidade clínica.");
@@ -503,6 +548,7 @@ export default function App() {
       alert("Esta ficha foi encerrada e assinada. Alterações não são permitidas.");
       return;
     }
+    if (!requireCloudProcedure("Assumir a responsabilidade")) return;
 
     const currentLead = document.team?.anesthesiologistLead || "outro anestesiologista";
     if (!confirm(`Deseja assumir formalmente a responsabilidade clínica desta ficha (atualmente com Dr(a). ${currentLead})?\n\nVocê (Dr(a). ${user.name}, CRM ${user.crm}/${user.uf}) passará a ser o único profissional autorizado a realizar alterações clínicas.`)) {
@@ -511,51 +557,12 @@ export default function App() {
 
     setIsClaiming(true);
     try {
-      if (syncEngine.isOnline && document.id) {
-        const updated = await claimResponsibilityAtomic(document.id, {
-          uid: user.uid,
-          name: user.name,
-          crm: user.crm,
-          uf: user.uf,
-          email: user.email || null
-        });
-        if (updated) {
-          setDocument(updated);
-        }
-      } else {
-        const nowStr = new Date().toISOString();
-        const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-        const outgoingName = document.team?.anesthesiologistLead || "Anestesiologista Anterior";
-        const outgoingCRM = document.team?.crmLead || "";
-        const outgoingUF = document.team?.ufLead || "SP";
-
-        setDocumentWithBroadcast(prev => ({
-          ...prev,
-          currentResponsibleUid: user.uid,
-          team: {
-            ...prev.team,
-            anesthesiologistLead: user.name,
-            crmLead: user.crm,
-            ufLead: user.uf,
-            anesthesiologistAssistant: `Anterior: ${outgoingName} (${outgoingCRM}/${outgoingUF})`
-          },
-          events: [
-            ...(prev.events || []),
-            {
-              id: "evt-trf-" + Date.now().toString(),
-              time: timeStr,
-              name: `Assunção de Responsabilidade: Dr(a). ${user.name}`,
-              category: "Equipe" as const,
-              notes: `Responsabilidade clínica assumida por Dr(a). ${user.name} (CRM ${user.crm}/${user.uf}).`
-            }
-          ],
-          updatedAt: nowStr
-        }));
-      }
-      alert(`Você agora é o Anestesiologista Responsável por esta ficha!`);
-    } catch (err: any) {
+      const updated = await claimResponsibilityAtomic(document.id, claimUserPayload(), outgoingFromDocument());
+      setDocument(updated);
+      alert("Você agora é o Anestesiologista Responsável por esta ficha!");
+    } catch (err: unknown) {
       console.error("Erro ao assumir responsabilidade:", err);
-      alert(err?.message || "Ocorreu um erro ao assumir a responsabilidade no servidor.");
+      alert(mapClinicalError(err).message);
     } finally {
       setIsClaiming(false);
     }
@@ -574,217 +581,125 @@ export default function App() {
     ongoingInfusions: string;
     pendingItems: string;
     immediate?: boolean;
-  }) => {
-    const gate = canEditDocument(document, user?.uid);
+  }): Promise<boolean> => {
+    if (!user?.uid) {
+      alert("É necessário estar autenticado para transferir a responsabilidade.");
+      return false;
+    }
+    const gate = canEditDocument(document, user.uid);
     if (gate.ok === false) {
       alert(gate.message);
-      return;
+      return false;
+    }
+    if (!requireCloudProcedure(data.immediate ? "Transferir a responsabilidade" : "Solicitar a transferência")) {
+      return false;
     }
 
-    if (data.immediate && syncEngine.isOnline && document.id && user?.uid) {
-      try {
+    const email = (data.incomingEmail || "").trim();
+    if (!email) {
+      alert("Informe o e-mail do colega que vai assumir o caso. Ele precisa ter perfil confirmado no AnestFlow.");
+      return false;
+    }
+
+    try {
+      const incomingDoctor = await resolveIncomingDoctorByEmail(email, {
+        name: data.incomingName,
+        crm: data.incomingCRM,
+        uf: data.incomingUF
+      });
+      const outgoingDoctor = {
+        uid: document.currentResponsibleUid,
+        name: data.outgoingName,
+        crm: data.outgoingCRM,
+        uf: data.outgoingUF
+      };
+      const handoverDetails = {
+        clinicalConditions: data.clinicalConditions,
+        incidentsReported: data.incidentsReported,
+        ongoingInfusions: data.ongoingInfusions,
+        pendingItems: data.pendingItems
+      };
+
+      if (data.immediate) {
         const updated = await transferResponsibilityAtomic(
           document.id,
           user.uid,
-          {
-            uid: user.uid,
-            name: data.incomingName,
-            crm: data.incomingCRM,
-            uf: data.incomingUF,
-            email: data.incomingEmail
-          },
-          {
-            uid: document.currentResponsibleUid,
-            name: data.outgoingName,
-            crm: data.outgoingCRM,
-            uf: data.outgoingUF
-          },
-          {
-            clinicalConditions: data.clinicalConditions,
-            incidentsReported: data.incidentsReported,
-            ongoingInfusions: data.ongoingInfusions,
-            pendingItems: data.pendingItems
-          }
+          incomingDoctor,
+          outgoingDoctor,
+          handoverDetails
         );
-        if (updated) {
-          setDocument(updated);
-        }
-        alert(`Troca de responsabilidade realizada com sucesso! Dr(a). ${data.incomingName} é agora o responsável.`);
-        return;
-      } catch (err: any) {
-        console.error("Erro na transferência atômica:", err);
-        alert(err?.message || "Erro ao realizar transferência no servidor.");
-        return;
+        setDocument(updated);
+        alert(`Troca de responsabilidade realizada com sucesso! Dr(a). ${incomingDoctor.name} é agora o responsável.`);
+        return true;
       }
-    }
 
-    const nowStr = new Date().toISOString();
-    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-    const sharedEmails = [...(document.sharedWithEmails || [])];
-    if (data.incomingEmail && !sharedEmails.includes(data.incomingEmail)) {
-      sharedEmails.push(data.incomingEmail);
-    }
-
-    if (data.immediate) {
-      const transferRecord: AnesthesiologistTransfer = {
-        id: "trf-" + Date.now().toString(),
-        timestamp: nowStr,
-        outgoingUid: user?.uid || document.currentResponsibleUid || document.createdByUid,
-        outgoingName: data.outgoingName,
-        outgoingCRM: data.outgoingCRM,
-        outgoingUF: data.outgoingUF,
-        incomingUid: user?.uid,
-        incomingName: data.incomingName,
-        incomingCRM: data.incomingCRM,
-        incomingUF: data.incomingUF,
-        clinicalConditions: data.clinicalConditions,
-        incidentsReported: data.incidentsReported,
-        ongoingInfusions: data.ongoingInfusions,
-        pendingItems: data.pendingItems,
-        acceptedAt: nowStr
-      };
-
-      const newEvent = {
-        id: "evt-trf-" + Date.now().toString(),
-        time: timeStr,
-        name: `Troca de Responsabilidade Concluída: Dr(a). ${data.outgoingName} ➔ Dr(a). ${data.incomingName}`,
-        category: "Equipe" as const,
-        notes: `Entrante: CRM ${data.incomingCRM}/${data.incomingUF}. Condição: ${data.clinicalConditions || 'Estável'}. Pendências: ${data.pendingItems || 'Nenhuma'}`
-      };
-
-      setDocumentWithBroadcast(prev => {
-        const creator = prev.createdByUid || prev.userId || user?.uid || "";
-        const outgoing = prev.currentResponsibleUid || user?.uid || "";
-        const participants = Array.from(new Set([...(prev.participantUids || []), creator, outgoing, user?.uid || ""]));
-
-        return {
-          ...prev,
-          createdByUid: creator, // IMMUTABLE
-          currentResponsibleUid: user?.uid || prev.currentResponsibleUid, // set new responsible
-          participantUids: participants,
-          pendingTransfer: undefined,
-          team: {
-            ...prev.team,
-            anesthesiologistLead: data.incomingName,
-            crmLead: data.incomingCRM,
-            ufLead: data.incomingUF,
-            anesthesiologistAssistant: prev.team.anesthesiologistLead ? `Anterior: ${data.outgoingName} (${data.outgoingCRM}/${data.outgoingUF})` : prev.team.anesthesiologistAssistant
-          },
-          transfers: [...(prev.transfers || []), transferRecord],
-          events: [...(prev.events || []), newEvent],
-          sharedWithEmails: sharedEmails,
-          updatedAt: nowStr
-        };
-      });
-
-      alert(`Troca de responsabilidade realizada com sucesso! Dr(a). ${data.incomingName} assumiu o caso.`);
-    } else {
-      const pendingReq: PendingTransfer = {
-        id: "pt-" + Date.now().toString(),
-        outgoingUid: user?.uid || document.currentResponsibleUid || "",
-        outgoingName: data.outgoingName,
-        outgoingCRM: data.outgoingCRM,
-        outgoingUF: data.outgoingUF,
-        incomingName: data.incomingName,
-        incomingCRM: data.incomingCRM,
-        incomingUF: data.incomingUF,
-        incomingEmail: data.incomingEmail,
-        clinicalConditions: data.clinicalConditions,
-        incidentsReported: data.incidentsReported,
-        ongoingInfusions: data.ongoingInfusions,
-        pendingItems: data.pendingItems,
-        requestedAt: nowStr
-      };
-
-      setDocumentWithBroadcast(prev => ({
-        ...prev,
-        pendingTransfer: pendingReq,
-        sharedWithEmails: sharedEmails,
-        updatedAt: nowStr
-      }));
-
-      alert(`Solicitação de troca de responsabilidade registrada! Aguardando aceite de Dr(a). ${data.incomingName}.`);
+      const updated = await requestTransferAtomic(
+        document.id,
+        user.uid,
+        incomingDoctor,
+        outgoingDoctor,
+        handoverDetails
+      );
+      setDocument(updated);
+      alert(`Solicitação de troca de responsabilidade registrada! Aguardando aceite de Dr(a). ${incomingDoctor.name}.`);
+      return true;
+    } catch (err: unknown) {
+      console.error("Erro na transferência:", err);
+      alert(mapClinicalError(err).message);
+      return false;
     }
   };
 
-  const handleAcceptTransfer = () => {
+  const handleAcceptTransfer = async () => {
     if (!document.pendingTransfer) return;
+    if (!user?.uid) {
+      alert("É necessário estar autenticado para aceitar a transferência.");
+      return;
+    }
     if (document.status === "Signed") {
       alert("Ficha encerrada e assinada. Alterações não são permitidas.");
       return;
     }
+    if (!requireCloudProcedure("Aceitar a transferência")) return;
 
-    const pt = document.pendingTransfer;
-    const nowStr = new Date().toISOString();
-    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-    const transferRecord: AnesthesiologistTransfer = {
-      id: "trf-" + Date.now().toString(),
-      timestamp: nowStr,
-      outgoingUid: pt.outgoingUid,
-      outgoingName: pt.outgoingName,
-      outgoingCRM: pt.outgoingCRM,
-      outgoingUF: pt.outgoingUF,
-      incomingUid: user?.uid || pt.incomingUid,
-      incomingName: user?.name || pt.incomingName,
-      incomingCRM: user?.crm || pt.incomingCRM,
-      incomingUF: user?.uf || pt.incomingUF,
-      clinicalConditions: pt.clinicalConditions,
-      incidentsReported: pt.incidentsReported,
-      ongoingInfusions: pt.ongoingInfusions,
-      pendingItems: pt.pendingItems,
-      acceptedAt: nowStr
-    };
-
-    const newEvent = {
-      id: "evt-trf-" + Date.now().toString(),
-      time: timeStr,
-      name: `Troca de Responsabilidade Aceita: Dr(a). ${pt.outgoingName} ➔ Dr(a). ${user?.name || pt.incomingName}`,
-      category: "Equipe" as const,
-      notes: `Aceito por Dr(a). ${user?.name || pt.incomingName} (CRM ${user?.crm || pt.incomingCRM}/${user?.uf || pt.incomingUF}).`
-    };
-
-    setDocumentWithBroadcast(prev => {
-      const creatorUid = prev.createdByUid || prev.userId || pt.outgoingUid;
-      const outgoingUid = pt.outgoingUid;
-      const newResponsibleUid = user?.uid || pt.incomingUid || outgoingUid;
-
-      const participantUids = Array.from(new Set([
-        ...(prev.participantUids || []),
-        creatorUid,
-        outgoingUid,
-        newResponsibleUid
-      ]));
-
-      return {
-        ...prev,
-        createdByUid: creatorUid, // IMMUTABLE
-        currentResponsibleUid: newResponsibleUid, // ATOMIC UPDATE
-        participantUids,
-        pendingTransfer: undefined,
-        team: {
-          ...prev.team,
-          anesthesiologistLead: user?.name || pt.incomingName,
-          crmLead: user?.crm || pt.incomingCRM,
-          ufLead: user?.uf || pt.incomingUF,
-          anesthesiologistAssistant: `Anterior: ${pt.outgoingName} (${pt.outgoingCRM}/${pt.outgoingUF})`
+    setIsClaiming(true);
+    try {
+      const pt = document.pendingTransfer;
+      const updated = await claimResponsibilityAtomic(
+        document.id,
+        {
+          uid: user.uid,
+          name: user.name || pt.incomingName,
+          crm: user.crm || pt.incomingCRM,
+          uf: user.uf || pt.incomingUF,
+          email: user.email || pt.incomingEmail
         },
-        transfers: [...(prev.transfers || []), transferRecord],
-        events: [...(prev.events || []), newEvent],
-        updatedAt: nowStr
-      };
-    });
-
-    alert(`Você aceitou a transferência e agora é o Anestesiologista Responsável por esta ficha.`);
+        {
+          uid: pt.outgoingUid,
+          name: pt.outgoingName,
+          crm: pt.outgoingCRM,
+          uf: pt.outgoingUF
+        }
+      );
+      setDocument(updated);
+      alert("Você aceitou a transferência e agora é o Anestesiologista Responsável por esta ficha.");
+    } catch (err: unknown) {
+      console.error("Erro ao aceitar transferência:", err);
+      alert(mapClinicalError(err).message);
+    } finally {
+      setIsClaiming(false);
+    }
   };
 
-  const handleCancelTransfer = () => {
-    setDocumentWithBroadcast(prev => ({
-      ...prev,
-      pendingTransfer: undefined,
-      updatedAt: new Date().toISOString()
-    }));
+  const handleCancelTransfer = async () => {
+    if (!requireCloudProcedure("Recusar a transferência")) return;
+    try {
+      const updated = await declinePendingTransferAtomic(document.id);
+      setDocument(updated);
+    } catch (err: unknown) {
+      console.error("Erro ao recusar transferência:", err);
+      alert(mapClinicalError(err).message);
+    }
   };
 
   const applyPendingVoiceTemplate = (names: string[] | undefined) => {
@@ -1193,21 +1108,26 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                <button
-                  onClick={handleCancelTransfer}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition ${
-                    isDark ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-300"
-                  }`}
-                >
-                  Recusar
-                </button>
-                <button
-                  onClick={handleAcceptTransfer}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition flex items-center gap-1.5"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  Aceitar e Assumir Ficha
-                </button>
+                {showDeclinePending && (
+                  <button
+                    onClick={handleCancelTransfer}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition ${
+                      isDark ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-300"
+                    }`}
+                  >
+                    Recusar
+                  </button>
+                )}
+                {showAcceptPending && (
+                  <button
+                    onClick={handleAcceptTransfer}
+                    disabled={isClaiming}
+                    className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Aceitar e Assumir Ficha
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1221,10 +1141,12 @@ export default function App() {
                 </span>
               </div>
               <button
-                onClick={() => setShowTransferModal(true)}
-                className="px-3 py-1 text-xs font-bold text-amber-900 dark:text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg shrink-0 transition"
+                onClick={handleClaimResponsibility}
+                disabled={isClaiming}
+                className="px-3 py-1 text-xs font-bold text-amber-900 dark:text-amber-100 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg shrink-0 transition disabled:opacity-50 flex items-center gap-1.5"
               >
-                Solicitar Troca
+                <UserCheck className="w-3.5 h-3.5" />
+                Assumir
               </button>
             </div>
           )}
@@ -1245,7 +1167,7 @@ export default function App() {
               onSaveWorklist={handleSaveWorklist}
               theme={theme}
               user={user}
-              onOpenTransferModal={() => setShowTransferModal(true)}
+              onOpenTransferModal={openTransferModalIfResponsible}
             />
           )}
 
@@ -1287,7 +1209,7 @@ export default function App() {
               theme={theme}
               startAiSupervisor={startAiSupervisor}
               stopAiSupervisor={stopAiSupervisor}
-              onOpenTransferModal={() => setShowTransferModal(true)}
+              onOpenTransferModal={openTransferModalIfResponsible}
             />
           )}
         </div>
@@ -1413,7 +1335,7 @@ export default function App() {
           onUpdateDocument={updateDocumentDirectly}
           isSyncing={syncEngine.isOnline}
           toggleSync={syncEngine.retrySyncNow}
-          onOpenTransferModal={() => setShowTransferModal(true)}
+          onOpenTransferModal={openTransferModalIfResponsible}
         />
       )}
 

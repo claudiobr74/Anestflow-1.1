@@ -11,8 +11,17 @@ export function mapClinicalError(error: unknown, fallback = "Erro ao gravar a fi
   if (raw.includes("not_participant")) {
     return new Error("Você não é participante desta ficha.");
   }
-  if (raw.includes("not_allowed") || raw.includes("cannot_remove_lead")) {
-    return new Error("Operação não permitida para o criador ou o responsável atual.");
+  if (raw.includes("cannot_remove_lead")) {
+    return new Error("Não é possível remover o criador ou o responsável atual da ficha.");
+  }
+  if (raw.includes("pending_not_found")) {
+    return new Error("Não há solicitação de transferência pendente nesta ficha.");
+  }
+  if (raw.includes("incoming_required")) {
+    return new Error("Informe o colega que vai assumir o caso.");
+  }
+  if (raw.includes("not_allowed")) {
+    return new Error("Operação não permitida nesta ficha.");
   }
   if (raw.includes("incoming_must_differ")) {
     return new Error("A transferência deve ser para outro anestesiologista. Para assumir o caso, use Assumir responsabilidade.");
