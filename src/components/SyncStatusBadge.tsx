@@ -42,7 +42,7 @@ export default function SyncStatusBadge({
     return (
       <div 
         onClick={onRetry}
-        title="Modo Offline Ativo. Todas as alterações e registros clínicos estão gravados e protegidos localmente no seu dispositivo e serão sincronizados automaticamente assim que a conexão retornar."
+        title="Sem conexão. As alterações ficam nesta aba até a nuvem responder; fechar a aba antes de sincronizar descarta a fila."
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer border transition-all duration-300 ${
           isDark 
             ? "bg-amber-500/10 border-amber-500/25 text-amber-300 hover:bg-amber-500/20" 
@@ -51,7 +51,7 @@ export default function SyncStatusBadge({
       >
         <WifiOff className="w-3.5 h-3.5 text-amber-500 shrink-0" />
         <span className="truncate">
-          {compact ? "Offline" : "Offline — salvas localmente"}
+          {compact ? "Offline" : "Offline — nesta aba"}
         </span>
         {pendingCount > 0 && (
           <span className="px-1.5 py-0.2 rounded-full text-xs font-bold bg-amber-500/20 text-amber-500">

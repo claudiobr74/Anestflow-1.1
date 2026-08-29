@@ -41,8 +41,8 @@ import {
   type SessionViolation,
 } from "./lib/sessionPolicy";
 import {
-  CLINICAL_STORAGE_KEYS,
   activeDocSessionKey,
+  purgeClinicalPhiFromLocalStorage,
 } from "./lib/clinicalStorageKeys";
 
 type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
@@ -60,10 +60,7 @@ export default function App() {
   });
 
   const [document, setDocument] = useState<AnesthesiaDocument>(() => {
-    // Purge legacy plain localStorage document if present to ensure no clinical data lingers in plain localStorage
-    try {
-      localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
-    } catch (e) {}
+    purgeClinicalPhiFromLocalStorage();
 
     // Restore active session copy from sessionStorage only if user is logged in
     const savedUser = localStorage.getItem("anesthesia_user");
@@ -141,10 +138,7 @@ export default function App() {
 
   // Save active document into UID-isolated sessionStorage ONLY (wiped on tab/session close and logout)
   useEffect(() => {
-    // Ensure plain localStorage never retains clinical data
-    try {
-      localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
-    } catch (e) {}
+    purgeClinicalPhiFromLocalStorage();
 
     if (user?.uid && document) {
       try {
@@ -353,11 +347,10 @@ export default function App() {
     beginSession();
     
     if (isNewUser) {
-      // Clear all clinical session cache from previous user
       try {
         sessionStorage.clear();
-        localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
       } catch (e) {}
+      purgeClinicalPhiFromLocalStorage();
 
       // Initialize a fresh blank document specifically for the newly logged-in user.
       // NEVER adopt or auto-assign an existing document from a previous user's session!

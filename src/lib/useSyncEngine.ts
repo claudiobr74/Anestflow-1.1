@@ -35,7 +35,7 @@ export function useSyncEngine(
 
   // Status label calculation
   const getStatusText = (st: SyncStatus, online: boolean): string => {
-    if (!online || st === "offline") return "Offline — alterações protegidas";
+    if (!online || st === "offline") return "Offline — alterações nesta aba até sincronizar";
     switch (st) {
       case "syncing":
         return "Sincronizando...";
@@ -179,7 +179,7 @@ export function useSyncEngine(
       return;
     }
 
-    // 1. Immediately normalize event IDs & save copy to localStorage queue
+    // 1. Immediately normalize event IDs & save copy to sessionStorage queue
     const cleanedDoc = ensureUniqueClinicalEventIds(document);
     SyncQueueManager.enqueue(cleanedDoc);
     setPendingCount(SyncQueueManager.getPendingCount());
