@@ -18,7 +18,7 @@ import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } f
 import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
 
 interface ReviewTabProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onUpdateDocument: (doc: Partial<AnesthesiaDocument>) => void;
   onCloseProcedure?: () => Promise<void> | void;
   theme?: "light" | "dark" | "dark-clean";
@@ -35,7 +35,7 @@ interface ValidationAlert {
 }
 
 export default function ReviewTab({ 
-  document, 
+  ficha, 
   onUpdateDocument, 
   onCloseProcedure,
   theme = "light",
@@ -44,7 +44,7 @@ export default function ReviewTab({
   onOpenTransferModal
 }: ReviewTabProps) {
   const isDark = theme === "dark" || theme === "dark-clean";
-  const isSigned = document.status === "Signed";
+  const isSigned = ficha.status === "Signed";
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAlerts, setAiAlerts] = useState<ValidationAlert[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -62,9 +62,9 @@ export default function ReviewTab({
   // Fetch amendments from subcollection procedures/{procedureId}/amendments
   useEffect(() => {
     let isMounted = true;
-    if (document.id) {
+    if (ficha.id) {
       setLoadingAmendments(true);
-      getProcedureAmendments(document.id)
+      getProcedureAmendments(ficha.id)
         .then((items) => {
           if (isMounted) {
             setSubcollectionAmendments(items);
@@ -80,24 +80,24 @@ export default function ReviewTab({
     return () => {
       isMounted = false;
     };
-  }, [document.id]);
+  }, [ficha.id]);
 
   // Combined amendments sorted chronologically
   const allAmendments = useMemo(() => {
     const map = new Map<string, DocumentAmendment>();
-    (document.amendments || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
+    (ficha.amendments || []).forEach(a => { if (a && a.id) map.set(a.id, a); });
     subcollectionAmendments.forEach(a => { if (a && a.id) map.set(a.id, a); });
     const list = Array.from(map.values());
     list.sort((a, b) => new Date(a.createdAt || a.timestamp || 0).getTime() - new Date(b.createdAt || b.timestamp || 0).getTime());
     return list;
-  }, [document.amendments, subcollectionAmendments]);
+  }, [ficha.amendments, subcollectionAmendments]);
 
   // Local Validation Engine
   const runLocalValidation = (): ValidationAlert[] => {
     const alerts: ValidationAlert[] = [];
 
     // Timing validations
-    const t = document.timers;
+    const t = ficha.timers;
     if (!t.startAnesthesia) {
       alerts.push({
         type: "Critico",
@@ -124,7 +124,7 @@ export default function ReviewTab({
     }
 
     // Patient info validations
-    const p = document.patient;
+    const p = ficha.patient;
     if (!p.fullName || p.fullName.length < 5) {
       alerts.push({
         type: "Critico",
@@ -151,7 +151,7 @@ export default function ReviewTab({
     }
 
     // Team validations
-    const team = document.team;
+    const team = ficha.team;
     if (!team.anesthesiologistLead || !team.crmLead) {
       alerts.push({
         type: "Critico",
@@ -162,7 +162,7 @@ export default function ReviewTab({
     }
 
     // Clinical parameters validations
-    if (document.vitals.length === 0) {
+    if (ficha.vitals.length === 0) {
       alerts.push({
         type: "Importante",
         title: "Sem Sinais Vitais Lançados",
@@ -171,7 +171,7 @@ export default function ReviewTab({
       });
     }
 
-    if (document.bolusDrugs.length === 0) {
+    if (ficha.bolusDrugs.length === 0) {
       alerts.push({
         type: "Informativo",
         title: "Sem Medicamentos em Bolus",
@@ -181,7 +181,7 @@ export default function ReviewTab({
     }
 
     // Check for open continuous infusions
-    const openInfusions = document.continuousInfusions.filter(inf => {
+    const openInfusions = ficha.continuousInfusions.filter(inf => {
       const lastHist = inf.history[inf.history.length - 1];
       return lastHist && lastHist.status !== "Finalizado" && lastStateActive(lastHist.status);
     });
@@ -226,7 +226,7 @@ export default function ReviewTab({
     try {
       const result = await invokeAiFunction<{ alerts?: Array<{ type: string; title: string; description: string; module: string }>; error?: string }>(
         "review",
-        document,
+        ficha,
         controller.signal
       );
       
@@ -282,7 +282,7 @@ export default function ReviewTab({
   const handleVerifyIntegrity = async () => {
     setVerifyingHash(true);
     try {
-      const res = await verifyDocumentIntegrity(document);
+      const res = await verifyDocumentIntegrity(ficha);
       setVerificationResult(res);
     } catch (err) {
       setVerificationResult({ isValid: false, message: "Erro ao recalcular hash SHA-256.", computedHash: "" });
@@ -292,8 +292,8 @@ export default function ReviewTab({
   };
 
   const handleCopyHash = () => {
-    if (document.hash) {
-      navigator.clipboard.writeText(document.hash);
+    if (ficha.hash) {
+      navigator.clipboard.writeText(ficha.hash);
       setCopiedHash(true);
       setTimeout(() => setCopiedHash(false), 2000);
     }
@@ -315,16 +315,16 @@ export default function ReviewTab({
     if (onCloseProcedure) {
       await onCloseProcedure();
     } else {
-      const signedDoc = await signAndLockDocument(document, {
-        name: document.team.anesthesiologistLead || "Anestesiologista Responsável",
-        crm: document.team.crmLead || "",
-        uf: document.team.ufLead || "SP"
+      const signedDoc = await signAndLockDocument(ficha, {
+        name: ficha.team.anesthesiologistLead || "Anestesiologista Responsável",
+        crm: ficha.team.crmLead || "",
+        uf: ficha.team.ufLead || "SP"
       });
       onUpdateDocument(signedDoc);
     }
   };
 
-  // Add adendum / amendment to subcollection WITHOUT mutating signed procedure document
+  // Add adendum / amendment to subcollection WITHOUT mutating signed procedure ficha
   const handleAddAmendment = async () => {
     if (!amendmentText.trim() || !amendmentReason.trim()) {
       alert("Por favor, preencha o motivo e a descrição do adendo retificatório.");
@@ -334,18 +334,18 @@ export default function ReviewTab({
     setSavingAmendment(true);
     try {
       const { data: sessionData } = await getSupabase().auth.getUser();
-      const currentUid = sessionData.user?.id || document.signedBy?.uid || document.currentResponsibleUid || document.createdByUid || "";
+      const currentUid = sessionData.user?.id || ficha.signedBy?.uid || ficha.currentResponsibleUid || ficha.createdByUid || "";
       if (!currentUid) {
         throw new Error("Usuário não autenticado.");
       }
-      const authorName = document.signedBy?.name || document.team.anesthesiologistLead || sessionData.user?.email || "Anestesiologista Responsável";
-      const authorCRM = document.signedBy?.crm || document.team.crmLead || "";
-      const authorUF = document.signedBy?.uf || document.team.ufLead || "SP";
+      const authorName = ficha.signedBy?.name || ficha.team.anesthesiologistLead || sessionData.user?.email || "Anestesiologista Responsável";
+      const authorCRM = ficha.signedBy?.crm || ficha.team.crmLead || "";
+      const authorUF = ficha.signedBy?.uf || ficha.team.ufLead || "SP";
 
       // Generate signed amendment with its own SHA-256 hash
       const newAmendment = await createSignedAmendment(
-        document.id,
-        document.hash || "",
+        ficha.id,
+        ficha.hash || "",
         {
           text: amendmentText,
           reason: amendmentReason,
@@ -356,8 +356,8 @@ export default function ReviewTab({
         }
       );
 
-      // Write directly to subcollection procedures/{document.id}/amendments/{newAmendment.id}
-      const saved = await addProcedureAmendment(document.id, newAmendment);
+      // Write directly to subcollection procedures/{ficha.id}/amendments/{newAmendment.id}
+      const saved = await addProcedureAmendment(ficha.id, newAmendment);
 
       setSubcollectionAmendments(prev => [...prev, saved]);
       setAmendmentText("");
@@ -395,7 +395,7 @@ export default function ReviewTab({
             </h3>
             <p className="text-xs text-slate-500 dark:text-zinc-400">
               {isSigned 
-                ? `Homologado em ${new Date(document.signedAt!).toLocaleString("pt-BR")} • Ficha Clínica Imutável`
+                ? `Homologado em ${new Date(ficha.signedAt!).toLocaleString("pt-BR")} • Ficha Clínica Imutável`
                 : "Verifique todas as pendências e dados clínicos obrigatórios antes de selar o registro."
               }
             </p>
@@ -451,19 +451,19 @@ export default function ReviewTab({
               <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-lg border border-slate-200 dark:border-zinc-800">
                 <span className="text-xs font-bold text-slate-400 uppercase block">Anestesiologista</span>
                 <span className="font-bold text-slate-800 dark:text-zinc-200 block truncate">
-                  Dr(a). {document.signedBy?.name || document.team.anesthesiologistLead}
+                  Dr(a). {ficha.signedBy?.name || ficha.team.anesthesiologistLead}
                 </span>
                 <span className="text-xs tabular-nums text-slate-500">
-                  CRM {document.signedBy?.crm || document.team.crmLead}/{document.signedBy?.uf || document.team.ufLead}
+                  CRM {ficha.signedBy?.crm || ficha.team.crmLead}/{ficha.signedBy?.uf || ficha.team.ufLead}
                 </span>
               </div>
 
               <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-lg border border-slate-200 dark:border-zinc-800">
                 <span className="text-xs font-bold text-slate-400 uppercase block">Data/Hora da Assinatura</span>
                 <span className="tabular-nums text-slate-800 dark:text-zinc-200 block font-bold">
-                  {document.signedAt ? new Date(document.signedAt).toLocaleString("pt-BR") : "—"}
+                  {ficha.signedAt ? new Date(ficha.signedAt).toLocaleString("pt-BR") : "—"}
                 </span>
-                <span className="text-xs text-slate-500">Versão da Ficha: {document.docVersion || "2.0.0"}</span>
+                <span className="text-xs text-slate-500">Versão da Ficha: {ficha.docVersion || "2.0.0"}</span>
               </div>
 
               <div className="bg-white dark:bg-zinc-900 p-2.5 rounded-lg border border-slate-200 dark:border-zinc-800 md:col-span-2">
@@ -479,7 +479,7 @@ export default function ReviewTab({
                   </button>
                 </div>
                 <div className="tabular-nums text-xs font-bold text-emerald-700 dark:text-emerald-400 break-all select-all mt-1 bg-emerald-50 dark:bg-emerald-950/40 p-1.5 rounded border border-emerald-200 dark:border-emerald-800/50">
-                  {document.hash || "NENHUM HASH GERADO"}
+                  {ficha.hash || "NENHUM HASH GERADO"}
                 </div>
               </div>
             </div>
@@ -515,20 +515,20 @@ export default function ReviewTab({
           <div className="p-3.5 bg-slate-50 dark:bg-zinc-800/50 rounded-lg border border-slate-200/80 dark:border-zinc-700/60">
             <span className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide block">Criador do Prontuário (Imutável)</span>
             <p className="text-sm font-bold text-slate-800 dark:text-zinc-100 mt-1">
-              Dr(a). {document.team?.anesthesiologistLead || "Anestesiologista"}
+              Dr(a). {ficha.team?.anesthesiologistLead || "Anestesiologista"}
             </p>
             <p className="text-xs text-slate-500 dark:text-zinc-400 tabular-nums mt-0.5 truncate">
-              UID: {document.createdByUid || document.userId || "Definido no registro"}
+              UID: {ficha.createdByUid || ficha.userId || "Definido no registro"}
             </p>
           </div>
 
           <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200/80 dark:border-indigo-800/60">
             <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide block">Responsável Atual pelo Atendimento</span>
             <p className="text-sm font-bold text-indigo-950 dark:text-indigo-200 mt-1">
-              Dr(a). {document.team?.anesthesiologistLead || "Não especificado"}
+              Dr(a). {ficha.team?.anesthesiologistLead || "Não especificado"}
             </p>
             <p className="text-xs text-indigo-700 dark:text-indigo-300 tabular-nums mt-0.5 truncate">
-              CRM: {document.team?.crmLead}/{document.team?.ufLead} • UID: {document.currentResponsibleUid || document.createdByUid || "Atual"}
+              CRM: {ficha.team?.crmLead}/{ficha.team?.ufLead} • UID: {ficha.currentResponsibleUid || ficha.createdByUid || "Atual"}
             </p>
           </div>
 
@@ -536,7 +536,7 @@ export default function ReviewTab({
             <div>
               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block">Status de Edição Clínica</span>
               <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200 mt-1">
-                {document.status === "Signed" ? "Bloqueado (Ficha Assinada)" : "Exclusiva do Anestesiologista Responsável"}
+                {ficha.status === "Signed" ? "Bloqueado (Ficha Assinada)" : "Exclusiva do Anestesiologista Responsável"}
               </p>
             </div>
           </div>
@@ -544,14 +544,14 @@ export default function ReviewTab({
       </div>
 
       {/* CARD TROCA DE RESPONSABILIDADE & HANDOVER LOGS */}
-      {document.transfers && document.transfers.length > 0 && (
+      {ficha.transfers && ficha.transfers.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 border-indigo-100 dark:border-zinc-800 p-5 rounded-lg border shadow-sm">
           <h4 className="font-bold text-xs text-indigo-900 dark:text-indigo-300 uppercase tracking-wider mb-3 flex items-center gap-2">
             <ArrowRightLeft className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             Histórico Registrado de Troca de Responsabilidade (Handover)
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {document.transfers.map((t, idx) => (
+            {ficha.transfers.map((t, idx) => (
               <div key={t.id || idx} className="p-3 bg-indigo-50/40 dark:bg-zinc-800/50 border border-indigo-100 dark:border-zinc-700/60 rounded-lg text-xs space-y-1">
                 <div className="font-bold text-indigo-900 dark:text-indigo-300 flex justify-between">
                   <span>Dr(a). {t.outgoingName} ➔ Dr(a). {t.incomingName}</span>
@@ -770,7 +770,7 @@ export default function ReviewTab({
 
                   {(amd.procedureId || amd.docHashRef) && (
                     <div className="text-xs text-slate-400 tabular-nums border-t border-amber-100 dark:border-amber-900/30 pt-1 flex flex-wrap justify-between gap-1">
-                      <span>Ref Ficha Original ID: {amd.procedureId || document.id}</span>
+                      <span>Ref Ficha Original ID: {amd.procedureId || ficha.id}</span>
                       {amd.docHashRef && <span>Ref Hash Ficha: {amd.docHashRef.substring(0, 16)}...</span>}
                     </div>
                   )}

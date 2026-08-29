@@ -4,7 +4,7 @@ import { isCurrentResponsible } from '../lib/assertCanEdit';
 import { ShieldCheck, Lock, ArrowRightLeft, UserCheck, AlertTriangle } from 'lucide-react';
 
 interface ResponsibilityBannerProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   user: { uid?: string; name: string; crm: string; uf: string; email?: string } | null;
   isDark: boolean;
   onOpenTransferModal: () => void;
@@ -13,17 +13,17 @@ interface ResponsibilityBannerProps {
 }
 
 export default function ResponsibilityBanner({
-  document,
+  ficha,
   user,
   isDark,
   onOpenTransferModal,
   onClaimResponsibility,
   isClaiming = false
 }: ResponsibilityBannerProps) {
-  const isResponsible = isCurrentResponsible(document, user?.uid);
+  const isResponsible = isCurrentResponsible(ficha, user?.uid);
 
-  const leadName = document.team?.anesthesiologistLead || "Anestesiologista Responsável";
-  const leadCRM = document.team?.crmLead ? `CRM ${document.team.crmLead}/${document.team.ufLead || 'SP'}` : "";
+  const leadName = ficha.team?.anesthesiologistLead || "Anestesiologista Responsável";
+  const leadCRM = ficha.team?.crmLead ? `CRM ${ficha.team.crmLead}/${ficha.team.ufLead || 'SP'}` : "";
 
   if (isResponsible) {
     return (
@@ -46,7 +46,7 @@ export default function ResponsibilityBanner({
           </div>
         </div>
 
-        {document.status !== "Signed" && (
+        {ficha.status !== "Signed" && (
           <button
             type="button"
             onClick={onOpenTransferModal}
@@ -89,7 +89,7 @@ export default function ResponsibilityBanner({
         </div>
       </div>
 
-      {document.status !== "Signed" && (
+      {ficha.status !== "Signed" && (
         <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
           <button
             type="button"

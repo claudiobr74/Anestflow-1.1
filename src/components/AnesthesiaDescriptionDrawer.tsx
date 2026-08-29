@@ -7,7 +7,7 @@ import { invokeAiFunction } from "../lib/aiFunctions";
 interface AnesthesiaDescriptionDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onUpdateDocument: (doc: Partial<AnesthesiaDocument>) => void;
   theme?: "light" | "dark" | "dark-clean";
   startAiSupervisor?: (taskName: string, onTimeout: () => void) => void;
@@ -17,7 +17,7 @@ interface AnesthesiaDescriptionDrawerProps {
 export default function AnesthesiaDescriptionDrawer({
   isOpen,
   onClose,
-  document,
+  ficha,
   onUpdateDocument,
   theme = "light",
   startAiSupervisor,
@@ -26,7 +26,7 @@ export default function AnesthesiaDescriptionDrawer({
   const isDark = theme === "dark" || theme === "dark-clean";
 
   // State for active narrative launches
-  const launches: AnestheticNarrativeLaunch[] = document.narrativeLaunches || [];
+  const launches: AnestheticNarrativeLaunch[] = ficha.narrativeLaunches || [];
 
   // Active form states
   const [launchType, setLaunchType] = useState<"Descrição Principal" | "Evento Cronológico">("Descrição Principal");
@@ -132,7 +132,7 @@ export default function AnesthesiaDescriptionDrawer({
     try {
       const data = await invokeAiFunction<{ description?: string }>(
         "generate-description",
-        { document, models },
+        { document: ficha, models },
         controller.signal
       );
       clearTimeout(timeoutId);
@@ -169,7 +169,7 @@ export default function AnesthesiaDescriptionDrawer({
       alert("Por favor, selecione pelo menos uma técnica anestésica para gerar a descrição.");
       return;
     }
-    const compiled = compileNarrativeDraft(selectedTechniques, document);
+    const compiled = compileNarrativeDraft(selectedTechniques, ficha);
     setEditingText(compiled);
   };
 
@@ -185,7 +185,7 @@ export default function AnesthesiaDescriptionDrawer({
 
     // Auto-compile if updated is not empty
     if (updated.length > 0) {
-      const compiled = compileNarrativeDraft(updated, document);
+      const compiled = compileNarrativeDraft(updated, ficha);
       setEditingText(compiled);
     } else {
       setEditingText("");
@@ -219,8 +219,8 @@ export default function AnesthesiaDescriptionDrawer({
       currentTime = customEventTime || "00:00";
     }
 
-    const author = document.team?.anesthesiologistLead || "Dr. Cláudio Santos";
-    const crm = document.team?.crmLead || "12345-SP";
+    const author = ficha.team?.anesthesiologistLead || "Dr. Cláudio Santos";
+    const crm = ficha.team?.crmLead || "12345-SP";
 
     const newLaunch: AnestheticNarrativeLaunch = {
       id: `narrative-${Date.now()}`,
@@ -235,7 +235,7 @@ export default function AnesthesiaDescriptionDrawer({
 
     // Add event to official timeline if Evento Cronológico is selected
     const updatedLaunches = [...launches, newLaunch];
-    let updatedEvents = [...(document.events || [])];
+    let updatedEvents = [...(ficha.events || [])];
 
     if (launchType === "Evento Cronológico") {
       updatedEvents.push({
@@ -288,7 +288,7 @@ export default function AnesthesiaDescriptionDrawer({
 
   // Start edit flow
   const handleStartEdit = (launch: AnestheticNarrativeLaunch) => {
-    if (document.status === "Signed") {
+    if (ficha.status === "Signed") {
       alert("A ficha já está assinada. Qualquer complemento deve ser feito por adendo (Adicionar Adendo).");
       return;
     }
@@ -347,8 +347,8 @@ export default function AnesthesiaDescriptionDrawer({
     const text = window.prompt("Digite o texto do adendo posterior:");
     if (!text || !text.trim()) return;
 
-    const author = document.team?.anesthesiologistLead || "Dr. Cláudio Santos";
-    const crm = document.team?.crmLead || "12345-SP";
+    const author = ficha.team?.anesthesiologistLead || "Dr. Cláudio Santos";
+    const crm = ficha.team?.crmLead || "12345-SP";
 
     const newAdendum: AnestheticNarrativeLaunch = {
       id: `narrative-adendum-${Date.now()}`,
@@ -521,12 +521,12 @@ export default function AnesthesiaDescriptionDrawer({
   };
 
   const document_dl_anchor = () => {
-    let elem = window.document.getElementById("model-dl-anchor");
+    let elem = document.getElementById("model-dl-anchor");
     if (!elem) {
-      elem = window.document.createElement("a");
+      elem = document.createElement("a");
       elem.id = "model-dl-anchor";
       elem.style.display = "none";
-      window.document.body.appendChild(elem);
+      document.body.appendChild(elem);
     }
     return elem;
   };
@@ -905,7 +905,7 @@ export default function AnesthesiaDescriptionDrawer({
                         Desfazer Último
                       </button>
                     )}
-                    {document.status === "Signed" && (
+                    {ficha.status === "Signed" && (
                       <button
                         type="button"
                         onClick={handleAddAdendum}
@@ -1315,7 +1315,7 @@ export default function AnesthesiaDescriptionDrawer({
                   <span className="tabular-nums text-xs uppercase tracking-widest text-sky-500">Documento Oficial de Registro de Anestesia</span>
                   <h3 className="font-bold text-sm uppercase">Descrição da Anestesia e Eventos</h3>
                   <div className="text-xs text-slate-400 tabular-nums">
-                    Paciente: {document.patient?.fullName || "Não Informado"} | Reg: {document.patient?.recordNumber || "N/A"}
+                    Paciente: {ficha.patient?.fullName || "Não Informado"} | Reg: {ficha.patient?.recordNumber || "N/A"}
                   </div>
                 </div>
 
@@ -1379,7 +1379,7 @@ export default function AnesthesiaDescriptionDrawer({
                 {/* PDF Signatures Mockup */}
                 <div className="border-t pt-4 flex justify-between items-center text-xs text-slate-400 tabular-nums">
                   <span>Assinatura Digital</span>
-                  <span>{document.status === "Signed" ? "DOCUMENTO ASSINADO" : "RASCUNHO EM ANDAMENTO"}</span>
+                  <span>{ficha.status === "Signed" ? "DOCUMENTO ASSINADO" : "RASCUNHO EM ANDAMENTO"}</span>
                 </div>
 
               </div>

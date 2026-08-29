@@ -301,12 +301,12 @@ try {
   assert(!appContent.includes("group-hover:visible"), "Menu de overflow não depende de hover (quebra no toque)");
   assert(appContent.includes('aria-label="Mais opções"'), "Botão de overflow tem rótulo acessível");
   assert(
-    appContent.includes("window.document.addEventListener"),
-    "Menu overflow escuta o DOM via window.document (a ficha também se chama document)"
+    appContent.includes("document.addEventListener"),
+    "Menu overflow escuta o DOM document"
   );
   assert(
-    !appContent.includes("\n    document.addEventListener("),
-    "Menu overflow não usa document.addEventListener sombreado pela ficha"
+    !appContent.includes("window.document.addEventListener"),
+    "Menu overflow não precisa mais de window.document para desviar da ficha"
   );
 } catch (err) {
   assert(false, `Falha na verificação da onda 7: ${err}`);
@@ -890,7 +890,55 @@ try {
   assert(false, `Falha na verificação da Fase 4: ${err}`);
 }
 
-// 17. VERIFICAÇÃO FINAL DE RESULTADOS
+// 17. FASE 5 — ficha não se chama mais document
+console.log("\n17. Verificando Fase 5 (renomear document → ficha)...");
+try {
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const intraSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntraoperativeTab.tsx"), "utf-8");
+  const drawerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AnesthesiaDescriptionDrawer.tsx"), "utf-8");
+  const tcleSrc = fs.readFileSync(path.join(process.cwd(), "src/components/TcleModal.tsx"), "utf-8");
+  const patientSrc = fs.readFileSync(path.join(process.cwd(), "src/components/PatientTab.tsx"), "utf-8");
+  const reviewSrc = fs.readFileSync(path.join(process.cwd(), "src/components/ReviewTab.tsx"), "utf-8");
+  const syncSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSyncEngine.ts"), "utf-8");
+  const saveSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  const onda5Live = fs.readFileSync(path.join(process.cwd(), "src/tests/onda5_live.ts"), "utf-8");
+  const sessionSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/useSessionGuard.ts"), "utf-8");
+  const readme5 = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+
+  assert(appSrc.includes("const [ficha, setFicha]"), "App guarda a ficha clínica em ficha");
+  assert(!appSrc.includes("const [document, setDocument]"), "App não declara mais document como a ficha");
+  assert(appSrc.includes("ficha={ficha}"), "App passa a ficha com a prop ficha");
+  assert(!appSrc.includes("document={ficha}") && !appSrc.includes("document={document}"), "App não passa mais a ficha como prop document");
+  assert(appSrc.includes("setFichaWithBroadcast"), "Broadcast da ficha usa setFichaWithBroadcast");
+  assert(appSrc.includes("document.addEventListener"), "Depois do rename o overflow usa o document do DOM");
+
+  assert(intraSrc.includes("ficha: AnesthesiaDocument"), "IntraoperativeTab recebe ficha");
+  assert(intraSrc.includes("} = ficha"), "IntraoperativeTab destrutura a ficha");
+  assert(!/\bdocument:\s*AnesthesiaDocument\b/.test(intraSrc), "IntraoperativeTab não tipa mais a ficha como document");
+
+  assert(patientSrc.includes("ficha: AnesthesiaDocument"), "PatientTab recebe ficha");
+  assert(reviewSrc.includes("ficha: AnesthesiaDocument"), "ReviewTab recebe ficha");
+  assert(syncSrc.includes("ficha: AnesthesiaDocument"), "useSyncEngine recebe ficha");
+  assert(saveSrc.includes("saveProcedure(ficha: AnesthesiaDocument"), "saveProcedure recebe ficha");
+
+  assert(
+    drawerSrc.includes("{ document: ficha, models }"),
+    "generate-description continua enviando a chave document da Edge Function"
+  );
+  assert(
+    onda5Live.includes("document: blank"),
+    "Live da onda 5 ainda usa a chave document no body da Edge Function"
+  );
+  assert(tcleSrc.includes("printWindow.document.write"), "TCLE continua usando o document da janela de impressão");
+  assert(sessionSrc.includes("document.visibilityState"), "Guarda de sessão continua no document do DOM");
+  assert(sessionSrc.includes("document.addEventListener"), "Guarda de sessão escuta visibilitychange no DOM");
+
+  assert(readme5.includes("Fase 5") && readme5.includes("ficha"), "README documenta Fase 5");
+} catch (err) {
+  assert(false, `Falha na verificação da Fase 5: ${err}`);
+}
+
+// 18. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

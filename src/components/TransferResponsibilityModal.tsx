@@ -19,23 +19,23 @@ interface TransferFormData {
 }
 
 interface TransferResponsibilityModalProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   isDark: boolean;
   onClose: () => void;
   onConfirmTransfer: (data: TransferFormData) => void | boolean | Promise<void | boolean>;
 }
 
 export default function TransferResponsibilityModal({
-  document,
+  ficha,
   isDark,
   onClose,
   onConfirmTransfer
 }: TransferResponsibilityModalProps) {
-  const currentLead = document.team?.anesthesiologistLead || "";
-  const currentCRM = document.team?.crmLead || "";
-  const currentUF = document.team?.ufLead || "SP";
+  const currentLead = ficha.team?.anesthesiologistLead || "";
+  const currentCRM = ficha.team?.crmLead || "";
+  const currentUF = ficha.team?.ufLead || "SP";
 
-  const activeInfusions = document.continuousInfusions
+  const activeInfusions = ficha.continuousInfusions
     ?.filter(i => i.history && i.history.length > 0 && i.history[i.history.length - 1].status !== 'Finalizado')
     .map(i => `${i.name} (${i.history[i.history.length - 1].rate} ${i.unit})`)
     .join(', ') || "Nenhuma infusão contínua ativa no momento.";
@@ -56,7 +56,7 @@ export default function TransferResponsibilityModal({
   const [ongoingInfusions, setOngoingInfusions] = useState(activeInfusions);
   const [pendingItems, setPendingItems] = useState("");
 
-  const isClosed = document.status === "Signed";
+  const isClosed = ficha.status === "Signed";
 
   const lookupIncoming = async () => {
     const email = incomingEmail.trim().toLowerCase();

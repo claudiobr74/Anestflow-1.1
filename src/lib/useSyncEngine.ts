@@ -12,7 +12,7 @@ import { clinicalChangeFingerprint } from "./clinicalChangeFingerprint";
 import { canEditDocument } from "./assertCanEdit";
 
 export function useSyncEngine(
-  document: AnesthesiaDocument,
+  ficha: AnesthesiaDocument,
   userId: string | undefined,
   onRemoteUpdate?: (remoteDoc: AnesthesiaDocument) => void
 ) {
@@ -27,12 +27,12 @@ export function useSyncEngine(
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLocalSavingRef = useRef<boolean>(false);
-  const documentRef = useRef<AnesthesiaDocument>(document);
+  const fichaRef = useRef<AnesthesiaDocument>(ficha);
 
-  // Keep document ref current to avoid stale closure issues in debounced save
+  // Keep ficha ref current to avoid stale closure issues in debounced save
   useEffect(() => {
-    documentRef.current = document;
-  }, [document]);
+    fichaRef.current = ficha;
+  }, [ficha]);
 
   // Status label calculation
   const getStatusText = (st: SyncStatus, online: boolean): string => {
@@ -144,21 +144,21 @@ export function useSyncEngine(
     };
   }, [status, flushPendingQueue]);
 
-  const isResponsible = canEditDocument(document, userId).ok;
+  const isResponsible = canEditDocument(ficha, userId).ok;
 
-  // Continuous Autosave effect triggered on document changes (ONLY for current responsible)
+  // Continuous Autosave effect triggered on ficha changes (ONLY for current responsible)
   const currentDocIdRef = useRef<string>("");
   const lastDocStateHashRef = useRef<string>("");
 
   useEffect(() => {
-    if (!document || !document.id) return;
+    if (!ficha || !ficha.id) return;
 
     // Fast state hashing to detect genuine changes
-    const currentHash = clinicalChangeFingerprint(document);
+    const currentHash = clinicalChangeFingerprint(ficha);
 
-    // On initial mount or document switch, record current state hash without triggering auto-sync
-    if (currentDocIdRef.current !== document.id || !lastDocStateHashRef.current) {
-      currentDocIdRef.current = document.id;
+    // On initial mount or ficha switch, record current state hash without triggering auto-sync
+    if (currentDocIdRef.current !== ficha.id || !lastDocStateHashRef.current) {
+      currentDocIdRef.current = ficha.id;
       lastDocStateHashRef.current = currentHash;
       return;
     }
@@ -168,8 +168,8 @@ export function useSyncEngine(
     }
     lastDocStateHashRef.current = currentHash;
 
-    // If document is signed or has no meaningful patient or clinical data, do NOT enqueue or save to cloud
-    if (document.status === "Signed" || !isMeaningfulDocument(document)) {
+    // If ficha is signed or has no meaningful patient or clinical data, do NOT enqueue or save to cloud
+    if (ficha.status === "Signed" || !isMeaningfulDocument(ficha)) {
       return;
     }
 
@@ -179,7 +179,7 @@ export function useSyncEngine(
     }
 
     // 1. Immediately normalize event IDs & save copy to sessionStorage queue
-    const cleanedDoc = ensureUniqueClinicalEventIds(document);
+    const cleanedDoc = ensureUniqueClinicalEventIds(ficha);
     SyncQueueManager.enqueue(cleanedDoc);
     setPendingCount(SyncQueueManager.getPendingCount());
 
@@ -205,15 +205,15 @@ export function useSyncEngine(
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [document, flushPendingQueue, isResponsible]);
+  }, [ficha, flushPendingQueue, isResponsible]);
 
   // Real-time remote listener (Supabase postgres_changes)
   useEffect(() => {
-    if (!userId || !document.id || !isOnline || !isUuid(document.id)) return;
+    if (!userId || !ficha.id || !isOnline || !isUuid(ficha.id)) return;
 
-    const unsubscribe = subscribeProcedureRealtime(document.id, () => {
+    const unsubscribe = subscribeProcedureRealtime(ficha.id, () => {
       if (isLocalSavingRef.current || !onRemoteUpdate) return;
-      void getProcedureById(document.id).then((remote) => {
+      void getProcedureById(ficha.id).then((remote) => {
         if (!remote || isLocalSavingRef.current) return;
         lastDocStateHashRef.current = clinicalChangeFingerprint(remote);
         onRemoteUpdate(remote);
@@ -223,7 +223,7 @@ export function useSyncEngine(
     });
 
     return () => unsubscribe();
-  }, [document.id, userId, isOnline, onRemoteUpdate]);
+  }, [ficha.id, userId, isOnline, onRemoteUpdate]);
 
   // Manual retry sync function
   const retrySyncNow = useCallback(() => {

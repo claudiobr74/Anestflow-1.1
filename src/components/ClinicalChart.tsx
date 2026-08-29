@@ -9,7 +9,7 @@ import { AnesthesiaDocument, VitalRecord, ClinicalEvent, BolusDrug, ContinuousIn
 import { Activity, Clock, ZoomIn, ZoomOut, Maximize2, HelpCircle, Sliders, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ClinicalChartProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onTimeSelect?: (minutes: number) => void;
   selectedMinutes?: number | null;
   theme?: "light" | "dark" | "dark-clean";
@@ -22,7 +22,7 @@ interface ClinicalChartProps {
 type VitalTool = "fc" | "pas" | "pad" | "spo2" | "etco2" | "temp" | "bis" | "pai" | "fr" | "tof" | "pvc" | null;
 
 export default function ClinicalChart({ 
-  document, 
+  ficha, 
   onTimeSelect, 
   selectedMinutes, 
   theme = "light",
@@ -31,7 +31,7 @@ export default function ClinicalChart({
   onRemoveVitalRecord,
   onUpdateVitalsList
 }: ClinicalChartProps) {
-  const { vitals = [], events = [], bolusDrugs = [], continuousInfusions = [], timers, inhalationAgents = [] } = document;
+  const { vitals = [], events = [], bolusDrugs = [], continuousInfusions = [], timers, inhalationAgents = [] } = ficha;
 
   const isDark = theme === "dark" || theme === "dark-clean";
   const cardClass = isDark
