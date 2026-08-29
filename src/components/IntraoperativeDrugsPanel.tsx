@@ -90,6 +90,7 @@ export default function IntraoperativeDrugsPanel({
   setEditingInfusionData,
 }: IntraoperativeDrugsPanelProps) {
   return (
+    <>
       <div className={`${cardClass} p-5 rounded-lg border space-y-4`}>
         <div className={`flex items-center justify-between border-b pb-3 ${isDark ? "border-zinc-800" : "border-slate-100"}`}>
           <div className="flex items-center gap-2">
@@ -671,5 +672,6 @@ export default function IntraoperativeDrugsPanel({
           )}
         </div>
       </div>
+    </>
   );
 }
