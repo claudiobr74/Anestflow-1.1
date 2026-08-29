@@ -94,8 +94,22 @@ export function isMeaningfulDocument(docObj: Partial<AnesthesiaDocument>): boole
   if (docObj.events && docObj.events.length > 0) return true;
   if (docObj.bolusDrugs && docObj.bolusDrugs.length > 0) return true;
   if (docObj.continuousInfusions && docObj.continuousInfusions.length > 0) return true;
+  if (docObj.inhalationAgents && docObj.inhalationAgents.length > 0) return true;
   if (docObj.fluids && docObj.fluids.length > 0) return true;
-  if (docObj.timers && (docObj.timers.startAnesthesia || docObj.timers.startSurgery)) return true;
+  if (docObj.outputs && docObj.outputs.length > 0) return true;
+  if (docObj.timers && (docObj.timers.startAnesthesia || docObj.timers.startSurgery || docObj.timers.endSurgery || docObj.timers.endAnesthesia)) return true;
+  if (docObj.checklist && Object.values(docObj.checklist).some(Boolean)) return true;
+  const airway = docObj.airway;
+  if (airway && ((airway.deviceSize && String(airway.deviceSize).trim()) || (airway.incidents && String(airway.incidents).trim()))) return true;
+  const recovery = docObj.recovery;
+  if (recovery && (
+    recovery.admissionTime ||
+    (recovery.records && recovery.records.length > 0) ||
+    typeof recovery.pas === "number" ||
+    typeof recovery.fc === "number" ||
+    typeof recovery.spo2 === "number" ||
+    typeof recovery.temp === "number"
+  )) return true;
   if (docObj.preEvaluation && (docObj.preEvaluation.physicalExam?.respiratory || docObj.preEvaluation.airwayEvaluation || docObj.preEvaluation.currentMedications)) return true;
   return false;
 }

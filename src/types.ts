@@ -128,12 +128,12 @@ export interface VitalRecord {
 export interface BolusDrug {
   id: string;
   name: string;
-  dose: number;
+  dose?: number;
   ampouleTotal?: number; // amount of drug in one ampoule
   ampouleVolume?: number; // volume of the ampoule in mL
   ampoules?: number; // calculated number of ampules used for this specific launch (or overall, but usually we just calculate it in the view)
-  unit: "mg" | "mcg" | "g" | "UI" | "ml" | "ampola" | "mEq";
-  route: "EV" | "IM" | "SC" | "IO" | "Raqui" | "Peridural" | "Bloqueio" | "Inalatório" | "ID";
+  unit?: "mg" | "mcg" | "g" | "UI" | "ml" | "ampola" | "mEq";
+  route?: "EV" | "IM" | "SC" | "IO" | "Raqui" | "Peridural" | "Bloqueio" | "Inalatório" | "ID";
   timestamp: string;
   minutesFromStart: number;
   administeredBy?: string;
@@ -143,10 +143,10 @@ export interface BolusDrug {
 export interface ContinuousInfusion {
   id: string;
   name: string;
-  concentration: string; // e.g., "1 mg/ml"
-  diluent: string; // e.g., "SG 5% 250ml"
-  totalVolumePrepared: number; // ml
-  unit: "mcg/kg/min" | "mcg/kg/h" | "mg/kg/min" | "mg/kg/h" | "mg/h" | "ml/h" | "mcg/min";
+  concentration?: string; // e.g., "1 mg/ml" — vazio se a voz/UI não informou
+  diluent?: string; // e.g., "SG 5% 250ml"
+  totalVolumePrepared?: number; // ml
+  unit?: "mcg/kg/min" | "mcg/kg/h" | "mg/kg/min" | "mg/kg/h" | "mg/h" | "ml/h" | "mcg/min";
   history: {
     timestamp: string;
     minutesFromStart: number;
@@ -562,6 +562,12 @@ export interface AnesthesiaDocument {
   amendments: DocumentAmendment[];
   narrativeLaunches?: AnestheticNarrativeLaunch[];
 }
+
+/** Partial da ficha ou updater funcional (evita snapshot stale de arrays). */
+export type AnesthesiaDocumentPatch =
+  Partial<AnesthesiaDocument>
+  | ((prev: AnesthesiaDocument) => Partial<AnesthesiaDocument>);
+
 
 export interface AnestheticNarrativeLaunch {
   id: string;

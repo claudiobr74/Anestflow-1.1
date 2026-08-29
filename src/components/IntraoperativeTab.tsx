@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { DraggablePanel } from "./DraggablePanel";
 
-import { AnesthesiaDocument, VitalRecord, BolusDrug, ContinuousInfusion, FluidRecord, OutputRecord, ClinicalEvent, VascularAccess, EquipmentConfig, InhalationAgent, AirwayDetails } from "../types";
+import { AnesthesiaDocument, VitalRecord, BolusDrug, ContinuousInfusion, FluidRecord, OutputRecord, ClinicalEvent, VascularAccess, EquipmentConfig, InhalationAgent, AirwayDetails, AnesthesiaDocumentPatch } from "../types";
 import { Syringe, HandHelping, Zap, Info, Settings, FlaskConical, Play, Pause, Square, Plus, Minus, Check, RefreshCw, Layers, Droplets, Trash2, ShieldAlert, CheckCircle, Clock, AlertTriangle, Sliders, Bell, BellOff, Search, FileText, Wind, ChevronDown, ChevronUp, Activity, Edit2, ChevronLeft, ChevronRight, Smartphone } from "lucide-react";
 import { FAVORITE_DRUGS, FAVORITE_FLUIDS, CLINICAL_EVENTS_PRESETS } from "../mockData";
 import ClinicalChart from "./ClinicalChart";
@@ -21,10 +21,11 @@ import SupportPanel from "./SupportPanel";
 import AnesthesiaTemplatesModal from "./AnesthesiaTemplatesModal";
 import { AnesthesiaTemplate } from "../types";
 import { combineDateAndTime, formatToLocalTime, getLocalDateStringNow, getLocalTimeStringNow, getTzParts } from "../utils/timezone";
+import { newClientId } from "../lib/procedureMapper";
 
 interface IntraoperativeTabProps {
   document: AnesthesiaDocument;
-  onUpdateDocument: (doc: Partial<AnesthesiaDocument>) => void;
+  onUpdateDocument: (updates: AnesthesiaDocumentPatch) => void;
   selectedMinutes: number | null;
   onTimeSelect: (mins: number | null) => void;
   theme?: "light" | "dark" | "dark-clean";
@@ -316,21 +317,18 @@ export default function IntraoperativeTab({
     const confirmed = window.confirm(`Deseja registrar o horário de: "${label}" como o horário atual?`);
     if (!confirmed) return;
 
-    const updatedTimers = { ...timers, [key]: new Date().toISOString() };
-    
-    // Add a corresponding clinical event
+    const nowIso = new Date().toISOString();
     const newEvent: ClinicalEvent = {
-      id: `ev-timer-${Date.now()}`,
+      id: newClientId(),
       name: label,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       category: "Marcador Temporal",
-      
     };
 
-    onUpdateDocument({
-      timers: updatedTimers,
-      events: [...events, newEvent]
-    });
+    onUpdateDocument((prev) => ({
+      timers: { ...prev.timers, [key]: nowIso },
+      events: [...(prev.events || []), newEvent]
+    }));
   };
 
   const getTimeString = (isoString?: string) => {
@@ -344,33 +342,32 @@ export default function IntraoperativeTab({
 
 const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeString: string) => {
     if (!timeString) {
-      const updatedTimers = { ...timers };
-      delete updatedTimers[key];
-      const filteredEvents = events.filter(e => e.name !== label);
-      onUpdateDocument({
-        timers: updatedTimers,
-        events: filteredEvents
+      onUpdateDocument((prev) => {
+        const updatedTimers = { ...prev.timers };
+        delete updatedTimers[key];
+        return {
+          timers: updatedTimers,
+          events: (prev.events || []).filter(e => e.name !== label)
+        };
       });
       return;
     }
 
     const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
     const isoString = combineDateAndTime(patientDate, timeString, "America/Sao_Paulo");
-    const updatedTimers = { ...timers, [key]: isoString };
 
-    // Ensure absolutely no duplicate event exists for this marker
-    const updatedEvents = events.filter(e => e.name !== label);
-    updatedEvents.push({
-      id: `ev-timer-${key}-${Date.now()}`,
-      name: label,
-      timestamp: isoString,
-      category: "Marcador Temporal",
-      
-    });
-
-    onUpdateDocument({
-      timers: updatedTimers,
-      events: updatedEvents
+    onUpdateDocument((prev) => {
+      const updatedEvents = (prev.events || []).filter(e => e.name !== label);
+      updatedEvents.push({
+        id: newClientId(),
+        name: label,
+        timestamp: isoString,
+        category: "Marcador Temporal",
+      });
+      return {
+        timers: { ...prev.timers, [key]: isoString },
+        events: updatedEvents
+      };
     });
   };
 
@@ -398,44 +395,45 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
 
   // Register Quick Vitals State
   const handleRegisterVitals = () => {
-    const mins = selectedMinutes !== null ? selectedMinutes : 
-      (timers.startAnesthesia ? Math.round((Date.now() - new Date(timers.startAnesthesia).getTime()) / 60000) : 0);
+    onUpdateDocument((prev) => {
+      const prevVitals = prev.vitals || [];
+      const prevTimers = prev.timers || {};
+      const mins = selectedMinutes !== null ? selectedMinutes :
+        (prevTimers.startAnesthesia ? Math.round((Date.now() - new Date(prevTimers.startAnesthesia).getTime()) / 60000) : 0);
 
-    const existingIndex = vitals.findIndex(v => v.minutesFromStart === mins);
+      const existingIndex = prevVitals.findIndex(v => v.minutesFromStart === mins);
 
-    const newRecord: VitalRecord = {
-      id: existingIndex >= 0 ? vitals[existingIndex].id : `v-${Date.now()}`,
-      timestamp: timers.startAnesthesia ? new Date(new Date(timers.startAnesthesia).getTime() + mins * 60 * 1000).toISOString() : new Date().toISOString(),
-      minutesFromStart: mins,
-      pas: activeVitalsInput.pas ? parseInt(activeVitalsInput.pas) : (existingIndex >= 0 ? vitals[existingIndex].pas : undefined),
-      pad: activeVitalsInput.pad ? parseInt(activeVitalsInput.pad) : (existingIndex >= 0 ? vitals[existingIndex].pad : undefined),
-      fc: activeVitalsInput.fc ? parseInt(activeVitalsInput.fc) : (existingIndex >= 0 ? vitals[existingIndex].fc : undefined),
-      spo2: activeVitalsInput.spo2 ? parseInt(activeVitalsInput.spo2) : (existingIndex >= 0 ? vitals[existingIndex].spo2 : undefined),
-      etco2: activeVitalsInput.etco2 ? parseInt(activeVitalsInput.etco2) : (existingIndex >= 0 ? vitals[existingIndex].etco2 : undefined),
-      temp: activeVitalsInput.temp ? parseFloat(activeVitalsInput.temp) : (existingIndex >= 0 ? vitals[existingIndex].temp : undefined),
-      pai: activeVitalsInput.pai ? parseInt(activeVitalsInput.pai) : (existingIndex >= 0 ? vitals[existingIndex].pai : undefined),
-      bis: activeVitalsInput.bis ? parseInt(activeVitalsInput.bis) : (existingIndex >= 0 ? vitals[existingIndex].bis : undefined),
-    };
+      const newRecord: VitalRecord = {
+        id: existingIndex >= 0 ? prevVitals[existingIndex].id : newClientId(),
+        timestamp: prevTimers.startAnesthesia ? new Date(new Date(prevTimers.startAnesthesia).getTime() + mins * 60 * 1000).toISOString() : new Date().toISOString(),
+        minutesFromStart: mins,
+        pas: activeVitalsInput.pas ? parseInt(activeVitalsInput.pas) : (existingIndex >= 0 ? prevVitals[existingIndex].pas : undefined),
+        pad: activeVitalsInput.pad ? parseInt(activeVitalsInput.pad) : (existingIndex >= 0 ? prevVitals[existingIndex].pad : undefined),
+        fc: activeVitalsInput.fc ? parseInt(activeVitalsInput.fc) : (existingIndex >= 0 ? prevVitals[existingIndex].fc : undefined),
+        spo2: activeVitalsInput.spo2 ? parseInt(activeVitalsInput.spo2) : (existingIndex >= 0 ? prevVitals[existingIndex].spo2 : undefined),
+        etco2: activeVitalsInput.etco2 ? parseInt(activeVitalsInput.etco2) : (existingIndex >= 0 ? prevVitals[existingIndex].etco2 : undefined),
+        temp: activeVitalsInput.temp ? parseFloat(activeVitalsInput.temp) : (existingIndex >= 0 ? prevVitals[existingIndex].temp : undefined),
+        pai: activeVitalsInput.pai ? parseInt(activeVitalsInput.pai) : (existingIndex >= 0 ? prevVitals[existingIndex].pai : undefined),
+        bis: activeVitalsInput.bis ? parseInt(activeVitalsInput.bis) : (existingIndex >= 0 ? prevVitals[existingIndex].bis : undefined),
+      };
 
-    // Auto-calculate PAM
-    if (newRecord.pas !== undefined && newRecord.pad !== undefined) {
-      newRecord.pam = Math.round(newRecord.pad + (newRecord.pas - newRecord.pad) / 3);
-    }
+      if (newRecord.pas !== undefined && newRecord.pad !== undefined) {
+        newRecord.pam = Math.round(newRecord.pad + (newRecord.pas - newRecord.pad) / 3);
+      }
 
-    let updatedVitals = [...vitals];
-    if (existingIndex >= 0) {
-      updatedVitals[existingIndex] = { ...updatedVitals[existingIndex], ...newRecord };
-    } else {
-      updatedVitals.push(newRecord);
-    }
-
-    onUpdateDocument({ vitals: updatedVitals });
-    setSimulatedDelayMs(0); // Reset simulated delay when vitals are saved
+      const updatedVitals = [...prevVitals];
+      if (existingIndex >= 0) {
+        updatedVitals[existingIndex] = { ...updatedVitals[existingIndex], ...newRecord };
+      } else {
+        updatedVitals.push(newRecord);
+      }
+      return { vitals: updatedVitals };
+    });
+    setSimulatedDelayMs(0);
     
-    // Reset Keypad fields, set active to default
     setActiveVitalsInput({});
     setActiveField("pas");
-    onTimeSelect(null); // snap out of interactive selection
+    onTimeSelect(null);
   };
 
   const repeatLastVitals = () => {
@@ -524,7 +522,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
     const parsedAmpoules = parseFloat(customAmpoules) || undefined;
 
     const newBolus: BolusDrug = {
-      id: `bd-${Date.now()}`,
+      id: newClientId(),
       name: selectedDrug.name,
       dose: parsedDose,
       ampouleTotal: (selectedDrug as any).ampouleAmount,
@@ -536,19 +534,18 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       
     };
 
-    // Create a clinical event for visual plotting
     const newEvent: ClinicalEvent = {
-      id: `ev-drug-${Date.now()}`,
+      id: newClientId(),
       name: `Bolus: ${selectedDrug.name} ${parsedDose}${selectedDrug.defaultUnit}${parsedAmpoules ? ` (${parsedAmpoules} amp)` : ''}`,
       timestamp,
       category: "Procedimento" as any,
       
     };
 
-    onUpdateDocument({
-      bolusDrugs: [...bolusDrugs, newBolus],
-      events: [...events, newEvent]
-    });
+    onUpdateDocument((prev) => ({
+      bolusDrugs: [...(prev.bolusDrugs || []), newBolus],
+      events: [...(prev.events || []), newEvent]
+    }));
   };
 
   // Continuous Infusion management
@@ -620,23 +617,17 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       
     };
 
-    const updatedEvents = [...events, newEvent];
-    if (newInfusion.endTimeMode === "custom" && newInfusion.customEndTime) {
-      const endPatientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
-      const endIso = combineDateAndTime(endPatientDate, newInfusion.customEndTime, "America/Sao_Paulo");
-      updatedEvents.push({
-        id: `ev-inf-end-${Date.now()}-${uniqueSuffix()}`,
-        name: `Bomba: ${newInfusion.name} finalizada`,
-        timestamp: endIso,
-        category: "Procedimento" as any,
-        
-      });
-    }
-
-    onUpdateDocument({
-      continuousInfusions: [...continuousInfusions, newInf],
-      events: updatedEvents
-    });
+    onUpdateDocument((prev) => ({
+      continuousInfusions: [...(prev.continuousInfusions || []), newInf],
+      events: [...(prev.events || []), newEvent, ...(newInfusion.endTimeMode === "custom" && newInfusion.customEndTime
+        ? [{
+            id: newClientId(),
+            name: `Bomba: ${newInfusion.name} finalizada`,
+            timestamp: combineDateAndTime(document.patient?.date || getLocalDateStringNow("America/Sao_Paulo"), newInfusion.customEndTime, "America/Sao_Paulo"),
+            category: "Procedimento" as any,
+          }]
+        : [])]
+    }));
 
     // Reset continuous infusion preparation form
     setNewInfusion({
@@ -654,40 +645,41 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
   };
 
   const handleRemoveInfusion = (id: string) => {
-    onUpdateDocument({
-      continuousInfusions: continuousInfusions.filter(inf => inf.id !== id)
-    });
+    onUpdateDocument((prev) => ({
+      continuousInfusions: (prev.continuousInfusions || []).filter(inf => inf.id !== id)
+    }));
   };
 
   const handleRemoveBolusDrugByName = (name: string) => {
-    onUpdateDocument({
-      bolusDrugs: bolusDrugs.filter(d => d.name !== name)
-    });
+    onUpdateDocument((prev) => ({
+      bolusDrugs: (prev.bolusDrugs || []).filter(d => d.name !== name)
+    }));
   };
 
   const handleUpdateInfusionStatus = (id: string, status: "Alterado" | "Pausado" | "Finalizado", newRate?: number) => {
     const mins = timers.startAnesthesia ? Math.round((Date.now() - new Date(timers.startAnesthesia).getTime()) / 60000) : 0;
     
-    const updated = continuousInfusions.map(inf => {
-      if (inf.id === id) {
-        const rateToLog = newRate !== undefined ? newRate : (inf.history[inf.history.length - 1]?.rate || 0);
-        return {
-          ...inf,
-          history: [
-            ...inf.history,
-            {
-              timestamp: new Date().toISOString(),
-              minutesFromStart: mins,
-              rate: status === "Pausado" || status === "Finalizado" ? 0 : rateToLog,
-              status
-            }
-          ]
-        };
-      }
-      return inf;
+    onUpdateDocument((prev) => {
+      const updated = (prev.continuousInfusions || []).map(inf => {
+        if (inf.id === id) {
+          const rateToLog = newRate !== undefined ? newRate : (inf.history[inf.history.length - 1]?.rate || 0);
+          return {
+            ...inf,
+            history: [
+              ...inf.history,
+              {
+                timestamp: new Date().toISOString(),
+                minutesFromStart: mins,
+                rate: status === "Pausado" || status === "Finalizado" ? 0 : rateToLog,
+                status
+              }
+            ]
+          };
+        }
+        return inf;
+      });
+      return { continuousInfusions: updated };
     });
-
-    onUpdateDocument({ continuousInfusions: updated });
   };
 
   const handleUpdateInfusion = (id: string, updates: Partial<ContinuousInfusion>) => {
@@ -698,13 +690,14 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
         return { ...h, minutesFromStart: mins };
       });
     }
-    const updated = continuousInfusions.map(inf => {
-      if (inf.id === id) {
-        return { ...inf, ...modifiedUpdates };
-      }
-      return inf;
-    });
-    onUpdateDocument({ continuousInfusions: updated });
+    onUpdateDocument((prev) => ({
+      continuousInfusions: (prev.continuousInfusions || []).map(inf => {
+        if (inf.id === id) {
+          return { ...inf, ...modifiedUpdates };
+        }
+        return inf;
+      })
+    }));
   };
 
   // Gases and Inhalation agent management
@@ -762,31 +755,24 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
         : `${newAgent.agent} ${concStr}%`;
 
     const newEvent: ClinicalEvent = {
-      id: `ev-inh-${Date.now()}-${uniqueSuffix()}`,
+      id: newClientId(),
       name: newEventName,
       timestamp: startTimestamp,
       category: "Procedimento" as any,
       
     };
 
-    const updatedEvents = [...events, newEvent];
-    if (endTimestamp) {
-      const stopEventName = isO2
-        ? `O₂ finalizado`
-        : `${newAgent.agent} finalizado`;
-
-      updatedEvents.push({
-        id: `ev-inh-end-${Date.now()}-${uniqueSuffix()}`,
-        name: stopEventName,
+    onUpdateDocument((prev) => {
+      const extra = endTimestamp ? [{
+        id: newClientId(),
+        name: isO2 ? `O₂ finalizado` : `${newAgent.agent} finalizado`,
         timestamp: endTimestamp,
         category: "Procedimento" as any,
-        
-      });
-    }
-
-    onUpdateDocument({
-      inhalationAgents: [...(document.inhalationAgents || []), newInh],
-      events: updatedEvents
+      }] : [];
+      return {
+        inhalationAgents: [...(prev.inhalationAgents || []), newInh],
+        events: [...(prev.events || []), newEvent, ...extra]
+      };
     });
 
     // Reset inhalation agents state
@@ -802,84 +788,62 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
   };
 
   const handleRemoveInhalationAgent = (id: string) => {
-    onUpdateDocument({
-      inhalationAgents: (document.inhalationAgents || []).filter(ia => ia.id !== id)
-    });
+    onUpdateDocument((prev) => ({
+      inhalationAgents: (prev.inhalationAgents || []).filter(ia => ia.id !== id)
+    }));
   };
 
   const handleStopInhalationAgent = (id: string) => {
-    const updated = (document.inhalationAgents || []).map(ia => {
-      if (ia.id === id) {
-        return {
-          ...ia,
-          endTime: new Date().toISOString()
-        };
-      }
-      return ia;
-    });
-
-    const targetInh = (document.inhalationAgents || []).find(ia => ia.id === id);
-    const isO2 = targetInh?.agent === "Oxigênio (O₂)";
-    const agentName = targetInh?.agent ? (isO2 ? "O₂" : targetInh.agent) : "Gases Medicinais";
-    const stopEvent: ClinicalEvent = {
-      id: `ev-inh-end-${Date.now()}`,
-      name: `${agentName} finalizado`,
-      timestamp: new Date().toISOString(),
-      category: "Procedimento" as any,
-      
-    };
-
-    onUpdateDocument({
-      inhalationAgents: updated,
-      events: [...events, stopEvent]
+    onUpdateDocument((prev) => {
+      const list = prev.inhalationAgents || [];
+      const updated = list.map(ia => ia.id === id ? { ...ia, endTime: new Date().toISOString() } : ia);
+      const targetInh = list.find(ia => ia.id === id);
+      const isO2 = targetInh?.agent === "Oxigênio (O₂)";
+      const agentName = targetInh?.agent ? (isO2 ? "O₂" : targetInh.agent) : "Gases Medicinais";
+      const stopEvent: ClinicalEvent = {
+        id: newClientId(),
+        name: `${agentName} finalizado`,
+        timestamp: new Date().toISOString(),
+        category: "Procedimento" as any,
+      };
+      return {
+        inhalationAgents: updated,
+        events: [...(prev.events || []), stopEvent]
+      };
     });
   };
 
   const handleUpdateInhalationAgent = (id: string, updates: Partial<InhalationAgent>) => {
-    const updated = (document.inhalationAgents || []).map(ia => {
-      if (ia.id === id) {
-        return {
-          ...ia,
-          ...updates
-        };
+    onUpdateDocument((prev) => {
+      const list = prev.inhalationAgents || [];
+      const updated = list.map(ia => ia.id === id ? { ...ia, ...updates } : ia);
+      const targetInh = list.find(ia => ia.id === id);
+      let eventName = "Gás/Anestésico ajustado";
+      if (targetInh) {
+        const isO2 = targetInh.agent === "Oxigênio (O₂)";
+        const isAir = targetInh.agent === "Ar Comprimido";
+        const isGas = isO2 || isAir;
+        const flow = updates.flowO2 !== undefined ? updates.flowO2 : targetInh.flowO2;
+        const conc = updates.inspiredConc !== undefined ? updates.inspiredConc : targetInh.inspiredConc;
+        const flowO2Str = isGas && flow !== undefined ? flow.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "";
+        const concStr = !isGas && conc !== undefined ? conc.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "";
+        eventName = isO2
+          ? `O₂ ajustado para ${flowO2Str} L/min`
+          : isAir
+            ? `Ar Comprimido ${flowO2Str} L/min`
+            : `${targetInh.agent} ajustado para ${concStr}%`;
       }
-      return ia;
-    });
-
-    const targetInh = (document.inhalationAgents || []).find(ia => ia.id === id);
-    let eventName = "Gás/Anestésico ajustado";
-    if (targetInh) {
-      const isO2 = targetInh.agent === "Oxigênio (O₂)";
-      const isAir = targetInh.agent === "Ar Comprimido";
-      const isGas = isO2 || isAir;
-      const flow = updates.flowO2 !== undefined ? updates.flowO2 : targetInh.flowO2;
-      const conc = updates.inspiredConc !== undefined ? updates.inspiredConc : targetInh.inspiredConc;
-      const flowO2Str = isGas && flow !== undefined ? flow.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "";
-      const concStr = !isGas && conc !== undefined ? conc.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "";
-      eventName = isO2
-        ? `O₂ ajustado para ${flowO2Str} L/min`
-        : isAir
-          ? `Ar Comprimido ${flowO2Str} L/min`
-          : `${targetInh.agent} ajustado para ${concStr}%`;
-    }
-
-    // Only add an event if it's a dose/flow update (not just time edit)
-    const isTimeEdit = ('startTime' in updates) || ('endTime' in updates);
-    let evts = document.events || [];
-    
-    if (!isTimeEdit && targetInh && (updates.flowO2 !== undefined || updates.inspiredConc !== undefined)) {
-      const newEvent = {
-        id: `ev-inh-adj-${Date.now()}`,
-        name: eventName,
-        timestamp: new Date().toISOString(),
-        category: "Procedimento" as any,
-      };
-      evts = [...evts, newEvent];
-    }
-
-    onUpdateDocument({
-      inhalationAgents: updated,
-      events: evts
+      const isTimeEdit = ('startTime' in updates) || ('endTime' in updates);
+      let evts = prev.events || [];
+      if (!isTimeEdit && targetInh && (updates.flowO2 !== undefined || updates.inspiredConc !== undefined)) {
+        evts = [...evts, {
+          id: newClientId(),
+          name: eventName,
+          timestamp: new Date().toISOString(),
+          category: "Procedimento" as any,
+        }];
+      }
+      return { inhalationAgents: updated, events: evts };
     });
   };
 
@@ -908,26 +872,26 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       fluidTimestamp = combineDateAndTime(patientDate, customFluidTime || "00:00", "America/Sao_Paulo");
     }
     const fluidObj: any = {
-      id: `fl-${Date.now()}`,
+      id: newClientId(),
       name: newFluid.name,
       volume: newFluid.volume,
       type: "Solução",
       timestamp: fluidTimestamp
     };
-    onUpdateDocument({
-      fluids: [...(document.fluids || []), fluidObj],
-      events: [...(document.events || []), {
-        id: `ev-fluid-${Date.now()}`,
+    onUpdateDocument((prev) => ({
+      fluids: [...(prev.fluids || []), fluidObj],
+      events: [...(prev.events || []), {
+        id: newClientId(),
         name: `Infundido: ${fluidObj.name} ${fluidObj.volume}ml`,
         timestamp: fluidTimestamp,
         category: "Procedimento" as any
       }]
-    });
+    }));
     setNewFluid(prev => ({ ...prev, volume: 500 }));
   };
 
   const handleRemoveFluid = (id: string) => {
-    onUpdateDocument({ fluids: (document.fluids || []).filter((f: any) => f.id !== id) });
+    onUpdateDocument((prev) => ({ fluids: (prev.fluids || []).filter((f: any) => f.id !== id) }));
   };
 
   const handleAddOutput = () => {
@@ -949,20 +913,20 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       timestamp: outTimestamp
     };
     
-    onUpdateDocument({
-      outputs: [...(document.outputs || []), outObj],
-      events: [...(document.events || []), {
-        id: `ev-out-${Date.now()}`,
+    onUpdateDocument((prev) => ({
+      outputs: [...(prev.outputs || []), outObj],
+      events: [...(prev.events || []), {
+        id: newClientId(),
         name: `Saída: ${outObj.type} ${outObj.volume}ml`,
         timestamp: outTimestamp,
         category: "Procedimento" as any
       }]
-    });
+    }));
     setOutputVal("");
   };
 
   const handleRemoveOutput = (id: string) => {
-    onUpdateDocument({ outputs: (document.outputs || []).filter((o: any) => o.id !== id) });
+    onUpdateDocument((prev) => ({ outputs: (prev.outputs || []).filter((o: any) => o.id !== id) }));
   };
 
   const getSelectedTechnique = () => {
@@ -1241,28 +1205,27 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       });
     }
 
-    onUpdateDocument({
-      bolusDrugs: [...(document.bolusDrugs || []), ...newBolus],
-      continuousInfusions: [...(document.continuousInfusions || []), ...newContinuous],
-      inhalationAgents: [...(document.inhalationAgents || []), ...newInh],
-      events: [...(document.events || []), ...newClinicalEvents],
-      fluids: [...(document.fluids || []), ...newFluids],
-      vascularAccesses: [...(document.vascularAccesses || []), ...newAccesses],
-      // blocks are saved purely as clinical events for now
+    onUpdateDocument((prev) => ({
+      bolusDrugs: [...(prev.bolusDrugs || []), ...newBolus],
+      continuousInfusions: [...(prev.continuousInfusions || []), ...newContinuous],
+      inhalationAgents: [...(prev.inhalationAgents || []), ...newInh],
+      events: [...(prev.events || []), ...newClinicalEvents],
+      fluids: [...(prev.fluids || []), ...newFluids],
+      vascularAccesses: [...(prev.vascularAccesses || []), ...newAccesses],
       ...(template.airway ? { airway: updatedAirway } : {})
-    });
+    }));
 
     setShowTemplatesModal(false);
   };
   // --- END RECONSTRUCTED MISSING CODE ---
 
 const handleTechniqueOtherTextChange = (text: string) => {
-    onUpdateDocument({
+    onUpdateDocument((prev) => ({
       technique: {
-        ...technique,
+        ...prev.technique,
         other: text
       } as any
-    });
+    }));
   };
 
   const airway = document.airway || {
@@ -1284,30 +1247,30 @@ const handleTechniqueOtherTextChange = (text: string) => {
   };
 
   const handleAirwayUpdate = (updates: Partial<AirwayDetails>) => {
-    onUpdateDocument({
+    onUpdateDocument((prev) => ({
       airway: {
-        ...airway,
+        ...(prev.airway || airway),
         ...updates
       }
-    });
+    }));
   };
 
   const handleEquipmentToggle = (key: keyof EquipmentConfig) => {
-    onUpdateDocument({
+    onUpdateDocument((prev) => ({
       equipmentConfig: {
-        ...equipmentConfig,
-        [key]: !equipmentConfig[key]
+        ...prev.equipmentConfig,
+        [key]: !prev.equipmentConfig[key]
       }
-    });
+    }));
   };
 
   const handleEquipmentOtherTextChange = (text: string) => {
-    onUpdateDocument({
+    onUpdateDocument((prev) => ({
       equipmentConfig: {
-        ...equipmentConfig,
+        ...prev.equipmentConfig,
         other: text
       }
-    });
+    }));
   };
 
   const handlePeripheralCountChange = (count: number) => {
@@ -1330,20 +1293,24 @@ const handleTechniqueOtherTextChange = (text: string) => {
           professional: document.team.anesthesiologistLead
         });
       }
-      onUpdateDocument({ vascularAccesses: [...centralList, ...currentPeripheralList, ...newItems] });
+      onUpdateDocument((prev) => {
+        const centralList = (prev.vascularAccesses || []).filter(a => a.type === "Venoso Central");
+        const currentPeripheralList = (prev.vascularAccesses || []).filter(a => a.type !== "Venoso Central");
+        return { vascularAccesses: [...centralList, ...currentPeripheralList, ...newItems] };
+      });
     } else if (count < currentPeripheralList.length) {
-      onUpdateDocument({ vascularAccesses: [...centralList, ...currentPeripheralList.slice(0, count)] });
+      onUpdateDocument((prev) => {
+        const centralList = (prev.vascularAccesses || []).filter(a => a.type === "Venoso Central");
+        const currentPeripheralList = (prev.vascularAccesses || []).filter(a => a.type !== "Venoso Central");
+        return { vascularAccesses: [...centralList, ...currentPeripheralList.slice(0, count)] };
+      });
     }
   };
 
   const handleUpdatePeripheralAccessItem = (id: string, updatedFields: Partial<VascularAccess>) => {
-    const updated = vascularAccesses.map(a => {
-      if (a.id === id) {
-        return { ...a, ...updatedFields };
-      }
-      return a;
-    });
-    onUpdateDocument({ vascularAccesses: updated });
+    onUpdateDocument((prev) => ({
+      vascularAccesses: (prev.vascularAccesses || []).map(a => a.id === id ? { ...a, ...updatedFields } : a)
+    }));
   };
 
   const handleVascularAccessUpdate = (updates: {
@@ -1430,7 +1397,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
       }));
     }
 
-    onUpdateDocument({ vascularAccesses: updatedAccesses });
+    onUpdateDocument((prev) => ({ vascularAccesses: updatedAccesses }));
   };
 
   // Summaries for the Collapsible/Accordion menus
@@ -2685,19 +2652,20 @@ const handleTechniqueOtherTextChange = (text: string) => {
             selectedMinutes={selectedMinutes}
             theme={theme}
             onAddVitalRecord={(record) => {
-              const newVitals = [...(document.vitals || []), record];
-              onUpdateDocument({ vitals: newVitals });
+              onUpdateDocument((prev) => ({ vitals: [...(prev.vitals || []), record] }));
             }}
             onUpdateVitalRecord={(id, updates) => {
-              const newVitals = (document.vitals || []).map(v => v.id === id ? { ...v, ...updates } : v);
-              onUpdateDocument({ vitals: newVitals });
+              onUpdateDocument((prev) => ({
+                vitals: (prev.vitals || []).map(v => v.id === id ? { ...v, ...updates } : v)
+              }));
             }}
             onRemoveVitalRecord={(id) => {
-              const newVitals = (document.vitals || []).filter(v => v.id !== id);
-              onUpdateDocument({ vitals: newVitals });
+              onUpdateDocument((prev) => ({
+                vitals: (prev.vitals || []).filter(v => v.id !== id)
+              }));
             }}
             onUpdateVitalsList={(newVitals) => {
-              onUpdateDocument({ vitals: newVitals });
+              onUpdateDocument(() => ({ vitals: newVitals }));
             }}
           />
         </div></DraggablePanel>
@@ -3147,10 +3115,12 @@ const handleTechniqueOtherTextChange = (text: string) => {
               </button>
               <button
                 onClick={() => {
-                  const otherDrugs = bolusDrugs.filter(d => d.name !== editingBolusDrugName);
-                  onUpdateDocument({
-                    bolusDrugs: [...otherDrugs, ...editingBolusDrugsList]
-                  });
+                  onUpdateDocument((prev) => ({
+                    bolusDrugs: [
+                      ...(prev.bolusDrugs || []).filter(d => d.name !== editingBolusDrugName),
+                      ...editingBolusDrugsList
+                    ]
+                  }));
                   setEditingBolusDrugName(null);
                   setEditingBolusDrugsList([]);
                 }}
@@ -3310,27 +3280,26 @@ const handleTechniqueOtherTextChange = (text: string) => {
               </button>
               <button
                 onClick={() => {
-                  const updated = continuousInfusions.map(inf => {
-                    if (inf.id === editingInfusionId) {
-                      const updatedHist = [...(inf.history || [])];
-                      if (updatedHist.length > 0) {
-                        const lastIdx = updatedHist.length - 1;
-                        updatedHist[lastIdx] = {
-                          ...updatedHist[lastIdx],
-                          rate: editingInfusionData.rate
+                  onUpdateDocument((prev) => ({
+                    continuousInfusions: (prev.continuousInfusions || []).map(inf => {
+                      if (inf.id === editingInfusionId) {
+                        const updatedHist = [...(inf.history || [])];
+                        if (updatedHist.length > 0) {
+                          const lastIdx = updatedHist.length - 1;
+                          updatedHist[lastIdx] = {
+                            ...updatedHist[lastIdx],
+                            rate: editingInfusionData.rate
+                          };
+                        }
+                        return {
+                          ...inf,
+                          ...editingInfusionData,
+                          history: updatedHist
                         };
                       }
-                      return {
-                        ...inf,
-                        ...editingInfusionData,
-                        history: updatedHist
-                      };
-                    }
-                    return inf;
-                  });
-                  onUpdateDocument({
-                    continuousInfusions: updated
-                  });
+                      return inf;
+                    })
+                  }));
                   setEditingInfusionId(null);
                   setEditingInfusionData(null);
                 }}

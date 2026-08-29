@@ -1,4 +1,5 @@
 import { calculateAge } from "../mockData";
+import { newClientId } from "./procedureMapper";
 import type {
   AnesthesiaDocument,
   BolusDrug,
@@ -11,15 +12,25 @@ export type InhalationAgentName = InhalationAgent["agent"];
 
 export interface VoiceBolusDrug {
   name: string;
-  dose: string;
-  unit: string;
-  route: string;
+  dose?: string;
+  unit?: string;
+  route?: string;
 }
 
 export interface VoiceInfusion {
   name: string;
-  rate: string;
-  rateUnit: string;
+  rate?: string;
+  rateUnit?: string;
+  concentration?: string;
+  totalVolumePrepared?: number | string;
+  diluent?: string;
+}
+
+export interface VoiceInhalationAgent {
+  name: string;
+  inspiredConc?: number | string;
+  flowO2?: number | string;
+  concentration?: number | string;
 }
 
 export interface VoiceEvent {
@@ -60,7 +71,7 @@ export interface SanitizedVoiceActions {
   timers?: VoiceTimers;
   bolusDrugs?: VoiceBolusDrug[];
   continuousInfusions?: VoiceInfusion[];
-  inhalationAgents?: { name: string }[];
+  inhalationAgents?: VoiceInhalationAgent[];
   vitals?: VoiceVitals;
   events?: VoiceEvent[];
 }
@@ -101,10 +112,6 @@ const INHALATION_ALIASES: Record<string, InhalationAgentName> = {
   ar: "Ar Comprimido",
   "ar comprimido": "Ar Comprimido",
 };
-
-function uniqueId(prefix: string): string {
-  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-}
 
 export function extractNumber(val: unknown): number | undefined {
   if (val === undefined || val === null) return undefined;
@@ -175,6 +182,22 @@ function foldKey(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function extractPercent(raw: string | undefined | null): number | undefined {
+  if (!raw) return undefined;
+  const match = String(raw).match(/(\d+(?:[.,]\d+)?)\s*%/);
+  return match ? extractNumber(match[1]) : undefined;
+}
+
+function extractFlowLpm(raw: string | undefined | null): number | undefined {
+  if (!raw) return undefined;
+  const match = String(raw).match(/(\d+(?:[.,]\d+)?)\s*(?:l\/min|lpm|litros(?:\s+por\s+minuto)?)/i);
+  return match ? extractNumber(match[1]) : undefined;
+}
+
+function notInformed(label: string, feminine = true): string {
+  return `${label}: não informad${feminine ? "a" : "o"}`;
 }
 
 export function mapInhalationAgentName(raw: string | undefined | null): InhalationAgentName | null {
@@ -248,7 +271,7 @@ export function sanitizeVoiceCommand(actions: unknown): SanitizedVoiceActions | 
     hasValidData = true;
   }
   if (Array.isArray(source.inhalationAgents) && source.inhalationAgents.length > 0) {
-    result.inhalationAgents = source.inhalationAgents as { name: string }[];
+    result.inhalationAgents = source.inhalationAgents as VoiceInhalationAgent[];
     hasValidData = true;
   }
   const vitals = asRecord(source.vitals);
@@ -282,29 +305,37 @@ function isFlowGas(agent: InhalationAgentName): boolean {
   return agent === "Oxigênio (O₂)" || agent === "Ar Comprimido";
 }
 
-function bolusUnit(raw: string | undefined): BolusDrug["unit"] {
-  const value = (raw || "mg").toLowerCase();
+function bolusUnit(raw: string | undefined): BolusDrug["unit"] | undefined {
+  if (!raw || !String(raw).trim()) return undefined;
+  const value = String(raw).toLowerCase();
   if (value === "mcg" || value === "µg" || value === "ug") return "mcg";
   if (value === "g") return "g";
   if (value === "ui") return "UI";
   if (value === "ml" || value === "mL") return "ml";
-  return "mg";
+  if (value === "mg") return "mg";
+  if (value === "ampola") return "ampola";
+  if (value === "meq") return "mEq";
+  return undefined;
 }
 
-function bolusRoute(raw: string | undefined): BolusDrug["route"] {
-  const value = foldKey(raw || "ev");
+function bolusRoute(raw: string | undefined): BolusDrug["route"] | undefined {
+  if (!raw || !String(raw).trim()) return undefined;
+  const value = foldKey(raw);
+  if (!value) return undefined;
   if (value === "im") return "IM";
   if (value === "sc") return "SC";
   if (value === "io") return "IO";
+  if (value === "ev" || value === "iv" || value.includes("endoven")) return "EV";
   if (value.includes("raqui")) return "Raqui";
   if (value.includes("peridural") || value.includes("epidural")) return "Peridural";
   if (value.includes("bloqueio")) return "Bloqueio";
   if (value.includes("inal")) return "Inalatório";
-  return "EV";
+  return undefined;
 }
 
-function infusionUnit(raw: string | undefined): ContinuousInfusion["unit"] {
-  const value = (raw || "mcg/kg/min").replace(/\s/g, "");
+function infusionUnit(raw: string | undefined): ContinuousInfusion["unit"] | undefined {
+  if (!raw || !String(raw).trim()) return undefined;
+  const value = String(raw).replace(/\s/g, "");
   const allowed: ContinuousInfusion["unit"][] = [
     "mcg/kg/min",
     "mcg/kg/h",
@@ -314,8 +345,7 @@ function infusionUnit(raw: string | undefined): ContinuousInfusion["unit"] {
     "ml/h",
     "mcg/min",
   ];
-  const match = allowed.find((item) => item === value);
-  return match || "mcg/kg/min";
+  return allowed.find((item) => item === value);
 }
 
 export function summarizeVoiceActions(actions: SanitizedVoiceActions): string[] {
@@ -341,16 +371,44 @@ export function summarizeVoiceActions(actions: SanitizedVoiceActions): string[] 
   if (actions.timers?.endAnesthesia) lines.push("Timer: fim da anestesia");
 
   for (const drug of actions.bolusDrugs || []) {
-    const dose = [drug.dose, drug.unit].filter(Boolean).join(" ");
-    lines.push(`Bolus: ${drug.name}${dose ? ` ${dose}` : ""}${drug.route ? ` ${drug.route}` : ""}`);
+    const bits = [`Bolus: ${drug.name}`];
+    if (drug.dose) bits.push(`${drug.dose}${drug.unit ? ` ${drug.unit}` : ""}`);
+    else bits.push(notInformed("Dose"));
+    if (!drug.unit) bits.push(notInformed("Unidade"));
+    if (drug.route) bits.push(drug.route);
+    else bits.push(notInformed("Via"));
+    lines.push(bits.join(" · "));
   }
   for (const inf of actions.continuousInfusions || []) {
-    const rate = [inf.rate, inf.rateUnit].filter(Boolean).join(" ");
-    lines.push(`Infusão: ${inf.name}${rate ? ` ${rate}` : ""}`);
+    const bits = [`Infusão: ${inf.name}`];
+    if (inf.rate) bits.push(`${inf.rate}${inf.rateUnit ? ` ${inf.rateUnit}` : ""}`);
+    else bits.push(notInformed("Velocidade"));
+    if (!inf.rateUnit) bits.push(notInformed("Unidade"));
+    if (inf.concentration) bits.push(`Concentração ${inf.concentration}`);
+    else bits.push(notInformed("Concentração"));
+    if (inf.totalVolumePrepared != null && String(inf.totalVolumePrepared).trim() !== "") {
+      bits.push(`Volume ${inf.totalVolumePrepared} mL`);
+    } else {
+      bits.push(notInformed("Volume", false));
+    }
+    lines.push(bits.join(" · "));
   }
   for (const gas of actions.inhalationAgents || []) {
     const mapped = mapInhalationAgentName(gas.name);
-    lines.push(`Gás: ${mapped || gas.name}`);
+    const agent = mapped || gas.name;
+    const flowAgent = mapped ? isFlowGas(mapped) : false;
+    const conc = extractNumber(gas.inspiredConc) ?? extractNumber(gas.concentration) ?? extractPercent(gas.name);
+    const flow = extractNumber(gas.flowO2) ?? extractFlowLpm(gas.name);
+    const bits = [`Gás: ${agent}`];
+    if (flowAgent) {
+      if (flow !== undefined) bits.push(`${flow} L/min`);
+      else bits.push(notInformed("Fluxo", false));
+    } else if (conc !== undefined) {
+      bits.push(`${conc}%`);
+    } else {
+      bits.push(notInformed("Concentração"));
+    }
+    lines.push(bits.join(" · "));
   }
   if (actions.vitals) {
     const v = actions.vitals;
@@ -453,7 +511,7 @@ export function applyVoiceActionsToDocument(
         events: [
           ...(newDoc.events || []),
           {
-            id: uniqueId("evt-"),
+            id: newClientId(),
             timestamp: at.toISOString(),
             category: "Marcador Temporal",
             name,
@@ -492,46 +550,63 @@ export function applyVoiceActionsToDocument(
         : 0;
 
   if (actions.bolusDrugs?.length) {
-    newDoc = {
-      ...newDoc,
-      bolusDrugs: [
-        ...(newDoc.bolusDrugs || []),
-        ...actions.bolusDrugs.map((drug) => ({
-          id: uniqueId("bol-"),
-          timestamp: nowIso,
-          minutesFromStart: targetMins,
-          name: String(drug.name || ""),
-          dose: extractNumber(drug.dose) || 0,
-          unit: bolusUnit(drug.unit),
-          route: bolusRoute(drug.route),
-        })),
-      ],
-    };
+    const added: BolusDrug[] = [];
+    for (const drug of actions.bolusDrugs) {
+      if (!drug.name) continue;
+      const dose = extractNumber(drug.dose);
+      const unit = bolusUnit(drug.unit);
+      const route = bolusRoute(drug.route);
+      added.push({
+        id: newClientId(),
+        timestamp: nowIso,
+        minutesFromStart: targetMins,
+        name: String(drug.name || ""),
+        ...(dose !== undefined ? { dose } : {}),
+        ...(unit ? { unit } : {}),
+        ...(route ? { route } : {}),
+      });
+    }
+    if (added.length) {
+      newDoc = {
+        ...newDoc,
+        bolusDrugs: [...(newDoc.bolusDrugs || []), ...added],
+      };
+    }
   }
 
   if (actions.continuousInfusions?.length) {
-    newDoc = {
-      ...newDoc,
-      continuousInfusions: [
-        ...(newDoc.continuousInfusions || []),
-        ...actions.continuousInfusions.map((inf) => ({
-          id: uniqueId("inf-"),
-          name: String(inf.name || ""),
-          concentration: "1",
-          diluent: "",
-          totalVolumePrepared: 100,
-          unit: infusionUnit(inf.rateUnit),
-          history: [
-            {
-              timestamp: nowIso,
-              minutesFromStart: targetMins,
-              rate: extractNumber(inf.rate) || 0,
-              status: "Iniciado" as const,
-            },
-          ],
-        })),
-      ],
-    };
+    const added: ContinuousInfusion[] = [];
+    for (const inf of actions.continuousInfusions) {
+      if (!inf.name) continue;
+      const rate = extractNumber(inf.rate);
+      const unit = infusionUnit(inf.rateUnit);
+      const volume = extractNumber(inf.totalVolumePrepared);
+      const concentration = inf.concentration ? String(inf.concentration).trim() : "";
+      added.push({
+        id: newClientId(),
+        name: String(inf.name || ""),
+        concentration,
+        diluent: inf.diluent ? String(inf.diluent) : "",
+        ...(volume !== undefined ? { totalVolumePrepared: volume } : {}),
+        ...(unit ? { unit } : {}),
+        history: rate === undefined
+          ? []
+          : [
+              {
+                timestamp: nowIso,
+                minutesFromStart: targetMins,
+                rate,
+                status: "Iniciado" as const,
+              },
+            ],
+      });
+    }
+    if (added.length) {
+      newDoc = {
+        ...newDoc,
+        continuousInfusions: [...(newDoc.continuousInfusions || []), ...added],
+      };
+    }
   }
 
   if (actions.inhalationAgents?.length) {
@@ -542,22 +617,30 @@ export function applyVoiceActionsToDocument(
       if (!agent) continue;
       if (existing.some((row) => row.agent === agent)) continue;
       const flow = isFlowGas(agent);
-      const inspiredConc = flow ? undefined : 2.0;
-      const flowO2 = flow ? 1.0 : undefined;
-      existing.push({
-        id: uniqueId("ia-"),
+      const inspiredConc = flow
+        ? undefined
+        : extractNumber(item.inspiredConc) ?? extractNumber(item.concentration) ?? extractPercent(item.name);
+      const flowO2 = flow
+        ? extractNumber(item.flowO2) ?? extractFlowLpm(item.name)
+        : undefined;
+      const row: InhalationAgent = {
+        id: newClientId(),
         agent,
-        inspiredConc,
-        flowO2,
         startTime: nowIso,
-      });
-      const eventName = flow
-        ? agent === "Oxigênio (O₂)"
+        ...(inspiredConc !== undefined ? { inspiredConc } : {}),
+        ...(flowO2 !== undefined ? { flowO2 } : {}),
+      };
+      existing.push(row);
+      let eventName: string = agent;
+      if (flow && flowO2 !== undefined) {
+        eventName = agent === "Oxigênio (O₂)"
           ? `O₂ ${Number(flowO2).toLocaleString("pt-BR", { minimumFractionDigits: 1 })} L/min`
-          : `Ar Comprimido ${Number(flowO2).toLocaleString("pt-BR", { minimumFractionDigits: 1 })} L/min`
-        : `${agent} ${Number(inspiredConc).toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%`;
+          : `Ar Comprimido ${Number(flowO2).toLocaleString("pt-BR", { minimumFractionDigits: 1 })} L/min`;
+      } else if (!flow && inspiredConc !== undefined) {
+        eventName = `${agent} ${Number(inspiredConc).toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%`;
+      }
       extraEvents.push({
-        id: uniqueId("ev-inh-"),
+        id: newClientId(),
         name: eventName,
         timestamp: nowIso,
         category: "Procedimento",
@@ -605,7 +688,7 @@ export function applyVoiceActionsToDocument(
         vitals: [
           ...existingVitals,
           {
-            id: uniqueId("vit-"),
+            id: newClientId(),
             timestamp: nowIso,
             minutesFromStart: mins,
             ...vitalsUpdate,
@@ -621,7 +704,7 @@ export function applyVoiceActionsToDocument(
       events: [
         ...(newDoc.events || []),
         ...actions.events.map((event) => ({
-          id: uniqueId("evt-"),
+          id: newClientId(),
           timestamp: nowIso,
           category: mapEventCategory(event.category),
           name: String(event.name || ""),

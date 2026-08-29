@@ -31,7 +31,7 @@ import {
 } from "../lib/profileService";
 
 interface LoginScreenProps {
-  onLogin: (doctor: { name: string; crm: string; uf: string; hospital: string; uid?: string }) => void;
+  onLogin: (doctor: { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null }) => void;
   isDark: boolean;
   onToggleTheme: () => void;
 }
@@ -247,7 +247,8 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
         crm: crm.trim(),
         uf,
         hospital,
-        uid: currentUser.id
+        uid: currentUser.id,
+        email: currentUser.email || email || null
       });
     } catch (err: any) {
       setError(err.message || "Erro ao salvar perfil.");

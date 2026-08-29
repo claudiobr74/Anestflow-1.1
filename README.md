@@ -213,3 +213,24 @@ Enquanto isso, o cadastro no cliente consulta a API [Pwned Passwords](https://ha
 - Login de quem já tem conta **não** é bloqueado por esta checagem
 
 O toggle no Dashboard continua recomendado: aí o GoTrue também recusa senha vazada no servidor.
+
+## Fase 0+1 (persistência clínica e dado não inventado)
+
+Testes do comportamento correto (Fase 0) e correções (Fase 1) na mesma linha:
+
+- O autosave usa `clinicalChangeFingerprint` cobrindo o que `saveProcedure` persiste (timers, gases, fluidos, SRPA, via aérea, checklist, etc.). Debounce de 1,2s permanece.
+- PDF/SRPA não preenchem PA 120/80, FC 80, SpO₂ 98% nem 36,5 °C. Aldrete **0** não é “não registrado”.
+- Escriba por voz não inventa 2%, EV, dose 0, 100 mL nem 1 L/min; a confirmação mostra “não informada”.
+- Parse falho da auditoria de IA devolve `AI_REVIEW_PARSE_FAILED` — não uma lista vazia de alertas.
+- ID clínico duplicado **regenera** o segundo item; não descarta o lançamento.
+- E-mail de assinatura/claim vem do Auth (`user.email`), não do hospital.
+
+Chaves de cache atuais (inventário; a limpeza correta de PHI é a **Fase 2**):
+
+| Chave | Onde |
+|---|---|
+| `anesthesia_doc` | `localStorage` |
+| `anestflow_doc_local_<procedureId>` | `localStorage` |
+| `anestflow_pending_sync_queue` | `localStorage` |
+| `anestflow_active_doc_<uid>` | `sessionStorage` |
+

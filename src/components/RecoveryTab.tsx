@@ -1,10 +1,19 @@
 import React, { useState } from "react";
 import { AnesthesiaDocument, PostAnesthesiaRecovery } from "../types";
 import { Shield, Plus, Clock, Save, Trash2, CheckCircle, Activity, Smile, RefreshCw, AlertTriangle, Settings, Heart, Thermometer } from "lucide-react";
+import {
+  UNREGISTERED,
+  displayQmentumRange,
+  isRecordedNumber,
+  qmentumRange,
+  resolveRecoveryBaseline,
+} from "../lib/clinicalDisplay";
 
 interface RecoveryTabProps {
   document: AnesthesiaDocument;
-  onUpdateRecovery: (recData: Partial<PostAnesthesiaRecovery>) => void;
+  onUpdateRecovery: (
+    recData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
+  ) => void;
   theme?: "light" | "dark" | "dark-clean";
 }
 
@@ -20,47 +29,46 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
   };
 
   const latestIntra = getLatestIntraoperativeVitals();
+  const baseline = resolveRecoveryBaseline(recovery, latestIntra);
+  const baselinePas = baseline.pas;
+  const baselinePad = baseline.pad;
+  const baselineFc = baseline.fc;
+  const baselineSpo2 = baseline.spo2;
+  const baselineTemp = baseline.temp;
 
-  // Baseline reference values (resolved with fallbacks)
-  const baselinePas = recovery.pas ?? latestIntra?.pas ?? 120;
-  const baselinePad = recovery.pad ?? latestIntra?.pad ?? 80;
-  const baselineFc = recovery.fc ?? latestIntra?.fc ?? 80;
-  const baselineSpo2 = recovery.spo2 ?? latestIntra?.spo2 ?? 98;
-  const baselineTemp = recovery.temp ?? latestIntra?.temp ?? 36.5;
+  const pasDeviationPct = recovery.paramPasDeviationPct ?? 20;
+  const fcDeviationPct = recovery.paramFcDeviationPct ?? 20;
+  const minSpo2 = recovery.paramMinSpo2 ?? 94;
+  const minTemp = recovery.paramMinTemp ?? 35.5;
+  const maxTemp = recovery.paramMaxTemp ?? 37.8;
 
-  // Deviation parameters (resolved with fallbacks)
-  const pasDeviationPct = recovery.paramPasDeviationPct ?? 20; // default 20%
-  const fcDeviationPct = recovery.paramFcDeviationPct ?? 20; // default 20%
-  const minSpo2 = recovery.paramMinSpo2 ?? 94; // default 94%
-  const minTemp = recovery.paramMinTemp ?? 35.5; // default 35.5 C
-  const maxTemp = recovery.paramMaxTemp ?? 37.8; // default 37.8 C
-
-  // Calculated safe ranges
-  const minPas = Math.round(baselinePas * (1 - pasDeviationPct / 100));
-  const maxPas = Math.round(baselinePas * (1 + pasDeviationPct / 100));
-  const minPad = Math.round(baselinePad * (1 - pasDeviationPct / 100));
-  const maxPad = Math.round(baselinePad * (1 + pasDeviationPct / 100));
-  
-  const minFc = Math.round(baselineFc * (1 - fcDeviationPct / 100));
-  const maxFc = Math.round(baselineFc * (1 + fcDeviationPct / 100));
+  const pasRange = qmentumRange(baselinePas, pasDeviationPct);
+  const padRange = qmentumRange(baselinePad, pasDeviationPct);
+  const fcRange = qmentumRange(baselineFc, fcDeviationPct);
+  const minPas = pasRange?.min;
+  const maxPas = pasRange?.max;
+  const minPad = padRange?.min;
+  const maxPad = padRange?.max;
+  const minFc = fcRange?.min;
+  const maxFc = fcRange?.max;
 
   const checkVitalsAlert = (pasStr: string, padStr: string, fcStr: string, spo2Str: string, tempStr: string) => {
     const alerts: string[] = [];
     
-    if (pasStr) {
+    if (pasStr && pasRange) {
       const p = parseInt(pasStr);
-      if (p < minPas) alerts.push(`PAS baixa (${p} < limite de ${minPas} mmHg)`);
-      if (p > maxPas) alerts.push(`PAS alta (${p} > limite de ${maxPas} mmHg)`);
+      if (p < pasRange.min) alerts.push(`PAS baixa (${p} < limite de ${pasRange.min} mmHg)`);
+      if (p > pasRange.max) alerts.push(`PAS alta (${p} > limite de ${pasRange.max} mmHg)`);
     }
-    if (padStr) {
+    if (padStr && padRange) {
       const p = parseInt(padStr);
-      if (p < minPad) alerts.push(`PAD baixa (${p} < limite de ${minPad} mmHg)`);
-      if (p > maxPad) alerts.push(`PAD alta (${p} > limite de ${maxPad} mmHg)`);
+      if (p < padRange.min) alerts.push(`PAD baixa (${p} < limite de ${padRange.min} mmHg)`);
+      if (p > padRange.max) alerts.push(`PAD alta (${p} > limite de ${padRange.max} mmHg)`);
     }
-    if (fcStr) {
+    if (fcStr && fcRange) {
       const f = parseInt(fcStr);
-      if (f < minFc) alerts.push(`FC baixa (${f} < limite de ${minFc} bpm)`);
-      if (f > maxFc) alerts.push(`FC alta (${f} > limite de ${maxFc} bpm)`);
+      if (f < fcRange.min) alerts.push(`FC baixa (${f} < limite de ${fcRange.min} bpm)`);
+      if (f > fcRange.max) alerts.push(`FC alta (${f} > limite de ${fcRange.max} bpm)`);
     }
     if (spo2Str) {
       const s = parseInt(spo2Str);
@@ -85,17 +93,17 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
 
   const getRecordAlerts = (r: any) => {
     const alerts: string[] = [];
-    if (r.pas !== undefined) {
-      if (r.pas < minPas) alerts.push(`PAS baixa (${r.pas} < ${minPas})`);
-      if (r.pas > maxPas) alerts.push(`PAS alta (${r.pas} > ${maxPas})`);
+    if (r.pas !== undefined && pasRange) {
+      if (r.pas < pasRange.min) alerts.push(`PAS baixa (${r.pas} < ${pasRange.min})`);
+      if (r.pas > pasRange.max) alerts.push(`PAS alta (${r.pas} > ${pasRange.max})`);
     }
-    if (r.pad !== undefined) {
-      if (r.pad < minPad) alerts.push(`PAD baixa (${r.pad} < ${minPad})`);
-      if (r.pad > maxPad) alerts.push(`PAD alta (${r.pad} > ${maxPad})`);
+    if (r.pad !== undefined && padRange) {
+      if (r.pad < padRange.min) alerts.push(`PAD baixa (${r.pad} < ${padRange.min})`);
+      if (r.pad > padRange.max) alerts.push(`PAD alta (${r.pad} > ${padRange.max})`);
     }
-    if (r.fc !== undefined) {
-      if (r.fc < minFc) alerts.push(`FC baixa (${r.fc} < ${minFc})`);
-      if (r.fc > maxFc) alerts.push(`FC alta (${r.fc} > ${maxFc})`);
+    if (r.fc !== undefined && fcRange) {
+      if (r.fc < fcRange.min) alerts.push(`FC baixa (${r.fc} < ${fcRange.min})`);
+      if (r.fc > fcRange.max) alerts.push(`FC alta (${r.fc} > ${fcRange.max})`);
     }
     if (r.spo2 !== undefined) {
       if (r.spo2 < minSpo2) alerts.push(`SpO₂ baixo (${r.spo2}% < ${minSpo2}%)`);
@@ -112,22 +120,21 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
     pas: "",
     pad: "",
     fc: "",
-    spo2: "99",
-    fr: "16",
-    temp: "36.5",
-    painScale: "0",
+    spo2: "",
+    fr: "",
+    temp: "",
+    painScale: "",
     nauseaVomiting: "Ausente" as any,
     consciousnessState: "Acordado/Alerta" as any,
     motorActivity: "Move 4 membros voluntariamente" as any,
     motorBlockBromage: "Bromage 0 (Sem bloqueio)" as any,
     dressingStatus: "Seco" as any,
     
-    // Aldrete Kroulik fields
-    aldreteConsciousness: 2,
-    aldreteRespiration: 2,
-    aldreteCirculation: 2,
-    aldreteActivity: 2,
-    aldreteOximetry: 2
+    aldreteConsciousness: undefined as number | undefined,
+    aldreteRespiration: undefined as number | undefined,
+    aldreteCirculation: undefined as number | undefined,
+    aldreteActivity: undefined as number | undefined,
+    aldreteOximetry: undefined as number | undefined
   });
 
   const handleAddObservation = () => {
@@ -135,12 +142,17 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
     const timestamp = new Date().toISOString();
 
     // Calculate Aldrete Total
-    const aldreteTotal = 
-      newRecord.aldreteConsciousness +
-      newRecord.aldreteRespiration +
-      newRecord.aldreteCirculation +
-      newRecord.aldreteActivity +
-      newRecord.aldreteOximetry;
+    const aldreteScores = [
+      newRecord.aldreteConsciousness,
+      newRecord.aldreteRespiration,
+      newRecord.aldreteCirculation,
+      newRecord.aldreteActivity,
+      newRecord.aldreteOximetry,
+    ];
+    const aldreteComplete = aldreteScores.every((s) => typeof s === "number");
+    const aldreteTotal = aldreteComplete
+      ? aldreteScores.reduce((acc: number, v) => acc + (v as number), 0)
+      : undefined;
 
     const record = {
       id: `rec-${Date.now()}`,
@@ -152,7 +164,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
       spo2: newRecord.spo2 ? parseInt(newRecord.spo2) : undefined,
       fr: newRecord.fr ? parseInt(newRecord.fr) : undefined,
       temp: newRecord.temp ? parseFloat(newRecord.temp) : undefined,
-      painScale: parseInt(newRecord.painScale),
+      painScale: newRecord.painScale !== "" ? parseInt(newRecord.painScale) : undefined,
       nauseaVomiting: newRecord.nauseaVomiting,
       consciousnessState: newRecord.consciousnessState,
       motorActivity: newRecord.motorActivity,
@@ -166,24 +178,31 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
       aldreteTotal
     };
 
-    onUpdateRecovery({
-      records: [...records, record]
-    });
+    onUpdateRecovery((rec) => ({
+      records: [...(rec.records || []), record]
+    }));
 
-    // Reset some fields
     setNewRecord(prev => ({
       ...prev,
       pas: "",
       pad: "",
       fc: "",
-      painScale: "0"
+      spo2: "",
+      fr: "",
+      temp: "",
+      painScale: "",
+      aldreteConsciousness: undefined,
+      aldreteRespiration: undefined,
+      aldreteCirculation: undefined,
+      aldreteActivity: undefined,
+      aldreteOximetry: undefined
     }));
   };
 
   const handleRemoveRecord = (id: string) => {
-    onUpdateRecovery({
-      records: records.filter(r => r.id !== id)
-    });
+    onUpdateRecovery((rec) => ({
+      records: (rec.records || []).filter(r => r.id !== id)
+    }));
   };
 
   const handleDischarge = () => {
@@ -254,7 +273,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                 <input
                   type="number"
                   value={recovery.pas !== undefined ? recovery.pas : ""}
-                  placeholder={String(latestIntra?.pas ?? 120)}
+                  placeholder={isRecordedNumber(latestIntra?.pas) ? String(latestIntra.pas) : UNREGISTERED}
                   onChange={(e) => onUpdateRecovery({ pas: e.target.value ? parseInt(e.target.value) : undefined })}
                   className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 rounded-lg px-1.5 py-1 text-center tabular-nums text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                 />
@@ -264,7 +283,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                 <input
                   type="number"
                   value={recovery.pad !== undefined ? recovery.pad : ""}
-                  placeholder={String(latestIntra?.pad ?? 80)}
+                  placeholder={isRecordedNumber(latestIntra?.pad) ? String(latestIntra.pad) : UNREGISTERED}
                   onChange={(e) => onUpdateRecovery({ pad: e.target.value ? parseInt(e.target.value) : undefined })}
                   className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 rounded-lg px-1.5 py-1 text-center tabular-nums text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                 />
@@ -274,7 +293,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                 <input
                   type="number"
                   value={recovery.fc !== undefined ? recovery.fc : ""}
-                  placeholder={String(latestIntra?.fc ?? 80)}
+                  placeholder={isRecordedNumber(latestIntra?.fc) ? String(latestIntra.fc) : UNREGISTERED}
                   onChange={(e) => onUpdateRecovery({ fc: e.target.value ? parseInt(e.target.value) : undefined })}
                   className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 rounded-lg px-1.5 py-1 text-center tabular-nums text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                 />
@@ -284,7 +303,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                 <input
                   type="number"
                   value={recovery.spo2 !== undefined ? recovery.spo2 : ""}
-                  placeholder={String(latestIntra?.spo2 ?? 98)}
+                  placeholder={isRecordedNumber(latestIntra?.spo2) ? String(latestIntra.spo2) : UNREGISTERED}
                   onChange={(e) => onUpdateRecovery({ spo2: e.target.value ? parseInt(e.target.value) : undefined })}
                   className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 rounded-lg px-1.5 py-1 text-center tabular-nums text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                 />
@@ -295,15 +314,15 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                   type="number"
                   step="0.1"
                   value={recovery.temp !== undefined ? recovery.temp : ""}
-                  placeholder={String(latestIntra?.temp ?? 36.5)}
+                  placeholder={isRecordedNumber(latestIntra?.temp) ? String(latestIntra.temp) : UNREGISTERED}
                   onChange={(e) => onUpdateRecovery({ temp: e.target.value ? parseFloat(e.target.value) : undefined })}
                   className="w-full bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-200 rounded-lg px-1.5 py-1 text-center tabular-nums text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden"
                 />
               </div>
             </div>
-            {latestIntra && !recovery.pas && (
+            {latestIntra && isRecordedNumber(latestIntra.pas) && recovery.pas === undefined && (
               <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold italic">
-                * Valores preenchidos automaticamente do final do intraoperatório.
+                * Sugestão do último intraoperatório (não entra na ficha até você preencher).
               </p>
             )}
           </div>
@@ -387,9 +406,9 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
         <div className="bg-white/80 dark:bg-zinc-950/60 rounded-lg p-3 border border-indigo-100/40 dark:border-zinc-800/70 flex flex-wrap gap-4 justify-between items-center text-xs tabular-nums">
           <span className="font-sans font-black text-indigo-950 dark:text-zinc-200 text-xs uppercase tracking-wider">Limites de Alerta Calculados:</span>
           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            <span className="text-slate-600 dark:text-zinc-400">PAS: <b className="text-indigo-700 dark:text-indigo-400">{minPas} - {maxPas}</b> mmHg</span>
-            <span className="text-slate-600 dark:text-zinc-400">PAD: <b className="text-indigo-700 dark:text-indigo-400">{minPad} - {maxPad}</b> mmHg</span>
-            <span className="text-slate-600 dark:text-zinc-400">FC: <b className="text-indigo-700 dark:text-indigo-400">{minFc} - {maxFc}</b> bpm</span>
+            <span className="text-slate-600 dark:text-zinc-400">PAS: <b className="text-indigo-700 dark:text-indigo-400">{pasRange ? displayQmentumRange(pasRange) : UNREGISTERED}</b>{pasRange ? " mmHg" : ""}</span>
+            <span className="text-slate-600 dark:text-zinc-400">PAD: <b className="text-indigo-700 dark:text-indigo-400">{padRange ? displayQmentumRange(padRange) : UNREGISTERED}</b>{padRange ? " mmHg" : ""}</span>
+            <span className="text-slate-600 dark:text-zinc-400">FC: <b className="text-indigo-700 dark:text-indigo-400">{fcRange ? displayQmentumRange(fcRange) : UNREGISTERED}</b>{fcRange ? " bpm" : ""}</span>
             <span className="text-slate-600 dark:text-zinc-400">SpO₂: <b className="text-indigo-700 dark:text-indigo-400">≥ {minSpo2}%</b></span>
             <span className="text-slate-600 dark:text-zinc-400">Temp: <b className="text-indigo-700 dark:text-indigo-400">{minTemp.toFixed(1)}°C - {maxTemp.toFixed(1)}°C</b></span>
           </div>
@@ -509,7 +528,15 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
             <h4 className="font-bold text-xs text-indigo-800 dark:text-indigo-400 tracking-wide uppercase flex justify-between">
               <span>Índice de Aldrete-Kroulik</span>
               <span className="tabular-nums text-xs font-black">
-                PONTOS: {newRecord.aldreteConsciousness + newRecord.aldreteRespiration + newRecord.aldreteCirculation + newRecord.aldreteActivity + newRecord.aldreteOximetry} / 10
+                PONTOS: {([
+                  newRecord.aldreteConsciousness,
+                  newRecord.aldreteRespiration,
+                  newRecord.aldreteCirculation,
+                  newRecord.aldreteActivity,
+                  newRecord.aldreteOximetry,
+                ].every((s) => typeof s === "number")
+                  ? `${(newRecord.aldreteConsciousness || 0) + (newRecord.aldreteRespiration || 0) + (newRecord.aldreteCirculation || 0) + (newRecord.aldreteActivity || 0) + (newRecord.aldreteOximetry || 0)} / 10`
+                  : UNREGISTERED)}
               </span>
             </h4>
 
@@ -648,10 +675,10 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
 
                       <div>
                         <span className="text-slate-400 dark:text-zinc-500 block font-medium uppercase text-xs tracking-wider">Cardio/Hem</span>
-                        <span className={`font-bold tabular-nums text-xs block ${(r.pas !== undefined && (r.pas < minPas || r.pas > maxPas)) || (r.pad !== undefined && (r.pad < minPad || r.pad > maxPad)) ? "text-amber-600 font-extrabold" : "text-slate-800 dark:text-zinc-200"}`}>
+                        <span className={`font-bold tabular-nums text-xs block ${(pasRange && r.pas !== undefined && (r.pas < pasRange.min || r.pas > pasRange.max)) || (padRange && r.pad !== undefined && (r.pad < padRange.min || r.pad > padRange.max)) ? "text-amber-600 font-extrabold" : "text-slate-800 dark:text-zinc-200"}`}>
                           {r.pas !== undefined && r.pad !== undefined ? `${r.pas}/${r.pad}` : "—"}
                         </span>
-                        <span className={`text-xs tabular-nums block ${r.fc !== undefined && (r.fc < minFc || r.fc > maxFc) ? "text-amber-600 font-extrabold" : "text-slate-500 dark:text-zinc-400"}`}>FC: {r.fc || "—"} bpm</span>
+                        <span className={`text-xs tabular-nums block ${fcRange && r.fc !== undefined && (r.fc < fcRange.min || r.fc > fcRange.max) ? "text-amber-600 font-extrabold" : "text-slate-500 dark:text-zinc-400"}`}>FC: {r.fc ?? "—"} bpm</span>
                       </div>
 
                       <div>

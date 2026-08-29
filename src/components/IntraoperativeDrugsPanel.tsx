@@ -237,7 +237,7 @@ export default function IntraoperativeDrugsPanel({
             if (!ampouleAmount) return null;
             
             const currentDrugBoluses = document.bolusDrugs?.filter((b: any) => b.name === selectedDrug.name) || [];
-            const totalDoseGiven = currentDrugBoluses.reduce((acc: number, b: any) => acc + b.dose, 0);
+            const totalDoseGiven = currentDrugBoluses.reduce((acc: number, b: any) => acc + (typeof b.dose === "number" ? b.dose : 0), 0);
             
             const currentAmpoules = Math.ceil(totalDoseGiven / ampouleAmount);
             
@@ -505,16 +505,17 @@ export default function IntraoperativeDrugsPanel({
                   }
                   
                   const weight = patient?.weight || 0;
-                  if (drug.unit.endsWith("/kg")) {
-                    acc[key].totalDosePerKg += drug.dose;
+                  const dose = typeof drug.dose === "number" ? drug.dose : 0;
+                  if (drug.unit && String(drug.unit).endsWith("/kg")) {
+                    acc[key].totalDosePerKg += dose;
                     if (weight > 0) {
-                      acc[key].totalAbsoluteDose += drug.dose * weight;
+                      acc[key].totalAbsoluteDose += dose * weight;
                     }
                     acc[key].hasPerKg = true;
                   } else {
-                    acc[key].totalAbsoluteDose += drug.dose;
+                    acc[key].totalAbsoluteDose += dose;
                     if (weight > 0) {
-                      acc[key].totalDosePerKg += drug.dose / weight;
+                      acc[key].totalDosePerKg += dose / weight;
                     }
                     acc[key].hasAbsolute = true;
                   }

@@ -7,6 +7,12 @@ import React, { useState, useEffect, useMemo } from "react";
 import { AnesthesiaDocument, DocumentAmendment } from "../types";
 import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Clock, ShieldCheck, ArrowRightLeft, KeyRound, Copy, Check, FileCheck, Hash } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
+import {
+  AI_REVIEW_PARSE_FAILED,
+  AI_REVIEW_UNAVAILABLE_MESSAGE,
+  isAiReviewParseFailedMessage,
+  parseAiReviewPayload,
+} from "../lib/aiReviewParse";
 import { getSupabase } from "../lib/supabase";
 import { signAndLockDocument, verifyDocumentIntegrity, createSignedAmendment } from "../lib/signatureService";
 import { addProcedureAmendment, getProcedureAmendments } from "../lib/proceduresService";
@@ -218,14 +224,22 @@ export default function ReviewTab({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const result = await invokeAiFunction<{ alerts?: Array<{ type: string; title: string; description: string; module: string }> }>(
+      const result = await invokeAiFunction<{ alerts?: Array<{ type: string; title: string; description: string; module: string }>; error?: string }>(
         "review",
         document,
         controller.signal
       );
       
       clearTimeout(timeoutId);
-      setAiAlerts(result.alerts || []);
+      const parsed = parseAiReviewPayload(result);
+      if (!parsed.ok) {
+        setAiError(AI_REVIEW_UNAVAILABLE_MESSAGE);
+        if (stopAiSupervisor) {
+          stopAiSupervisor(`Erro: ${AI_REVIEW_PARSE_FAILED}`);
+        }
+        return;
+      }
+      setAiAlerts(parsed.alerts);
       
       if (stopAiSupervisor) {
         stopAiSupervisor("Sucesso");
@@ -240,6 +254,8 @@ export default function ReviewTab({
       let errMsg = err.message || "Erro desconhecido.";
       if (err.name === "AbortError") {
         errMsg = "O servidor de IA demorou muito para responder (limite de tempo atingido). Por favor, tente novamente em alguns instantes.";
+      } else if (isAiReviewParseFailedMessage(errMsg)) {
+        errMsg = AI_REVIEW_UNAVAILABLE_MESSAGE;
       } else if (errMsg.includes("quota") || errMsg.includes("429")) {
         errMsg = "Erro 429: Cota excedida na API. Verifique seus créditos ou chave de acesso.";
       } else if (errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("overloaded")) {

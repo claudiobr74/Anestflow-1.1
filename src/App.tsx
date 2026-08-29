@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AnesthesiaDocument, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass, AnesthesiologistTransfer, PendingTransfer } from "./types";
+import { AnesthesiaDocument, AnesthesiaDocumentPatch, PatientInfo, PreAnestheticEvaluation, PostAnesthesiaRecovery, ASAClass, AnesthesiologistTransfer, PendingTransfer } from "./types";
 import { getMockDocument, getBlankDocument } from "./mockData";
 import PatientTab from "./components/PatientTab";
 import PreEvaluationTab from "./components/PreEvaluationTab";
@@ -40,9 +40,15 @@ import {
   persistSessionEndReason,
   type SessionViolation,
 } from "./lib/sessionPolicy";
+import {
+  CLINICAL_STORAGE_KEYS,
+  activeDocSessionKey,
+} from "./lib/clinicalStorageKeys";
+
+type SessionUser = { name: string; crm: string; uf: string; hospital: string; uid?: string; email?: string | null };
 
 export default function App() {
-  const [user, setUser] = useState<{ name: string; crm: string; uf: string; hospital: string; uid?: string } | null>(() => {
+  const [user, setUser] = useState<SessionUser | null>(() => {
     const saved = localStorage.getItem("anesthesia_user");
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -56,7 +62,7 @@ export default function App() {
   const [document, setDocument] = useState<AnesthesiaDocument>(() => {
     // Purge legacy plain localStorage document if present to ensure no clinical data lingers in plain localStorage
     try {
-      localStorage.removeItem("anesthesia_doc");
+      localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
     } catch (e) {}
 
     // Restore active session copy from sessionStorage only if user is logged in
@@ -65,7 +71,7 @@ export default function App() {
       try {
         const u = JSON.parse(savedUser);
         if (u && u.uid) {
-          const sessionSaved = sessionStorage.getItem(`anestflow_active_doc_${u.uid}`);
+          const sessionSaved = sessionStorage.getItem(activeDocSessionKey(u.uid));
           if (sessionSaved) {
             const parsed = JSON.parse(sessionSaved);
             if (parsed && parsed.id && parsed.id !== "doc-9281-2026") {
@@ -137,12 +143,12 @@ export default function App() {
   useEffect(() => {
     // Ensure plain localStorage never retains clinical data
     try {
-      localStorage.removeItem("anesthesia_doc");
+      localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
     } catch (e) {}
 
     if (user?.uid && document) {
       try {
-        sessionStorage.setItem(`anestflow_active_doc_${user.uid}`, JSON.stringify(document));
+        sessionStorage.setItem(activeDocSessionKey(user.uid), JSON.stringify(document));
       } catch (e) {
         console.warn("Could not save session document cache:", e);
       }
@@ -198,6 +204,16 @@ export default function App() {
         }
         if (supabaseUser) {
           setIsEmailVerified(Boolean(supabaseUser.email_confirmed_at));
+          if (supabaseUser.email) {
+            setUser((prev) => {
+              if (!prev || prev.email) return prev;
+              const next = { ...prev, email: supabaseUser.email };
+              try {
+                localStorage.setItem("anesthesia_user", JSON.stringify(next));
+              } catch (e) {}
+              return next;
+            });
+          }
         }
       });
       unsubscribe = () => data.subscription.unsubscribe();
@@ -329,7 +345,7 @@ export default function App() {
     });
   };
 
-  const handleLogin = (doctor: { name: string; crm: string; uf: string; hospital: string; uid?: string }) => {
+  const handleLogin = (doctor: SessionUser) => {
     const isNewUser = !user || user.uid !== doctor.uid;
     
     setUser(doctor);
@@ -340,7 +356,7 @@ export default function App() {
       // Clear all clinical session cache from previous user
       try {
         sessionStorage.clear();
-        localStorage.removeItem("anesthesia_doc");
+        localStorage.removeItem(CLINICAL_STORAGE_KEYS.anesthesiaDoc);
       } catch (e) {}
 
       // Initialize a fresh blank document specifically for the newly logged-in user.
@@ -440,17 +456,22 @@ export default function App() {
     await saveToWorklist(cpf, document.patient, document.preEvaluation);
   };
 
-  const updateRecovery = (recoveryData: Partial<PostAnesthesiaRecovery>) => {
+  const updateRecovery = (
+    recoveryData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
+  ) => {
     if (document.status === "Signed") return; // locked
-    setDocumentWithBroadcast(prev => ({
-      ...prev,
-      recovery: { ...prev.recovery, ...recoveryData }
-    }));
+    setDocumentWithBroadcast(prev => {
+      const patch = typeof recoveryData === "function" ? recoveryData(prev.recovery) : recoveryData;
+      return {
+        ...prev,
+        recovery: { ...prev.recovery, ...patch }
+      };
+    });
   };
 
   const isCurrentResponsible = !user || !user.uid || !document.currentResponsibleUid || document.currentResponsibleUid === user.uid;
 
-  const updateDocumentDirectly = (updates: Partial<AnesthesiaDocument>) => {
+  const updateDocumentDirectly = (updates: AnesthesiaDocumentPatch) => {
     if (document.status === "Signed") {
       alert("Esta ficha foi encerrada e assinada. Alterações não são permitidas.");
       return;
@@ -459,10 +480,13 @@ export default function App() {
       alert(`Somente o anestesiologista atualmente responsável (Dr. ${document.team?.anesthesiologistLead || 'Responsável'}) pode editar os dados clínicos.`);
       return;
     }
-    if (updates.createdByUid && document.createdByUid && updates.createdByUid !== document.createdByUid) {
-      delete updates.createdByUid;
-    }
-    setDocumentWithBroadcast(prev => ({ ...prev, ...updates }));
+    setDocumentWithBroadcast(prev => {
+      const resolved = typeof updates === "function" ? updates(prev) : { ...updates };
+      if (resolved.createdByUid && prev.createdByUid && resolved.createdByUid !== prev.createdByUid) {
+        delete resolved.createdByUid;
+      }
+      return { ...prev, ...resolved };
+    });
   };
 
   const [isClaiming, setIsClaiming] = useState(false);
@@ -490,7 +514,7 @@ export default function App() {
           name: user.name,
           crm: user.crm,
           uf: user.uf,
-          email: user.hospital // user email if stored
+          email: user.email || null
         });
         if (updated) {
           setDocument(updated);
@@ -854,7 +878,7 @@ export default function App() {
         name: user.name,
         crm: user.crm,
         uf: user.uf,
-        email: user.hospital
+        email: user.email || null
       });
 
       const { saveProcedure } = await import("./lib/proceduresService");
