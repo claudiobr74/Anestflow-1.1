@@ -127,12 +127,25 @@ if (report.schema !== "SignedAnesthesiaRecordV1") fail(`schema inesperado: ${rep
 if (!isProcedureIntegrityIntact(report)) fail("isProcedureIntegrityIntact deveria ser true só com A+B");
 console.log("verify A+B ok");
 
-const { error: updateErr } = await supabase
+const { data: mutated, error: updateErr } = await supabase
   .from("procedures")
   .update({ patient: { fullName: "tentativa de adulteracao 4B" } })
-  .eq("id", ready.id);
-if (!updateErr) fail("UPDATE direto em ficha signed deveria falhar");
-console.log("UPDATE signed bloqueado", updateErr.message);
+  .eq("id", ready.id)
+  .select("id");
+if (updateErr) {
+  console.log("UPDATE signed bloqueado", updateErr.message);
+} else if (mutated && mutated.length > 0) {
+  fail("UPDATE direto alterou a ficha signed");
+} else {
+  console.log("UPDATE signed sem linhas (RLS/imutável)");
+}
+
+const still = await getProcedureById(ready.id);
+if (still?.patient.fullName === "tentativa de adulteracao 4B") {
+  fail("nome do paciente mudou após UPDATE em ficha signed");
+}
+if (still?.status !== "Signed") fail("status signed perdido após UPDATE");
+console.log("imutabilidade ok");
 
 const amendment = await addProcedureAmendment(ready.id, {
   id: "local-ignored",
