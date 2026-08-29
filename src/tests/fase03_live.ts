@@ -39,9 +39,11 @@ if (!blankEval.alerts.some((a) => a.level === "CRITICAL")) fail("blank sem CRITI
 if (blankEval.alerts.some((a) => /capno/i.test(a.title))) fail("capnografia não pode ser critério");
 console.log("1) SigningReadinessEngine recusa blank e não usa capnografia");
 
+const stamp = Date.now();
 let doc = assignNewDocumentOwner(getBlankDocument(), uid);
 doc.status = "Draft";
-doc.patient.fullName = "Paciente Teste Fase 3 Close";
+doc.patient.fullName = `Paciente Teste Fase 3 Close ${stamp}`;
+doc.patient.recordNumber = `FASE03-${stamp}`;
 doc.team.anesthesiologistLead = "Teste";
 doc.team.crmLead = "0000";
 doc.timers = { startAnesthesia: "2026-08-29T15:00:00.000Z" };

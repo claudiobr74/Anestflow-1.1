@@ -295,6 +295,36 @@ Adendos: autor oficial = `auth.uid()` → `profiles`. `p_author_name` / `p_autho
 
 O PDF final fino da Fase 7 (`pdfFinal.ts`) continua sendo um recorte para golden tests e **não** substitui o JSON selado no banco. Live: `fase04b_live.ts` (e `onda3_live.ts` atualizado para o close atômico).
 
+## Checkpoint pós-Fase 4
+
+Auditoria técnica obrigatória **antes** da higiene que ainda falta na Fase 5 e do fatiar App/Intra (6B). Este checkpoint **não inicia higiene**, não apaga `fix_*`, não unifica painéis `id="drugs"` e não fatiar componentes.
+
+Nesse ponto precisam estar comprovadamente estáveis: persistência, segurança clínica básica, cache, permissões, responsabilidade, encerramento e integridade documental.
+
+| Critério do posto | Evidência |
+|---|---|
+| Alterar só Sevo e timer, recarregar | `fase01_live.ts`, `checkpoint_live.ts` |
+| SRPA permanece (Aldrete 0 ≠ vazio) | `fase01_live.ts`, `checkpoint_live.ts` |
+| PDF sem vital não inventa 120/80 | suíte Fase 0+1 / `clinicalDisplay` |
+| Voz sem concentração não inventa 2% | suíte escriba + Sevo no live sem `inspiredConc` |
+| Logout sem ficha no localStorage | suíte Fase 2 |
+| Colaborador em modo leitura + ação de responsabilidade | suíte Fase 3 (`ClinicalEditorLock`) + Fase 4 |
+| A transfere, B aceita, `responsible_id` = B | `fase04_handover_live.ts` (pede `ONDA3_TEST_EMAIL_B`) |
+| Ficha assinada imutável | `onda3_live.ts`, `fase04b_live.ts`, `checkpoint_live.ts` |
+| Hash gerado no servidor | `sign_procedure(uuid)`, live 4B / checkpoint |
+| Adulteração pós-fecho detectável | `verify_procedure_integrity` A+B |
+| Segundo save com revision velha rejeitado | `fase06_live.ts` (já na árvore; critério 11 do posto) |
+| Header / overflow | suíte onda 7 + Fase 5 rename |
+| Suíte 100% com fingerprint, safety, assertCanEdit, responsabilidade, selo e revision | `npx tsx src/tests/run_tests.ts` seção 20 |
+
+Live condensado (persistir → selar → A+B → imutável):
+
+```bash
+npx tsx src/tests/checkpoint_live.ts
+```
+
+Sentinela: `CHECKPOINT_LIVE_OK`. Fora deste checkpoint: settings decorativos, `voided_at`, resíduos `useMultiplayer` / painéis não montados, `fix_*` na raiz, PDF final completo (7F) e `transcript_original`.
+
 ## Fase 5 (renomear `document` → `ficha`)
 
 A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava o `document` do DOM: o menu overflow e o download de modelos precisavam de `window.document` para não bater na ficha.
