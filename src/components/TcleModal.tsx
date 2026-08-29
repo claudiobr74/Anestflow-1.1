@@ -13,16 +13,16 @@ import { formatCPF } from "./PatientTab";
 interface TcleModalProps {
   isOpen: boolean;
   onClose: () => void;
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   user?: { name: string; crm: string; uf: string; hospital: string; uid?: string } | null;
 }
 
-export default function TcleModal({ isOpen, onClose, document: doc, user }: TcleModalProps) {
+export default function TcleModal({ isOpen, onClose, ficha: doc, user }: TcleModalProps) {
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [zoom, setZoom] = useState(65); // Zoom percentage for the A4 pages preview
 
-  // Prefilled states based on document
+  // Prefilled states based on ficha
   const [patientName, setPatientName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [doctorName, setDoctorName] = useState("");
@@ -57,7 +57,7 @@ export default function TcleModal({ isOpen, onClose, document: doc, user }: Tcle
   // Doctor/Emergency settings
   const [isEmergency, setIsEmergency] = useState(false);
 
-  // Sync with document when opened
+  // Sync with ficha when opened
   useEffect(() => {
     if (isOpen && doc) {
       setPatientName(doc.patient?.fullName || "");

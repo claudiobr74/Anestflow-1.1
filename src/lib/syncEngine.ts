@@ -80,11 +80,11 @@ export class SyncQueueManager {
     return readSessionJson(PENDING_QUEUE_KEY, {});
   }
 
-  static enqueue(document: AnesthesiaDocument) {
+  static enqueue(ficha: AnesthesiaDocument) {
     purgeClinicalPhiFromLocalStorage();
     const queue = this.getPendingQueue();
-    queue[document.id] = {
-      doc: document,
+    queue[ficha.id] = {
+      doc: ficha,
       timestamp: new Date().toISOString()
     };
     writeSessionJson(PENDING_QUEUE_KEY, queue);

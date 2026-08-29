@@ -10,21 +10,21 @@ import {
 } from "../lib/clinicalDisplay";
 
 interface RecoveryTabProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onUpdateRecovery: (
     recData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
   ) => void;
   theme?: "light" | "dark" | "dark-clean";
 }
 
-export default function RecoveryTab({ document, onUpdateRecovery, theme = "light" }: RecoveryTabProps) {
-  const recovery = document.recovery;
+export default function RecoveryTab({ ficha, onUpdateRecovery, theme = "light" }: RecoveryTabProps) {
+  const recovery = ficha.recovery;
   const records = recovery.records || [];
 
   // Find latest intraoperative vitals as fallback
   const getLatestIntraoperativeVitals = () => {
-    if (!document.vitals || document.vitals.length === 0) return null;
-    const sorted = [...document.vitals].sort((a, b) => b.minutesFromStart - a.minutesFromStart);
+    if (!ficha.vitals || ficha.vitals.length === 0) return null;
+    const sorted = [...ficha.vitals].sort((a, b) => b.minutesFromStart - a.minutesFromStart);
     return sorted.find(v => v.pas !== undefined || v.fc !== undefined || v.spo2 !== undefined || v.temp !== undefined) || null;
   };
 
@@ -208,9 +208,9 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
   const handleDischarge = () => {
     onUpdateRecovery({
       dischargeTime: new Date().toISOString(),
-      dischargingAnesthesiologist: document.team.anesthesiologistLead,
-      dischargingCRM: document.team.crmLead,
-      dischargingUF: document.team.ufLead,
+      dischargingAnesthesiologist: ficha.team.anesthesiologistLead,
+      dischargingCRM: ficha.team.crmLead,
+      dischargingUF: ficha.team.ufLead,
       dischargeDestination: "Enfermaria (Quarto)",
       dischargeInstructions: "Repouso no leito, analgésicos SOS conforme prescrição pós-operatória, dieta branda após restabelecimento motor completo."
     });
@@ -223,7 +223,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
       <div className="bg-white dark:bg-zinc-900 border-slate-200/60 dark:border-zinc-800/60 p-6 rounded-lg border shadow-sm transition-colors grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
         <div>
           <span className="text-xs text-slate-400 dark:text-zinc-500 block font-medium">Anestesiologista de Recebimento</span>
-          <span className="text-sm font-bold text-slate-800 dark:text-zinc-100">{document.team.anesthesiologistLead}</span>
+          <span className="text-sm font-bold text-slate-800 dark:text-zinc-100">{ficha.team.anesthesiologistLead}</span>
         </div>
         <div>
           <span className="text-xs text-slate-400 dark:text-zinc-500 block font-medium">Horário de Admissão na SRPA</span>
@@ -776,7 +776,7 @@ export default function RecoveryTab({ document, onUpdateRecovery, theme = "light
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-zinc-400 mb-1">Responsável pela Alta</label>
                     <div className="w-full bg-slate-100 dark:bg-zinc-900/80 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600">
-                      {document.team.anesthesiologistLead}
+                      {ficha.team.anesthesiologistLead}
                     </div>
                   </div>
                 </div>

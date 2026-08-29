@@ -24,7 +24,7 @@ export const formatCPF = (value: string) => {
 };
 
 interface PatientTabProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onChangePatient: (patientData: Partial<PatientInfo>) => void;
   onChangeTeam: (teamData: Partial<AnesthesiaDocument["team"]>) => void;
   onLoadWorklist?: (cpf: string) => Promise<void>;
@@ -34,14 +34,14 @@ interface PatientTabProps {
   onOpenTransferModal?: () => void;
 }
 
-export default function PatientTab({ document, onChangePatient, onChangeTeam, onLoadWorklist, onSaveWorklist, theme = "light", user, onOpenTransferModal }: PatientTabProps) {
-  const p = document.patient;
-  const team = document.team;
+export default function PatientTab({ ficha, onChangePatient, onChangeTeam, onLoadWorklist, onSaveWorklist, theme = "light", user, onOpenTransferModal }: PatientTabProps) {
+  const p = ficha.patient;
+  const team = ficha.team;
   const tc = getThemeClasses(theme);
   const [isTcleOpen, setIsTcleOpen] = useState(false);
-  const [cpf, setCpf] = useState(document.patient?.cpf || "");
+  const [cpf, setCpf] = useState(ficha.patient?.cpf || "");
 
-  const isClosed = !isClinicalEditor(document, user?.uid);
+  const isClosed = !isClinicalEditor(ficha, user?.uid);
   const [isSearching, setIsSearching] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [worklistMsg, setWorklistMsg] = useState("");
@@ -420,9 +420,9 @@ export default function PatientTab({ document, onChangePatient, onChangeTeam, on
                 )}
               </div>
 
-              {document.transfers && document.transfers.length > 0 ? (
+              {ficha.transfers && ficha.transfers.length > 0 ? (
                 <div className="space-y-2 mt-3">
-                  {document.transfers.map((t, idx) => (
+                  {ficha.transfers.map((t, idx) => (
                     <div key={t.id || idx} className={`p-2.5 rounded-lg text-xs border ${isDark ? "bg-zinc-900/70 border-zinc-800 text-zinc-300" : "bg-white border-indigo-100 text-slate-800"}`}>
                       <div className="flex items-center justify-between font-bold text-indigo-600 dark:text-indigo-400">
                         <span>
@@ -502,7 +502,7 @@ export default function PatientTab({ document, onChangePatient, onChangeTeam, on
         <TcleModal
           isOpen={isTcleOpen}
           onClose={() => setIsTcleOpen(false)}
-          document={document}
+          ficha={ficha}
           user={user}
         />
 

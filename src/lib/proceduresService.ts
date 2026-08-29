@@ -121,18 +121,18 @@ async function signOnServer(cleanedDoc: AnesthesiaDocument): Promise<void> {
  * Grava a ficha no Supabase (tabela procedures + eventos filhos).
  * Assinatura usa a RPC sign_procedure (o cliente não pode UPDATE para signed).
  */
-export async function saveProcedure(document: AnesthesiaDocument, userId: string): Promise<void> {
+export async function saveProcedure(ficha: AnesthesiaDocument, userId: string): Promise<void> {
   if (!userId) throw new Error("Usuário não autenticado.");
-  if (!isMeaningfulDocument(document)) return;
-  if (isMockProcedureId(document.id)) return;
+  if (!isMeaningfulDocument(ficha)) return;
+  if (isMockProcedureId(ficha.id)) return;
 
-  const cleanedDoc = ensureUniqueClinicalEventIds(document);
+  const cleanedDoc = ensureUniqueClinicalEventIds(ficha);
 
   if (!isUuid(cleanedDoc.id) && (cleanedDoc.id.startsWith("doc-") || cleanedDoc.id.includes("temp"))) {
     const existingId = await findExistingDraftId(cleanedDoc, userId);
     if (existingId) {
       cleanedDoc.id = existingId;
-      document.id = existingId;
+      ficha.id = existingId;
     }
   }
 
@@ -186,7 +186,7 @@ export async function saveProcedure(document: AnesthesiaDocument, userId: string
           ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
         });
         if (insertError) throwClinical(insertError);
-        document.id = cleanedDoc.id;
+        ficha.id = cleanedDoc.id;
       }
     } else {
       const newId = crypto.randomUUID();
@@ -198,15 +198,15 @@ export async function saveProcedure(document: AnesthesiaDocument, userId: string
       });
       if (insertError) throwClinical(insertError);
       cleanedDoc.id = newId;
-      document.id = newId;
+      ficha.id = newId;
     }
 
     await persistClinicalChildren(cleanedDoc, userId);
 
     if (cleanedDoc.status === "Signed") {
       await signOnServer(cleanedDoc);
-      document.hash = cleanedDoc.hash;
-      document.status = "Signed";
+      ficha.hash = cleanedDoc.hash;
+      ficha.status = "Signed";
     }
   };
 

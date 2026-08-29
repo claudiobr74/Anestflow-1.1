@@ -11,7 +11,7 @@ interface IntraoperativeDrugsPanelProps {
   borderClass: string;
   inputClass: string;
   selectClass: string;
-  document: any;
+  ficha: any;
   onUpdateDocument: any;
   patient: any;
   allAvailableDrugs: any[];
@@ -54,7 +54,7 @@ export default function IntraoperativeDrugsPanel({
   borderClass,
   inputClass,
   selectClass,
-  document,
+  ficha,
   onUpdateDocument,
   patient,
   allAvailableDrugs,
@@ -236,7 +236,7 @@ export default function IntraoperativeDrugsPanel({
             const ampouleVolume = (selectedDrug as any).ampouleVolume;
             if (!ampouleAmount) return null;
             
-            const currentDrugBoluses = document.bolusDrugs?.filter((b: any) => b.name === selectedDrug.name) || [];
+            const currentDrugBoluses = ficha.bolusDrugs?.filter((b: any) => b.name === selectedDrug.name) || [];
             const totalDoseGiven = currentDrugBoluses.reduce((acc: number, b: any) => acc + (typeof b.dose === "number" ? b.dose : 0), 0);
             
             const currentAmpoules = Math.ceil(totalDoseGiven / ampouleAmount);

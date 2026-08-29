@@ -10,7 +10,7 @@ import { calculateIMC } from "../mockData";
 import { getThemeClasses } from "../lib/theme";
 
 interface PreEvaluationTabProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onChange: (evalData: Partial<PreAnestheticEvaluation>) => void;
   theme?: "light" | "dark" | "dark-clean";
 }
@@ -28,8 +28,8 @@ const SYSTEM_OPTIONS = {
   infectious: ["HIV"]
 };
 
-export default function PreEvaluationTab({ document, onChange, theme = "light" }: PreEvaluationTabProps) {
-  const data = document.preEvaluation;
+export default function PreEvaluationTab({ ficha, onChange, theme = "light" }: PreEvaluationTabProps) {
+  const data = ficha.preEvaluation;
   const tc = getThemeClasses(theme);
 
   // Auto-calcula Via Aérea Difícil
@@ -44,7 +44,7 @@ export default function PreEvaluationTab({ document, onChange, theme = "light" }
     if (data.airwayEvaluation.neckAspect === "Largo (>40cm)" || data.airwayEvaluation.neckAspect === "Curto") score += 1;
     if (data.airwayEvaluation.interincisivos === "< 3 cm") score += 1;
     if (!data.airwayEvaluation.mandibularProtrusionNormal) score += 1;
-    if (document.patient?.imc && document.patient?.imc >= 35) score += 1;
+    if (ficha.patient?.imc && ficha.patient?.imc >= 35) score += 1;
 
     const isDifficult = score >= 2;
 
@@ -64,7 +64,7 @@ export default function PreEvaluationTab({ document, onChange, theme = "light" }
     data?.airwayEvaluation?.neckAspect,
     data?.airwayEvaluation?.interincisivos,
     data?.airwayEvaluation?.mandibularProtrusionNormal,
-    document?.patient?.imc,
+    ficha?.patient?.imc,
     data?.airwayEvaluation?.predictDifficultAirway
   ]);
 

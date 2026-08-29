@@ -111,29 +111,29 @@ export const SYSTEM_MODELS: AnesthesiaModel[] = [
   }
 ];
 
-export function compileNarrativeDraft(techniques: string[], document: AnesthesiaDocument): string {
-  // Extract registered details dynamically from the document without inventing anything!
+export function compileNarrativeDraft(techniques: string[], ficha: AnesthesiaDocument): string {
+  // Extract registered details dynamically from the ficha without inventing anything!
   
   // 1. Monitorização registrada
   const monitors: string[] = [];
-  if (document.monitorConfig?.cardioscopy) monitors.push("cardioscopia");
-  if (document.monitorConfig?.pani) monitors.push("pressão arterial não invasiva (PANI)");
-  if (document.monitorConfig?.pai) monitors.push("pressão arterial invasiva (PAI)");
-  if (document.monitorConfig?.oximetry) monitors.push("oximetria de pulso");
-  if (document.monitorConfig?.capnography) monitors.push("capnografia");
-  if (document.monitorConfig?.temperature) monitors.push("temperatura");
-  if (document.monitorConfig?.bis) monitors.push("índice bispectral (BIS)");
-  if (document.monitorConfig?.entropy) monitors.push("entropia");
-  if (document.monitorConfig?.tof) monitors.push("sequência de quatro estímulos (TOF)");
-  if (document.monitorConfig?.pvc) monitors.push("pressão venosa central (PVC)");
-  if (document.monitorConfig?.cardiacOutput) monitors.push("débito cardíaco");
-  if (document.monitorConfig?.gasMonitor) monitors.push("analisador de gases expirados");
-  if (document.monitorConfig?.diuresis) monitors.push("débito urinário");
-  if (document.monitorConfig?.other) monitors.push(document.monitorConfig.other);
+  if (ficha.monitorConfig?.cardioscopy) monitors.push("cardioscopia");
+  if (ficha.monitorConfig?.pani) monitors.push("pressão arterial não invasiva (PANI)");
+  if (ficha.monitorConfig?.pai) monitors.push("pressão arterial invasiva (PAI)");
+  if (ficha.monitorConfig?.oximetry) monitors.push("oximetria de pulso");
+  if (ficha.monitorConfig?.capnography) monitors.push("capnografia");
+  if (ficha.monitorConfig?.temperature) monitors.push("temperatura");
+  if (ficha.monitorConfig?.bis) monitors.push("índice bispectral (BIS)");
+  if (ficha.monitorConfig?.entropy) monitors.push("entropia");
+  if (ficha.monitorConfig?.tof) monitors.push("sequência de quatro estímulos (TOF)");
+  if (ficha.monitorConfig?.pvc) monitors.push("pressão venosa central (PVC)");
+  if (ficha.monitorConfig?.cardiacOutput) monitors.push("débito cardíaco");
+  if (ficha.monitorConfig?.gasMonitor) monitors.push("analisador de gases expirados");
+  if (ficha.monitorConfig?.diuresis) monitors.push("débito urinário");
+  if (ficha.monitorConfig?.other) monitors.push(ficha.monitorConfig.other);
   const monitorString = monitors.length > 0 ? monitors.join(", ") : undefined;
 
   // 2. Acessos
-  const accesses = document.vascularAccesses?.map(acc => {
+  const accesses = ficha.vascularAccesses?.map(acc => {
     return `${acc.type} ${acc.gauge ? `calibre ${acc.gauge}` : ""} em ${acc.site || ""} ${acc.side && acc.side !== "N/A" ? `(${acc.side})` : ""}`.trim().replace(/\s+/g, " ");
   });
   const accessString = accesses && accesses.length > 0 ? accesses.join(" e ") : undefined;
@@ -150,22 +150,22 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       return "";
     }
   };
-  const startAnesthTime = formatTime(document.timers?.startAnesthesia);
-  const endAnesthTime = formatTime(document.timers?.endAnesthesia);
+  const startAnesthTime = formatTime(ficha.timers?.startAnesthesia);
+  const endAnesthTime = formatTime(ficha.timers?.endAnesthesia);
 
   // 4. Airway
-  const airwayTech = document.airway?.ventilationType;
-  const airwayDevice = document.airway?.deviceSize ? `tamanho ${document.airway.deviceSize}` : "";
-  const airwayAttempts = document.airway?.attempts;
-  const airwayConfirm = document.airway?.capnographyConfirmed ? "capnografia" : undefined;
+  const airwayTech = ficha.airway?.ventilationType;
+  const airwayDevice = ficha.airway?.deviceSize ? `tamanho ${ficha.airway.deviceSize}` : "";
+  const airwayAttempts = ficha.airway?.attempts;
+  const airwayConfirm = ficha.airway?.capnographyConfirmed ? "capnografia" : undefined;
 
   // 5. Ventilation & Maintenance
-  const ventilationMode = document.vitals && document.vitals.length > 0
-    ? document.vitals.find(v => v.fr !== undefined || v.peep !== undefined) ? "controlada mecânica" : "espontânea"
+  const ventilationMode = ficha.vitals && ficha.vitals.length > 0
+    ? ficha.vitals.find(v => v.fr !== undefined || v.peep !== undefined) ? "controlada mecânica" : "espontânea"
     : undefined;
   
-  const inalatorios = document.inhalationAgents?.map(i => i.agent).filter(Boolean);
-  const isBalanced = document.technique?.balanced;
+  const inalatorios = ficha.inhalationAgents?.map(i => i.agent).filter(Boolean);
+  const isBalanced = ficha.technique?.balanced;
   const maintenanceText = inalatorios && inalatorios.length > 0 
     ? inalatorios.join(", ") 
     : isBalanced 
@@ -173,31 +173,31 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       : undefined;
 
   // 6. Patient positioning & procedure
-  const patientPos = document.technique?.regionalDetails?.position || undefined;
-  const destination = document.handover?.destination || undefined;
-  const condition = document.handover?.dischargeCondition || undefined;
+  const patientPos = ficha.technique?.regionalDetails?.position || undefined;
+  const destination = ficha.handover?.destination || undefined;
+  const condition = ficha.handover?.dischargeCondition || undefined;
 
   // 7. Incidents/Intercorrências
-  const incidentTexts = document.incidents?.map(i => `${i.description} (conduta: ${i.conductTaken})`).join("; ");
+  const incidentTexts = ficha.incidents?.map(i => `${i.description} (conduta: ${i.conductTaken})`).join("; ");
 
   // 8. Regional details
-  const regType = document.technique?.regionalDetails?.type || undefined;
-  const regSite = document.technique?.regionalDetails?.site || undefined;
-  const regSide = document.technique?.regionalDetails?.side || undefined;
-  const regLevel = document.technique?.regionalDetails?.level || undefined;
+  const regType = ficha.technique?.regionalDetails?.type || undefined;
+  const regSite = ficha.technique?.regionalDetails?.site || undefined;
+  const regSide = ficha.technique?.regionalDetails?.side || undefined;
+  const regLevel = ficha.technique?.regionalDetails?.level || undefined;
   const regGuide = [
-    document.technique?.regionalDetails?.ultrasoundGuided ? "ultrassonografia" : "",
-    document.technique?.regionalDetails?.neurostimulator ? "neuroestimulação" : ""
+    ficha.technique?.regionalDetails?.ultrasoundGuided ? "ultrassonografia" : "",
+    ficha.technique?.regionalDetails?.neurostimulator ? "neuroestimulação" : ""
   ].filter(Boolean).join(" associado a ");
   const needle = [
-    document.technique?.regionalDetails?.needleType || "",
-    document.technique?.regionalDetails?.needleGauge ? `calibre ${document.technique.regionalDetails.needleGauge}` : "",
-    document.technique?.regionalDetails?.needleLength ? `${document.technique.regionalDetails.needleLength}mm` : ""
+    ficha.technique?.regionalDetails?.needleType || "",
+    ficha.technique?.regionalDetails?.needleGauge ? `calibre ${ficha.technique.regionalDetails.needleGauge}` : "",
+    ficha.technique?.regionalDetails?.needleLength ? `${ficha.technique.regionalDetails.needleLength}mm` : ""
   ].filter(Boolean).join(", ");
-  const hasCatheter = document.technique?.regionalDetails?.catheterInserted;
-  const catheterNum = document.technique?.regionalDetails?.catheterDepth ? `calibre/profundidade ${document.technique.regionalDetails.catheterDepth}` : undefined;
-  const testDose = document.technique?.regionalDetails?.testDose || undefined;
-  const blockResult = document.technique?.regionalDetails?.result || undefined;
+  const hasCatheter = ficha.technique?.regionalDetails?.catheterInserted;
+  const catheterNum = ficha.technique?.regionalDetails?.catheterDepth ? `calibre/profundidade ${ficha.technique.regionalDetails.catheterDepth}` : undefined;
+  const testDose = ficha.technique?.regionalDetails?.testDose || undefined;
+  const blockResult = ficha.technique?.regionalDetails?.result || undefined;
 
   // Helper to resolve bracket placeholders gracefully
   const resolvePlaceholder = (val: string | number | undefined, placeholder: string): string => {
@@ -240,9 +240,9 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
   sortedTechs.forEach(tech => {
     if (tech === "Anestesia local") {
       const pLocalLoc = resolvePlaceholder(regSite, "local anatômico");
-      const pLocalAnest = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "anestésico registrado");
+      const pLocalAnest = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "anestésico registrado");
       const pLocalPos = resolvePlaceholder(patientPos, "posição");
-      const pSedation = document.technique?.sedation ? "Sob sedação complementar." : "[__sedação associada__]";
+      const pSedation = ficha.technique?.sedation ? "Sob sedação complementar." : "[__sedação associada__]";
       paragraphs.push(`Anestesia local em ${pLocalLoc} com ${pLocalAnest}. Posição: ${pLocalPos}. ${pSedation} Resultado: [__resultado da anestesia local__].`);
     }
     else if (tech === "Anestesia locorregional") {
@@ -252,7 +252,7 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       const pPos = resolvePlaceholder(patientPos, "posição");
       const pGuide = regGuide || "referência anatômica";
       const pNeedle = needle || "[__agulha: tipo, calibre e comprimento__]";
-      const pVol = resolvePlaceholder(document.technique?.regionalDetails?.attempts, "volume/doses");
+      const pVol = resolvePlaceholder(ficha.technique?.regionalDetails?.attempts, "volume/doses");
       const pResult = resolvePlaceholder(blockResult, "resultado do bloqueio");
       paragraphs.push(`Bloqueio ${pType} em ${pSite} (${pSide}). Posição: ${pPos}. Guiado por ${pGuide}, agulha ${pNeedle}. Fármacos conforme ficha. Resultado: ${pResult}.`);
     }
@@ -284,12 +284,12 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
     }
     else if (tech === "Sedação leve / consciente") {
       const pSuplement = "cateter nasal / máscara facial";
-      const pSedDrugs = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "fármacos sedativos e doses");
+      const pSedDrugs = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "fármacos sedativos e doses");
       paragraphs.push(`Sedação leve / consciente sob monitorização contínua. Administrado suplemento de Oxigênio via ${pSuplement}. Realizada infusão/titulação de ${pSedDrugs}. Paciente mantido em respiração espontânea rítmica, respondendo prontamente a comandos verbais simples, hemodinamicamente estável e cooperativo (Ramsay 2-3, RASS -1 a -2).`);
     }
     else if (tech === "Sedação profunda") {
       const pSuplement = "cateter nasal / máscara facial";
-      const pSedDrugs = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "fármacos sedativos e doses");
+      const pSedDrugs = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "fármacos sedativos e doses");
       const pAirwaySupport = "sem necessidade de suporte mecânico de via aérea avançada";
       paragraphs.push(`Sedação profunda sob supervisão direta do anestesiologista. Administrado suplemento de Oxigênio via ${pSuplement}. Infusão contínua/titulada de ${pSedDrugs}. Paciente mantido sob depressão profunda da consciência (Ramsay 5-6, RASS -4), com respiração espontânea preservada, ${pAirwaySupport}. Estabilidade ventilatória e hemodinâmica mantida durante todo o procedimento.`);
     }
@@ -310,8 +310,8 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       const pPos = resolvePlaceholder(patientPos, "posição");
       const pGuide = regGuide || "ultrassonografia de alta frequência";
       const pNeedle = needle || "agulha ecogênica de bisel curto 50mm";
-      const pDrugs = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
-      const pVol = resolvePlaceholder(document.technique?.regionalDetails?.attempts, "volume total (mL)");
+      const pDrugs = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
+      const pVol = resolvePlaceholder(ficha.technique?.regionalDetails?.attempts, "volume total (mL)");
       const pResult = resolvePlaceholder(blockResult, "resultado do bloqueio sensitivo/motor");
       paragraphs.push(`Bloqueio do plexo braquial por abordagem ${pType} (${pSide}). Paciente posicionado em ${pPos}. Sob técnica estéril, identificadas as estruturas nervosas e vasculares por ${pGuide}. Punção em plano com agulha ${pNeedle}. Sob aspiração negativa intermitente e hidrolocalização, injetado ${pDrugs} no volume de ${pVol} mL, com adequada dispersão perineural circunferencial. Bloqueio motor e sensitivo confirmados: ${pResult}. Sem sinais imediatos de toxicidade sistêmica (LAST).`);
     }
@@ -319,8 +319,8 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       const pSide = resolvePlaceholder(regSide, "lateralidade (Bilateral/Unilateral)");
       const pGuide = "ultrassonografia de alta frequência";
       const pNeedle = needle || "agulha ecogênica de bisel curto 50mm/80mm";
-      const pDrugs = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
-      const pVol = resolvePlaceholder(document.technique?.regionalDetails?.attempts, "volume total (mL)");
+      const pDrugs = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
+      const pVol = resolvePlaceholder(ficha.technique?.regionalDetails?.attempts, "volume total (mL)");
       paragraphs.push(`Bloqueio do plano transverso do abdômen (TAP Block) de forma ${pSide}, guiado por ${pGuide}. Sob técnica asséptica, identificados os planos musculares (oblíquo externo, interno e transverso do abdômen). Introduzida agulha ${pNeedle} em plano até o espaço interfascial alvo. Realizada aspiração negativa intermitente e injeção de ${pDrugs} num total de ${pVol} mL, observando-se dispersão linear e deposição adequada do anestésico local.`);
     }
     else if (tech === "Bloqueio de membro inferior") {
@@ -329,8 +329,8 @@ export function compileNarrativeDraft(techniques: string[], document: Anesthesia
       const pPos = resolvePlaceholder(patientPos, "posição");
       const pGuide = regGuide || "ultrassonografia [e/ou neuroestimulador]";
       const pNeedle = needle || "agulha ecogênica de bisel curto";
-      const pDrugs = resolvePlaceholder(document.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
-      const pVol = resolvePlaceholder(document.technique?.regionalDetails?.attempts, "volume total (mL)");
+      const pDrugs = resolvePlaceholder(ficha.technique?.regionalDetails?.drugsUsed, "anestésicos locais e doses");
+      const pVol = resolvePlaceholder(ficha.technique?.regionalDetails?.attempts, "volume total (mL)");
       const pResult = resolvePlaceholder(blockResult, "resultado do bloqueio");
       paragraphs.push(`Bloqueio de nervo periférico de membro inferior: ${pType} (${pSide}). Paciente posicionado em ${pPos}. Sob técnica asséptica rigorosa, identificada a anatomia alvo guiada por ${pGuide}. Punção com agulha ${pNeedle} até proximidade neural. Após aspiração negativa, injetados ${pDrugs} em volume de ${pVol} mL. Dispersão circunferencial adequada observada em tempo real. Resultado sensitivo e motor: ${pResult}.`);
     }

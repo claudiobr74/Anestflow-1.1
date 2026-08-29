@@ -10,7 +10,7 @@ import {
 import { isUuid } from '../lib/procedureMapper';
 
 interface ShareModalProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   isDark: boolean;
   onClose: () => void;
   onUpdateDocument: (doc: Partial<AnesthesiaDocument>) => void;
@@ -29,7 +29,7 @@ interface UserProfileInfo {
 }
 
 export default function ShareModal({
-  document,
+  ficha,
   isDark,
   onClose,
   onUpdateDocument,
@@ -46,19 +46,19 @@ export default function ShareModal({
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfileInfo>>({});
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
 
-  const participantUids = document.participantUids || [];
-  const sharedWithEmails = document.sharedWithEmails || [];
+  const participantUids = ficha.participantUids || [];
+  const sharedWithEmails = ficha.sharedWithEmails || [];
 
   // Fetch profiles for existing participantUids (RPC da ficha; sem SELECT global em profiles)
   useEffect(() => {
-    if (!isUuid(document.id) || participantUids.length === 0) return;
+    if (!isUuid(ficha.id) || participantUids.length === 0) return;
 
     let isMounted = true;
     setIsLoadingProfiles(true);
 
     const fetchProfiles = async () => {
       try {
-        const rows = await listProcedureParticipantProfiles(document.id);
+        const rows = await listProcedureParticipantProfiles(ficha.id);
         if (!isMounted) return;
         const profilesMap: Record<string, UserProfileInfo> = {};
         for (const row of rows) {
@@ -84,7 +84,7 @@ export default function ShareModal({
     return () => {
       isMounted = false;
     };
-  }, [document.id, participantUids.join(',')]);
+  }, [ficha.id, participantUids.join(',')]);
 
   const handleSearchAndAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +99,7 @@ export default function ShareModal({
 
     setIsSearching(true);
     try {
-      if (!isUuid(document.id)) {
+      if (!isUuid(ficha.id)) {
         setSearchError("Salve a ficha na nuvem antes de compartilhar com um colega.");
         return;
       }
@@ -114,7 +114,7 @@ export default function ShareModal({
           return;
         }
 
-        await addParticipantByEmail(document.id, cleanEmail);
+        await addParticipantByEmail(ficha.id, cleanEmail);
 
         const newUids = Array.from(new Set([...participantUids, targetUid]));
         const updatedEmails = sharedWithEmails.filter(e => e.toLowerCase() !== cleanEmail);
@@ -150,15 +150,15 @@ export default function ShareModal({
   };
 
   const handleRemoveUid = async (uidToRemove: string) => {
-    const isOwnerOrLead = uidToRemove === document.createdByUid || uidToRemove === document.currentResponsibleUid;
+    const isOwnerOrLead = uidToRemove === ficha.createdByUid || uidToRemove === ficha.currentResponsibleUid;
     if (isOwnerOrLead) {
       alert("Não é possível remover o criador ou o anestesiologista responsável atual.");
       return;
     }
 
     try {
-      if (isUuid(document.id)) {
-        await removeProcedureCollaborator(document.id, uidToRemove);
+      if (isUuid(ficha.id)) {
+        await removeProcedureCollaborator(ficha.id, uidToRemove);
       }
       const updated = participantUids.filter(u => u !== uidToRemove);
       onUpdateDocument({ participantUids: updated });
@@ -199,7 +199,7 @@ export default function ShareModal({
               onClose();
               onOpenTransferModal();
             }}
-            disabled={document.status === "Signed"}
+            disabled={ficha.status === "Signed"}
             className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center justify-center gap-2"
           >
             <ArrowRightLeft className="w-4 h-4" />
@@ -248,7 +248,7 @@ export default function ShareModal({
                   setSearchError(null);
                   setSearchSuccess(null);
                 }}
-                disabled={document.status === "Signed" || isSearching}
+                disabled={ficha.status === "Signed" || isSearching}
                 className={`w-full pl-9 pr-4 py-2 text-xs rounded-lg border focus:ring-2 focus:ring-indigo-500 outline-none transition ${
                   isDark
                     ? "bg-zinc-800/50 border-zinc-700 text-white placeholder-zinc-500"
@@ -258,7 +258,7 @@ export default function ShareModal({
             </div>
             <button
               type="submit"
-              disabled={!searchEmail || document.status === "Signed" || isSearching}
+              disabled={!searchEmail || ficha.status === "Signed" || isSearching}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
             >
               {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -294,8 +294,8 @@ export default function ShareModal({
                 <>
                   {participantUids.map(uid => {
                     const prof = userProfiles[uid];
-                    const isCreator = uid === document.createdByUid;
-                    const isResponsible = uid === document.currentResponsibleUid;
+                    const isCreator = uid === ficha.createdByUid;
+                    const isResponsible = uid === ficha.currentResponsibleUid;
 
                     return (
                       <div
@@ -337,7 +337,7 @@ export default function ShareModal({
                         {!isCreator && !isResponsible && (
                           <button
                             onClick={() => handleRemoveUid(uid)}
-                            disabled={document.status === "Signed"}
+                            disabled={ficha.status === "Signed"}
                             className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition disabled:opacity-30"
                             title="Revogar Acesso UID"
                           >
@@ -368,7 +368,7 @@ export default function ShareModal({
 
                       <button
                         onClick={() => handleRemoveEmail(email)}
-                        disabled={document.status === "Signed"}
+                        disabled={ficha.status === "Signed"}
                         className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg transition disabled:opacity-30"
                         title="Remover convite por e-mail"
                       >

@@ -24,7 +24,7 @@ import { combineDateAndTime, formatToLocalTime, getLocalDateStringNow, getLocalT
 import { newClientId } from "../lib/procedureMapper";
 
 interface IntraoperativeTabProps {
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
   onUpdateDocument: (updates: AnesthesiaDocumentPatch) => void;
   selectedMinutes: number | null;
   onTimeSelect: (mins: number | null) => void;
@@ -36,7 +36,7 @@ interface IntraoperativeTabProps {
 }
 
 export default function IntraoperativeTab({
-  document,
+  ficha,
   onUpdateDocument,
   selectedMinutes,
   onTimeSelect,
@@ -60,7 +60,7 @@ export default function IntraoperativeTab({
   equipmentConfig = {} as any,
   vascularAccesses = [],
   narrativeLaunches = []
-} = document;
+} = ficha;
 
   const isDark = theme === "dark" || theme === "dark-clean";
   const cardClass = isDark
@@ -353,7 +353,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       return;
     }
 
-    const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+    const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
     const isoString = combineDateAndTime(patientDate, timeString, "America/Sao_Paulo");
 
     onUpdateDocument((prev) => {
@@ -508,7 +508,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       timestamp = new Date().toISOString();
       mins = timers.startAnesthesia ? Math.round((Date.now() - new Date(timers.startAnesthesia).getTime()) / 60000) : 0;
     } else {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       const timeStr = customTime || "00:00";
       // Construct UTC-based ISO String as used throughout the app
       const isoString = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
@@ -560,7 +560,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       startTimestamp = new Date().toISOString();
       startMins = timers.startAnesthesia ? Math.round((Date.now() - new Date(timers.startAnesthesia).getTime()) / 60000) : 0;
     } else {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       const timeStr = newInfusion.customStartTime || "00:00";
       const isoString = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
       startTimestamp = isoString;
@@ -580,7 +580,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
     ];
 
     if (newInfusion.endTimeMode === "custom" && newInfusion.customEndTime) {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       const timeStr = newInfusion.customEndTime || "00:00";
       const isoString = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
       
@@ -623,7 +623,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
         ? [{
             id: newClientId(),
             name: `Bomba: ${newInfusion.name} finalizada`,
-            timestamp: combineDateAndTime(document.patient?.date || getLocalDateStringNow("America/Sao_Paulo"), newInfusion.customEndTime, "America/Sao_Paulo"),
+            timestamp: combineDateAndTime(ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo"), newInfusion.customEndTime, "America/Sao_Paulo"),
             category: "Procedimento" as any,
           }]
         : [])]
@@ -702,7 +702,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
 
   // Gases and Inhalation agent management
   const handleStartInhalationAgent = () => {
-    if ((document.inhalationAgents || []).some(ia => ia.agent === newAgent.agent)) {
+    if ((ficha.inhalationAgents || []).some(ia => ia.agent === newAgent.agent)) {
       return;
     }
     let startTimestamp: string;
@@ -712,7 +712,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
       startTimestamp = new Date().toISOString();
       startMins = timers.startAnesthesia ? Math.round((Date.now() - new Date(timers.startAnesthesia).getTime()) / 60000) : 0;
     } else {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       const timeStr = newAgent.customStartTime || "00:00";
       const isoString = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
       startTimestamp = isoString;
@@ -724,7 +724,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
 
     let endTimestamp: string | undefined = undefined;
     if (newAgent.endTimeMode === "custom" && newAgent.customEndTime) {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       const timeStr = newAgent.customEndTime || "00:00";
       endTimestamp = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
     }
@@ -850,7 +850,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
   
   // --- RECONSTRUCTED MISSING CODE ---
   const activeInterval = 5;
-  const lastVital = document.vitals && document.vitals.length > 0 ? document.vitals[document.vitals.length - 1] : null;
+  const lastVital = ficha.vitals && ficha.vitals.length > 0 ? ficha.vitals[ficha.vitals.length - 1] : null;
   const lastVitalTime = lastVital ? new Date(lastVital.timestamp).getTime() : (timers.startAnesthesia ? new Date(timers.startAnesthesia).getTime() : Date.now());
   const elapsedMs = Date.now() - lastVitalTime;
   const elapsedMins = elapsedMs / 60000;
@@ -868,7 +868,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
     if (fluidTimeMode === "now") {
       fluidTimestamp = new Date().toISOString();
     } else {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       fluidTimestamp = combineDateAndTime(patientDate, customFluidTime || "00:00", "America/Sao_Paulo");
     }
     const fluidObj: any = {
@@ -902,7 +902,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
     if (fluidTimeMode === "now") {
       outTimestamp = new Date().toISOString();
     } else {
-      const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+      const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
       outTimestamp = combineDateAndTime(patientDate, customFluidTime || "00:00", "America/Sao_Paulo");
     }
     
@@ -930,7 +930,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
   };
 
   const getSelectedTechnique = () => {
-    const tech: any = document.technique || {};
+    const tech: any = ficha.technique || {};
     if (tech.combinedSpinalEpidural) return "combinedSpinalEpidural";
     if (tech.balanced) return "balanced";
     if (tech.generalIV) return "generalIV";
@@ -998,7 +998,7 @@ const handleUpdateTimerValue = (key: keyof typeof timers, label: string, timeStr
     const newAccesses: any[] = [];
     const newBlocks: any[] = [];
     
-    let updatedAirway = document.airway;
+    let updatedAirway = ficha.airway;
 
     const uniqueSuffix = () => Math.random().toString(36).substring(2, 7);
 
@@ -1228,7 +1228,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
     }));
   };
 
-  const airway = document.airway || {
+  const airway = ficha.airway || {
     ventilationType: "Espontânea",
     ventilationMode: "Espontânea",
     deviceSize: "",
@@ -1290,7 +1290,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
           attempts: 1,
           ultrasoundGuided: false,
           timestamp: new Date().toISOString(),
-          professional: document.team.anesthesiologistLead
+          professional: ficha.team.anesthesiologistLead
         });
       }
       onUpdateDocument((prev) => {
@@ -1341,7 +1341,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
             attempts: 1,
             ultrasoundGuided: false,
             timestamp: new Date().toISOString(),
-            professional: document.team.anesthesiologistLead
+            professional: ficha.team.anesthesiologistLead
           });
         }
       } else if (targetCount < finalPeripheral.length) {
@@ -1375,7 +1375,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
             attempts: 1,
             ultrasoundGuided: true,
             timestamp: new Date().toISOString(),
-            professional: document.team.anesthesiologistLead
+            professional: ficha.team.anesthesiologistLead
           });
         } else {
           finalCentral = finalCentral.map(c => ({ ...c, site: updates.centralSite! }));
@@ -1451,7 +1451,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
 
   const hydrationSummary = `Entradas: ${totalInflow} ml | Saídas: ${totalOutflow} ml | Balanço: ${netBalance} ml`;
 
-  const notesCount = document.narrativeLaunches?.length || 0;
+  const notesCount = ficha.narrativeLaunches?.length || 0;
   const descriptionSummary = notesCount > 0 
     ? `${notesCount} registro${notesCount > 1 ? "s" : ""} lançado${notesCount > 1 ? "s" : ""}`
     : "Sem registros";
@@ -1746,7 +1746,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
         handleUpdateInfusionStatus={handleUpdateInfusionStatus}
         handleUpdateInfusion={handleUpdateInfusion}
         handleRemoveInfusion={handleRemoveInfusion}
-        patientWeight={document.patient?.weight}
+        patientWeight={ficha.patient?.weight}
       /></div></DraggablePanel>
     );
   };
@@ -2406,7 +2406,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
             borderClass={borderClass}
             inputClass={inputClass}
             selectClass={selectClass}
-            document={document}
+            ficha={ficha}
             onUpdateDocument={onUpdateDocument}
             patient={patient}
             allAvailableDrugs={allAvailableDrugs}
@@ -2647,7 +2647,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
       <DraggablePanel key="chart" id="chart" isDark={isDark} className="w-full max-w-full min-w-0">
         <div className="flex-1 min-h-[420px]">
           <ClinicalChart
-            document={document}
+            ficha={ficha}
             onTimeSelect={onTimeSelect}
             selectedMinutes={selectedMinutes}
             theme={theme}
@@ -2931,7 +2931,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
       <AnesthesiaDescriptionDrawer
         isOpen={isNarrativeDrawerOpen}
         onClose={() => setIsNarrativeDrawerOpen(false)}
-        document={document}
+        ficha={ficha}
         onUpdateDocument={onUpdateDocument}
         theme={theme}
         startAiSupervisor={startAiSupervisor}
@@ -3074,7 +3074,7 @@ const handleTechniqueOtherTextChange = (text: string) => {
                           value={formatToLocalTime(drug.timestamp, "America/Sao_Paulo")}
                           onChange={(e) => {
                             const timeStr = e.target.value;
-                            const patientDate = document.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
+                            const patientDate = ficha.patient?.date || getLocalDateStringNow("America/Sao_Paulo");
                             const newTimestamp = combineDateAndTime(patientDate, timeStr, "America/Sao_Paulo");
                             const startTimeMs = timers.startAnesthesia ? new Date(timers.startAnesthesia).getTime() : new Date(newTimestamp).getTime();
                             const elapsedMins = Math.round((new Date(newTimestamp).getTime() - startTimeMs) / 60000);

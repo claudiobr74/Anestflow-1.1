@@ -47,13 +47,13 @@ import {
 interface PdfPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  document: AnesthesiaDocument;
+  ficha: AnesthesiaDocument;
 }
 
 export default function PdfPreviewModal({
   isOpen,
   onClose,
-  document: doc
+  ficha: doc
 }: PdfPreviewModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);

@@ -447,7 +447,7 @@ export default function ProceduresManagerModal({
       <PdfPreviewModal
         isOpen={!!previewDocument}
         onClose={() => setPreviewDocument(null)}
-        document={previewDocument}
+        ficha={previewDocument}
       />
     )}
     </>

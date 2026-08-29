@@ -73,7 +73,7 @@ export default function App() {
     return null;
   });
 
-  const [document, setDocument] = useState<AnesthesiaDocument>(() => {
+  const [ficha, setFicha] = useState<AnesthesiaDocument>(() => {
     purgeClinicalPhiFromLocalStorage();
 
     // Restore active session copy from sessionStorage only if user is logged in
@@ -91,7 +91,7 @@ export default function App() {
           }
         }
       } catch (e) {
-        console.error("Failed to parse session document.");
+        console.error("Failed to parse session ficha.");
       }
     }
     return getBlankDocument();
@@ -137,11 +137,11 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOverflowMenuOpen(false);
     };
-    window.document.addEventListener("pointerdown", onPointerDown);
-    window.document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      window.document.removeEventListener("pointerdown", onPointerDown);
-      window.document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
     };
   }, [overflowMenuOpen]);
 
@@ -150,15 +150,15 @@ export default function App() {
     localStorage.setItem("anesthesia_app_settings", JSON.stringify(appSettings));
   }, [appSettings]);
 
-  // Save active document into UID-isolated sessionStorage ONLY (wiped on tab/session close and logout)
+  // Save active ficha into UID-isolated sessionStorage ONLY (wiped on tab/session close and logout)
   useEffect(() => {
     purgeClinicalPhiFromLocalStorage();
 
-    if (user?.uid && document) {
+    if (user?.uid && ficha) {
       try {
-        sessionStorage.setItem(activeDocSessionKey(user.uid), JSON.stringify(document));
+        sessionStorage.setItem(activeDocSessionKey(user.uid), JSON.stringify(ficha));
       } catch (e) {
-        console.warn("Could not save session document cache:", e);
+        console.warn("Could not save session ficha cache:", e);
       }
     } else {
       try {
@@ -168,16 +168,16 @@ export default function App() {
     
     // Determine if we have any intraoperative data
     const hasIntraopData = Boolean(
-      document.timers?.startAnesthesia ||
-      document.timers?.startSurgery ||
-      document.timers?.endSurgery ||
-      document.timers?.endAnesthesia ||
-      (document.vitals && document.vitals.length > 0) ||
-      (document.events && document.events.length > 0) ||
-      (document.bolusDrugs && document.bolusDrugs.length > 0) ||
-      (document.continuousInfusions && document.continuousInfusions.length > 0) ||
-      (document.inhalationAgents && document.inhalationAgents.length > 0) ||
-      (document.fluids && document.fluids.length > 0)
+      ficha.timers?.startAnesthesia ||
+      ficha.timers?.startSurgery ||
+      ficha.timers?.endSurgery ||
+      ficha.timers?.endAnesthesia ||
+      (ficha.vitals && ficha.vitals.length > 0) ||
+      (ficha.events && ficha.events.length > 0) ||
+      (ficha.bolusDrugs && ficha.bolusDrugs.length > 0) ||
+      (ficha.continuousInfusions && ficha.continuousInfusions.length > 0) ||
+      (ficha.inhalationAgents && ficha.inhalationAgents.length > 0) ||
+      (ficha.fluids && ficha.fluids.length > 0)
     );
 
     if (hasIntraopData) {
@@ -189,11 +189,11 @@ export default function App() {
         setShowSaveNotice(false);
       }, 5000);
     }
-  }, [document, user?.uid]);
+  }, [ficha, user?.uid]);
 
   useEffect(() => {
     if (!user?.uid) return;
-    setDocument((prev) => {
+    setFicha((prev) => {
       if (prev.currentResponsibleUid || prev.createdByUid) return prev;
       return assignNewDocumentOwner(prev, user.uid!);
     });
@@ -214,7 +214,7 @@ export default function App() {
         if (event === "SIGNED_OUT" || (event === "INITIAL_SESSION" && !supabaseUser)) {
           clearClinicalBrowserCache();
           setUser(null);
-          setDocument(getBlankDocument());
+          setFicha(getBlankDocument());
           setIsEmailVerified(true);
           return;
         }
@@ -283,11 +283,11 @@ export default function App() {
 
   // Continuous Autosave & Cloud Synchronization Engine
   const handleRemoteUpdate = useCallback((remoteDoc: AnesthesiaDocument) => {
-    setDocument(remoteDoc);
+    setFicha(remoteDoc);
   }, []);
 
   const syncEngine = useSyncEngine(
-    document,
+    ficha,
     user?.uid,
     handleRemoteUpdate
   );
@@ -354,8 +354,8 @@ export default function App() {
   }, []);
   // =========================================================================
 
-  const setDocumentWithBroadcast = (docOrUpdater: React.SetStateAction<AnesthesiaDocument>) => {
-    setDocument((prev) => {
+  const setFichaWithBroadcast = (docOrUpdater: React.SetStateAction<AnesthesiaDocument>) => {
+    setFicha((prev) => {
       const nextDoc = typeof docOrUpdater === 'function' ? docOrUpdater(prev) : docOrUpdater;
       return nextDoc;
     });
@@ -374,15 +374,15 @@ export default function App() {
       } catch (e) {}
       purgeClinicalPhiFromLocalStorage();
 
-      // Initialize a fresh blank document specifically for the newly logged-in user.
-      // NEVER adopt or auto-assign an existing document from a previous user's session!
+      // Initialize a fresh blank ficha specifically for the newly logged-in user.
+      // NEVER adopt or auto-assign an existing ficha from a previous user's session!
       const newBlank = assignNewDocumentOwner(getBlankDocument(), doctor.uid || "");
       newBlank.patient.hospital = doctor.hospital || appSettings.defaultHospital;
       newBlank.team.anesthesiologistLead = doctor.name || appSettings.defaultAnesthesiologistName;
       newBlank.team.crmLead = doctor.crm || appSettings.defaultCrm;
       newBlank.team.ufLead = doctor.uf;
 
-      setDocument(newBlank);
+      setFicha(newBlank);
     }
   };
 
@@ -400,7 +400,7 @@ export default function App() {
     }
 
     setUser(null);
-    setDocument(getBlankDocument());
+    setFicha(getBlankDocument());
     setActiveTab("patient");
   }, []);
 
@@ -410,9 +410,9 @@ export default function App() {
 
   // Calculate dynamic elapsed timing of the surgery
   const getElapsedAnesthesiaString = () => {
-    if (!document.timers.startAnesthesia) return "Não iniciada";
-    const start = new Date(document.timers.startAnesthesia).getTime();
-    const end = document.timers.endAnesthesia ? new Date(document.timers.endAnesthesia).getTime() : now.getTime();
+    if (!ficha.timers.startAnesthesia) return "Não iniciada";
+    const start = new Date(ficha.timers.startAnesthesia).getTime();
+    const end = ficha.timers.endAnesthesia ? new Date(ficha.timers.endAnesthesia).getTime() : now.getTime();
     
     const diffMs = end - start;
     if (diffMs < 0) return "00:00";
@@ -425,20 +425,20 @@ export default function App() {
   };
 
   // State modification wrappers
-  const canEdit = isClinicalEditor(document, user?.uid);
-  const pendingIncomingUid = document.pendingTransfer?.incomingUid;
+  const canEdit = isClinicalEditor(ficha, user?.uid);
+  const pendingIncomingUid = ficha.pendingTransfer?.incomingUid;
   const isPendingIncoming = Boolean(
     user?.uid && (!pendingIncomingUid || user.uid === pendingIncomingUid)
   );
-  const showAcceptPending = Boolean(document.pendingTransfer) && !isCurrentResponsible(document, user?.uid) && isPendingIncoming;
-  const showDeclinePending = Boolean(document.pendingTransfer) && (
-    isCurrentResponsible(document, user?.uid) || isPendingIncoming
+  const showAcceptPending = Boolean(ficha.pendingTransfer) && !isCurrentResponsible(ficha, user?.uid) && isPendingIncoming;
+  const showDeclinePending = Boolean(ficha.pendingTransfer) && (
+    isCurrentResponsible(ficha, user?.uid) || isPendingIncoming
   );
   const openTransferModalIfResponsible = canEdit ? () => setShowTransferModal(true) : undefined;
 
   const updatePatient = (patientData: Partial<PatientInfo>) => {
     if (!canEdit) return;
-    setDocumentWithBroadcast(prev => ({
+    setFichaWithBroadcast(prev => ({
       ...prev,
       patient: { ...prev.patient, ...patientData }
     }));
@@ -446,7 +446,7 @@ export default function App() {
 
   const updateTeam = (teamData: Partial<AnesthesiaDocument["team"]>) => {
     if (!canEdit) return;
-    setDocumentWithBroadcast(prev => ({
+    setFichaWithBroadcast(prev => ({
       ...prev,
       team: { ...prev.team, ...teamData }
     }));
@@ -454,7 +454,7 @@ export default function App() {
 
   const updatePreEvaluation = (evalData: Partial<PreAnestheticEvaluation>) => {
     if (!canEdit) return;
-    setDocumentWithBroadcast(prev => ({
+    setFichaWithBroadcast(prev => ({
       ...prev,
       preEvaluation: { ...prev.preEvaluation, ...evalData } as any
     }));
@@ -462,13 +462,13 @@ export default function App() {
 
   const handleLoadWorklist = async (cpf: string) => {
     if (!canEdit) {
-      const gate = canEditDocument(document, user?.uid);
+      const gate = canEditDocument(ficha, user?.uid);
       throw new Error(gate.ok === false ? gate.message : "Edição não permitida.");
     }
     const { getFromWorklist } = await import("./lib/worklistService");
     const entry = await getFromWorklist(cpf);
     if (!entry) throw new Error("Paciente não encontrado na Worklist");
-    setDocumentWithBroadcast(prev => ({
+    setFichaWithBroadcast(prev => ({
       ...prev,
       patient: { ...prev.patient, ...entry.patient },
       preEvaluation: { ...prev.preEvaluation, ...entry.preEvaluation }
@@ -477,16 +477,16 @@ export default function App() {
 
   const handleSaveWorklist = async () => {
     const { saveToWorklist } = await import("./lib/worklistService");
-    const cpf = document.patient?.cpf;
+    const cpf = ficha.patient?.cpf;
     if (!cpf) throw new Error("CPF é obrigatório para salvar");
-    await saveToWorklist(cpf, document.patient, document.preEvaluation);
+    await saveToWorklist(cpf, ficha.patient, ficha.preEvaluation);
   };
 
   const updateRecovery = (
     recoveryData: Partial<PostAnesthesiaRecovery> | ((prev: PostAnesthesiaRecovery) => Partial<PostAnesthesiaRecovery>)
   ) => {
     if (!canEdit) return;
-    setDocumentWithBroadcast(prev => {
+    setFichaWithBroadcast(prev => {
       const patch = typeof recoveryData === "function" ? recoveryData(prev.recovery) : recoveryData;
       return {
         ...prev,
@@ -496,12 +496,12 @@ export default function App() {
   };
 
   const updateDocumentDirectly = (updates: AnesthesiaDocumentPatch) => {
-    const gate = canEditDocument(document, user?.uid);
+    const gate = canEditDocument(ficha, user?.uid);
     if (gate.ok === false) {
       alert(gate.message);
       return;
     }
-    setDocumentWithBroadcast(prev => {
+    setFichaWithBroadcast(prev => {
       const resolved = typeof updates === "function" ? updates(prev) : { ...updates };
       if (resolved.createdByUid && prev.createdByUid && resolved.createdByUid !== prev.createdByUid) {
         delete resolved.createdByUid;
@@ -517,7 +517,7 @@ export default function App() {
       alert(`${action} exige conexão com a nuvem.`);
       return false;
     }
-    if (!isUuid(document.id)) {
+    if (!isUuid(ficha.id)) {
       alert(`Salve a ficha na nuvem antes de ${action.toLowerCase()}.`);
       return false;
     }
@@ -533,10 +533,10 @@ export default function App() {
   });
 
   const outgoingFromDocument = () => ({
-    uid: document.currentResponsibleUid,
-    name: document.team?.anesthesiologistLead || "",
-    crm: document.team?.crmLead || "",
-    uf: document.team?.ufLead || ""
+    uid: ficha.currentResponsibleUid,
+    name: ficha.team?.anesthesiologistLead || "",
+    crm: ficha.team?.crmLead || "",
+    uf: ficha.team?.ufLead || ""
   });
 
   const handleClaimResponsibility = async () => {
@@ -544,21 +544,21 @@ export default function App() {
       alert("É necessário estar autenticado com um e-mail válido para assumir a responsabilidade clínica.");
       return;
     }
-    if (document.status === "Signed") {
+    if (ficha.status === "Signed") {
       alert("Esta ficha foi encerrada e assinada. Alterações não são permitidas.");
       return;
     }
     if (!requireCloudProcedure("Assumir a responsabilidade")) return;
 
-    const currentLead = document.team?.anesthesiologistLead || "outro anestesiologista";
+    const currentLead = ficha.team?.anesthesiologistLead || "outro anestesiologista";
     if (!confirm(`Deseja assumir formalmente a responsabilidade clínica desta ficha (atualmente com Dr(a). ${currentLead})?\n\nVocê (Dr(a). ${user.name}, CRM ${user.crm}/${user.uf}) passará a ser o único profissional autorizado a realizar alterações clínicas.`)) {
       return;
     }
 
     setIsClaiming(true);
     try {
-      const updated = await claimResponsibilityAtomic(document.id, claimUserPayload(), outgoingFromDocument());
-      setDocument(updated);
+      const updated = await claimResponsibilityAtomic(ficha.id, claimUserPayload(), outgoingFromDocument());
+      setFicha(updated);
       alert("Você agora é o Anestesiologista Responsável por esta ficha!");
     } catch (err: unknown) {
       console.error("Erro ao assumir responsabilidade:", err);
@@ -586,7 +586,7 @@ export default function App() {
       alert("É necessário estar autenticado para transferir a responsabilidade.");
       return false;
     }
-    const gate = canEditDocument(document, user.uid);
+    const gate = canEditDocument(ficha, user.uid);
     if (gate.ok === false) {
       alert(gate.message);
       return false;
@@ -608,7 +608,7 @@ export default function App() {
         uf: data.incomingUF
       });
       const outgoingDoctor = {
-        uid: document.currentResponsibleUid,
+        uid: ficha.currentResponsibleUid,
         name: data.outgoingName,
         crm: data.outgoingCRM,
         uf: data.outgoingUF
@@ -622,25 +622,25 @@ export default function App() {
 
       if (data.immediate) {
         const updated = await transferResponsibilityAtomic(
-          document.id,
+          ficha.id,
           user.uid,
           incomingDoctor,
           outgoingDoctor,
           handoverDetails
         );
-        setDocument(updated);
+        setFicha(updated);
         alert(`Troca de responsabilidade realizada com sucesso! Dr(a). ${incomingDoctor.name} é agora o responsável.`);
         return true;
       }
 
       const updated = await requestTransferAtomic(
-        document.id,
+        ficha.id,
         user.uid,
         incomingDoctor,
         outgoingDoctor,
         handoverDetails
       );
-      setDocument(updated);
+      setFicha(updated);
       alert(`Solicitação de troca de responsabilidade registrada! Aguardando aceite de Dr(a). ${incomingDoctor.name}.`);
       return true;
     } catch (err: unknown) {
@@ -651,12 +651,12 @@ export default function App() {
   };
 
   const handleAcceptTransfer = async () => {
-    if (!document.pendingTransfer) return;
+    if (!ficha.pendingTransfer) return;
     if (!user?.uid) {
       alert("É necessário estar autenticado para aceitar a transferência.");
       return;
     }
-    if (document.status === "Signed") {
+    if (ficha.status === "Signed") {
       alert("Ficha encerrada e assinada. Alterações não são permitidas.");
       return;
     }
@@ -664,9 +664,9 @@ export default function App() {
 
     setIsClaiming(true);
     try {
-      const pt = document.pendingTransfer;
+      const pt = ficha.pendingTransfer;
       const updated = await claimResponsibilityAtomic(
-        document.id,
+        ficha.id,
         {
           uid: user.uid,
           name: user.name || pt.incomingName,
@@ -681,7 +681,7 @@ export default function App() {
           uf: pt.outgoingUF
         }
       );
-      setDocument(updated);
+      setFicha(updated);
       alert("Você aceitou a transferência e agora é o Anestesiologista Responsável por esta ficha.");
     } catch (err: unknown) {
       console.error("Erro ao aceitar transferência:", err);
@@ -694,8 +694,8 @@ export default function App() {
   const handleCancelTransfer = async () => {
     if (!requireCloudProcedure("Recusar a transferência")) return;
     try {
-      const updated = await declinePendingTransferAtomic(document.id);
-      setDocument(updated);
+      const updated = await declinePendingTransferAtomic(ficha.id);
+      setFicha(updated);
     } catch (err: unknown) {
       console.error("Erro ao recusar transferência:", err);
       alert(mapClinicalError(err).message);
@@ -747,7 +747,7 @@ export default function App() {
     const pending = pendingVoice;
     setPendingVoice(null);
     if (!pending?.actions) return;
-    const gate = canEditDocument(document, user?.uid);
+    const gate = canEditDocument(ficha, user?.uid);
     if (gate.ok === false) {
       alert(gate.message);
       return;
@@ -766,7 +766,7 @@ export default function App() {
     );
     if (!hasDocUpdates) return;
 
-    setDocumentWithBroadcast((prev) =>
+    setFichaWithBroadcast((prev) =>
       applyVoiceActionsToDocument(prev, pending.actions!, selectedMinutes)
     );
   };
@@ -785,7 +785,7 @@ export default function App() {
       blank.team.ufLead = user.uf;
       blank.patient.hospital = user.hospital;
     }
-    setDocumentWithBroadcast(blank);
+    setFichaWithBroadcast(blank);
     setActiveTab("patient");
   };
 
@@ -794,7 +794,7 @@ export default function App() {
       alert("Usuário não autenticado. É necessário estar logado para assinar a ficha.");
       return;
     }
-    const gate = canEditDocument(document, user.uid);
+    const gate = canEditDocument(ficha, user.uid);
     if (gate.ok === false) {
       alert(gate.message);
       return;
@@ -802,7 +802,7 @@ export default function App() {
 
     try {
       const { signAndLockDocument } = await import("./lib/signatureService");
-      const closedDoc = await signAndLockDocument(document, {
+      const closedDoc = await signAndLockDocument(ficha, {
         uid: user.uid,
         name: user.name,
         crm: user.crm,
@@ -814,7 +814,7 @@ export default function App() {
       await saveProcedure(closedDoc, user.uid);
       
       alert(`Procedimento encerrado com sucesso!\n\nAssinatura Digital SHA-256:\n${closedDoc.hash}\n\nO documento está homologado e imutável no servidor.`);
-      setDocumentWithBroadcast(closedDoc);
+      setFichaWithBroadcast(closedDoc);
     } catch (err: any) {
       console.error(err);
       alert(err?.message || "Ocorreu um erro ao tentar salvar o encerramento do procedimento na nuvem.");
@@ -835,7 +835,7 @@ export default function App() {
       mockDoc.team.ufLead = user.uf;
       mockDoc.patient.hospital = user.hospital;
     }
-    setDocumentWithBroadcast(mockDoc);
+    setFichaWithBroadcast(mockDoc);
     setActiveTab("intra");
   };
 
@@ -904,7 +904,7 @@ export default function App() {
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-xs font-semibold text-zinc-500 tracking-wide">PACIENTE</span>
-              {document.status === "Signed" ? (
+              {ficha.status === "Signed" ? (
                 <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3" /> Assinado
                 </span>
@@ -920,14 +920,14 @@ export default function App() {
               )}
             </div>
             <h1 className="text-base font-semibold truncate">
-              {document.patient?.fullName || "Sem Identificação"}
+              {ficha.patient?.fullName || "Sem Identificação"}
             </h1>
             <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 truncate">
-              <span>{document.patient?.age ? `${document.patient?.age}a` : "—"}</span>
+              <span>{ficha.patient?.age ? `${ficha.patient?.age}a` : "—"}</span>
               <span>•</span>
-              <span>{document.patient?.weight ? `${document.patient?.weight}kg` : "—"}</span>
+              <span>{ficha.patient?.weight ? `${ficha.patient?.weight}kg` : "—"}</span>
               <span>•</span>
-              <span className="truncate">{document.patient?.hospital || "—"}</span>
+              <span className="truncate">{ficha.patient?.hospital || "—"}</span>
             </div>
           </div>
 
@@ -937,9 +937,9 @@ export default function App() {
               {getElapsedAnesthesiaString()}
             </div>
             <div className="flex items-center gap-1.5 text-xs font-medium">
-              <div className={`w-2 h-2 rounded-full ${document.timers.startAnesthesia ? "bg-emerald-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600"}`}></div>
+              <div className={`w-2 h-2 rounded-full ${ficha.timers.startAnesthesia ? "bg-emerald-500 animate-pulse" : "bg-zinc-300 dark:bg-zinc-600"}`}></div>
               <span className="text-zinc-600 dark:text-zinc-400">
-                {document.timers.startAnesthesia ? "Anestesia em andamento" : "Aguardando início"}
+                {ficha.timers.startAnesthesia ? "Anestesia em andamento" : "Aguardando início"}
               </span>
             </div>
           </div>
@@ -982,7 +982,7 @@ export default function App() {
               </button>
               <button 
                 onClick={() => setShowShareModal(true)} 
-                disabled={!document.userId}
+                disabled={!ficha.userId}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Users className="w-4 h-4" />
@@ -1036,7 +1036,7 @@ export default function App() {
       </header>
 
       {/* 2. SUB-BANNER / WARNING BAR (E.G. ALERT IF LOCKED) */}
-      {document.status === "Signed" && (
+      {ficha.status === "Signed" && (
         <div className={`border-b px-3 sm:px-5 py-1.5 sm:py-2 text-center text-xs sm:text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 ${
           isDark ? "bg-indigo-950/20 border-indigo-900/50 text-indigo-300" : "bg-indigo-50 border-indigo-100 text-indigo-900"
         }`}>
@@ -1087,7 +1087,7 @@ export default function App() {
       {/* 4. MAIN ACTION SCREEN VIEWPORT */}
       <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 pb-6">
         <div className="max-w-7xl mx-auto space-y-4">
-          {document.pendingTransfer && (
+          {ficha.pendingTransfer && (
             <div className={`p-4 rounded-xl border shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
               isDark ? "bg-indigo-950/40 border-indigo-700/60 text-indigo-100" : "bg-indigo-50 border-indigo-200 text-indigo-900"
             }`}>
@@ -1100,10 +1100,10 @@ export default function App() {
                     Solicitação de Troca de Responsabilidade Anestésica Pendente
                   </h4>
                   <p className="text-xs opacity-90 mt-0.5">
-                    <strong>Dr(a). {document.pendingTransfer.outgoingName}</strong> solicitou a transferência do caso para <strong>Dr(a). {document.pendingTransfer.incomingName}</strong> (CRM {document.pendingTransfer.incomingCRM}/{document.pendingTransfer.incomingUF}).
+                    <strong>Dr(a). {ficha.pendingTransfer.outgoingName}</strong> solicitou a transferência do caso para <strong>Dr(a). {ficha.pendingTransfer.incomingName}</strong> (CRM {ficha.pendingTransfer.incomingCRM}/{ficha.pendingTransfer.incomingUF}).
                   </p>
                   <p className="text-xs opacity-75 mt-1">
-                    Condições: {document.pendingTransfer.clinicalConditions || 'Estável'} | Pendências: {document.pendingTransfer.pendingItems || 'Nenhuma'}
+                    Condições: {ficha.pendingTransfer.clinicalConditions || 'Estável'} | Pendências: {ficha.pendingTransfer.pendingItems || 'Nenhuma'}
                   </p>
                 </div>
               </div>
@@ -1132,12 +1132,12 @@ export default function App() {
             </div>
           )}
 
-          {!canEdit && document.status !== "Signed" && (
+          {!canEdit && ficha.status !== "Signed" && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 shrink-0 text-amber-500" />
                 <span>
-                  <strong>Modo de Leitura (Visualização):</strong> Você está visualizando a ficha sob responsabilidade do Dr(a). {document.team?.anesthesiologistLead || "outro anestesiologista"}. Apenas o responsável atual pode editar os dados clínicos.
+                  <strong>Modo de Leitura (Visualização):</strong> Você está visualizando a ficha sob responsabilidade do Dr(a). {ficha.team?.anesthesiologistLead || "outro anestesiologista"}. Apenas o responsável atual pode editar os dados clínicos.
                 </span>
               </div>
               <button
@@ -1151,7 +1151,7 @@ export default function App() {
             </div>
           )}
 
-          {document.status === "Signed" && (
+          {ficha.status === "Signed" && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-bold flex items-center justify-center gap-2 shadow-sm">
               <Lock className="w-4 h-4 shrink-0" />
               <span>ESTA FICHA FOI ENCERRADA E ASSINADA — ALTERAÇÕES CLÍNICAS BLOQUEADAS PARA TODOS OS USUÁRIOS</span>
@@ -1160,7 +1160,7 @@ export default function App() {
 
           {activeTab === "patient" && (
             <PatientTab
-              document={document}
+              ficha={ficha}
               onChangePatient={updatePatient}
               onChangeTeam={updateTeam}
               onLoadWorklist={handleLoadWorklist}
@@ -1173,7 +1173,7 @@ export default function App() {
 
           {activeTab === "preop" && (
             <PreEvaluationTab
-              document={document}
+              ficha={ficha}
               onChange={updatePreEvaluation}
               theme={theme}
             />
@@ -1181,7 +1181,7 @@ export default function App() {
 
           {activeTab === "intra" && (
             <IntraoperativeTab
-              document={document}
+              ficha={ficha}
               onUpdateDocument={updateDocumentDirectly}
               selectedMinutes={selectedMinutes}
               onTimeSelect={setSelectedMinutes}
@@ -1195,7 +1195,7 @@ export default function App() {
 
           {activeTab === "recovery" && (
             <RecoveryTab
-              document={document}
+              ficha={ficha}
               onUpdateRecovery={updateRecovery}
               theme={theme}
             />
@@ -1203,7 +1203,7 @@ export default function App() {
 
           {activeTab === "review" && (
             <ReviewTab
-              document={document}
+              ficha={ficha}
               onUpdateDocument={updateDocumentDirectly}
               onCloseProcedure={handleCloseProcedure}
               theme={theme}
@@ -1231,16 +1231,16 @@ export default function App() {
       <PdfPreviewModal
         isOpen={showPrintModal}
         onClose={() => setShowPrintModal(false)}
-        document={document}
+        ficha={ficha}
       />
 
       {/* CLOUD PROCEDURES PERSISTENCE MANAGER MODAL */}
       <ProceduresManagerModal
         isOpen={showProceduresModal}
         onClose={() => setShowProceduresModal(false)}
-        currentDocument={document}
+        currentDocument={ficha}
         onLoadDocument={(loadedDoc) => {
-          setDocument(loadedDoc);
+          setFicha(loadedDoc);
           setActiveTab("patient");
         }}
         userId={user?.uid || ""}
@@ -1327,9 +1327,9 @@ export default function App() {
         </div>
       )}
 
-      {showShareModal && document.userId && (
+      {showShareModal && ficha.userId && (
         <ShareModal
-          document={document}
+          ficha={ficha}
           isDark={isDark}
           onClose={() => setShowShareModal(false)}
           onUpdateDocument={updateDocumentDirectly}
@@ -1341,7 +1341,7 @@ export default function App() {
 
       {showTransferModal && (
         <TransferResponsibilityModal
-          document={document}
+          ficha={ficha}
           isDark={isDark}
           onClose={() => setShowTransferModal(false)}
           onConfirmTransfer={handleConfirmTransfer}

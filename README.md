@@ -263,4 +263,12 @@ O e-mail do entrante é **obrigatório**. O cliente resolve o perfil com `lookup
 
 Com um único usuário de teste não dá para completar o handover entre dois médicos. Claim na própria ficha é no-op; transferir/solicitar para o próprio UID falha com `incoming_must_differ`; e-mail inexistente falha com `profile_not_found`.
 
+## Fase 5 (renomear `document` → `ficha`)
+
+A ficha clínica no React **não** se chama mais `document`. Esse nome sombreava o `document` do DOM: o menu overflow e o download de modelos precisavam de `window.document` para não bater na ficha.
+
+O estado em `App.tsx` e as props das abas/modais passaram a `ficha`. O tipo continua `AnesthesiaDocument`. Funções como `getBlankDocument`, `canEditDocument` e `signAndLockDocument` não mudam. A chave `document` no body da Edge Function `generate-description` também permanece (`{ document: ficha, models }`).
+
+Depois do rename, o overflow escuta `document.addEventListener` direto. `App.tsx` e `IntraoperativeTab.tsx` não foram fatiados.
+
 
