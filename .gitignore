@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+dist-ssr/
+server.js
+
+# Environment and secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Logs and caches
+*.log
+npm-debug.log*
+.vite/
+.turbo/
+.cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Firebase service accounts (legacy; do not add new ones)
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Test / coverage
+coverage/
+*.tsbuildinfo
