@@ -1,15 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { jsonResponse } from "../_shared/cors.ts";
-import { generateJsonWithRetry } from "../_shared/gemini.ts";
-import { serveAiFunction } from "../_shared/serve.ts";
+import { NARRATIVE_JSON_SCHEMA } from "../_shared/aiJsonSchemas.ts";
+import {
+  NARRATIVE_PROMPT_VERSION,
+  NARRATIVE_SCHEMA_VERSION,
+} from "../_shared/aiModelConfig.ts";
 import { stripClinicalIdentifiers } from "../_shared/aiStrip.ts";
-
-const DESCRIPTION_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    description: { type: "STRING", description: "O texto narrativo final gerado." },
-  },
-};
+import { jsonResponse } from "../_shared/cors.ts";
+import { GeminiFeatureError } from "../_shared/gemini.ts";
+import { invokeGeminiGateway } from "../_shared/geminiGateway.ts";
+import { serveAiFunction } from "../_shared/serve.ts";
 
 serveAiFunction("generate-description", async (_user, body) => {
   const payload = body as { document?: unknown; models?: unknown } | null;
@@ -18,32 +17,55 @@ serveAiFunction("generate-description", async (_user, body) => {
   }
   const document = stripClinicalIdentifiers(payload.document);
 
-  const prompt = `Gere uma "Descrição do Ato Anestésico" técnica, formal e narrativa baseada EXCLUSIVAMENTE nos dados da ficha anestésica anexada em formato JSON.
-O texto deve ser fluido e legível, descrevendo cronologicamente: monitorização, acessos (venosos, arteriais), técnica anestésica (indução, manutenção, bloqueios), vias aéreas, fluidos administrados e evolução clínica (estabilidade, intercorrências) com base APENAS no que está documentado.
+  const prompt = `Gere uma "Descrição do Ato Anestésico" técnica, formal e narrativa baseada EXCLUSIVAMENTE nos dados da ficha anexada.
+Não invente sinais vitais, doses, vias, concentrações ou horários ausentes.
+O texto deve ser fluido e cronológico: monitorização, acessos, técnica, vias aéreas, fluidos e evolução só com o que está documentado.
 
-Caso o documento esteja vazio ou não tenha dados suficientes, elabore uma descrição muito genérica ou indique a falta de dados estruturados.
+Se o documento não tiver dados suficientes, descreva a insuficiência de dados — não complete por costume.
 
-IMPORTANTE: Abaixo está uma lista de Modelos Base (Templates) de descrições pré-definidos pelo usuário.
-Você deve escolher o modelo mais apropriado com base no procedimento e preencher os colchetes com os dados reais do documento. Se os modelos fornecidos não cobrirem o cenário, gere uma narrativa formal do zero utilizando as diretrizes CFM. Mantenha o formato e a estrutura textual do modelo selecionado, substituindo apenas os placeholders de forma inteligente e natural. Se não houver nenhum modelo útil, crie o seu.
+Modelos base (escolha o mais apropriado e preencha só com dados reais; se nenhum servir, narre formalmente):
+${JSON.stringify(payload.models || [])}
 
-Modelos Disponíveis:
-${JSON.stringify(payload.models || [], null, 2)}
+Documento:
+${JSON.stringify(document)}`;
 
-Documento JSON da Anestesia (Preencha o modelo com esses dados):
-${JSON.stringify(document, null, 2)}
-`;
-
-  const { text, meta } = await generateJsonWithRetry(
-    [{ text: prompt }],
-    "Você é um especialista em documentação de anestesiologia médica no Brasil. Seu objetivo é ajudar a redigir o ato anestésico com base em dados.",
-    DESCRIPTION_SCHEMA,
-    { prompt_version: "description-v1", schema_version: "description-v1" },
-  );
+  let meta;
+  let text: string;
+  try {
+    const result = await invokeGeminiGateway({
+      feature: "narrative",
+      promptVersion: NARRATIVE_PROMPT_VERSION,
+      schemaVersion: NARRATIVE_SCHEMA_VERSION,
+      errorCode: "AI_NARRATIVE_FAILED",
+      systemInstruction:
+        "Você redige o ato anestésico no Brasil com base só no documentado. JSON no schema pedido. Sem chain-of-thought.",
+      input: prompt,
+      responseSchema: NARRATIVE_JSON_SCHEMA as unknown as Record<string, unknown>,
+    });
+    meta = result.meta;
+    text = result.text;
+  } catch (error) {
+    if (error instanceof GeminiFeatureError) throw error;
+    throw new GeminiFeatureError(
+      "AI_NARRATIVE_FAILED",
+      error instanceof Error ? error.message : "Falha na narrativa de IA.",
+      502,
+    );
+  }
 
   try {
-    const parsed = JSON.parse(text || '{"description": ""}') as Record<string, unknown>;
+    const parsed = JSON.parse(text || "") as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.description !== "string" || !parsed.description.trim()) {
+      return jsonResponse({
+        error: "AI_NARRATIVE_SCHEMA_INVALID",
+        ai: { ...meta, success: false, error_code: "AI_NARRATIVE_SCHEMA_INVALID" },
+      }, 502);
+    }
     return jsonResponse({ ...parsed, ai: meta });
   } catch {
-    return jsonResponse({ description: "", ai: { ...meta, success: false } });
+    return jsonResponse({
+      error: "AI_NARRATIVE_SCHEMA_INVALID",
+      ai: { ...meta, success: false, error_code: "AI_NARRATIVE_SCHEMA_INVALID" },
+    }, 502);
   }
 }, "O tempo limite para geração da descrição foi excedido.");

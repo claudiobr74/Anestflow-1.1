@@ -1,10 +1,13 @@
 import React, { useState, useRef } from "react";
 import { Mic, Loader2, Zap } from "lucide-react";
 import { invokeAiFunction } from "../lib/aiFunctions";
+import { isVoiceAiErrorCode, VOICE_UNAVAILABLE_MESSAGE } from "../lib/aiErrorCodes";
 
 export interface VoiceCommandResult {
   transcription: string;
   identifiedActions: unknown;
+  warnings?: string[];
+  unparsedFragments?: string[];
 }
 
 export interface VoiceCommandButtonProps {
@@ -75,7 +78,7 @@ export function VoiceCommandButton({
         reader.onloadend = async () => {
           const base64data = reader.result?.toString().split(',')[1];
           if (base64data) {
-            await sendToGemini(base64data, mimeTypeUsed);
+            await sendToVoiceEdge(base64data, mimeTypeUsed);
           } else {
             setIsProcessing(false);
           }
@@ -109,7 +112,7 @@ export function VoiceCommandButton({
     }
   };
 
-  const sendToGemini = async (base64data: string, mimeTypeUsed: string) => {
+  const sendToVoiceEdge = async (base64data: string, mimeTypeUsed: string) => {
     const controller = new AbortController();
     
     // Register the task with the AI Supervisor
@@ -128,11 +131,18 @@ export function VoiceCommandButton({
         transcript_original?: string;
         transcription?: string;
         identifiedActions?: unknown;
+        warnings?: string[];
+        unparsedFragments?: string[];
+        error?: string;
       }>(
         "voice-command",
         { audioBase64: base64data, mimeType: mimeTypeUsed },
         controller.signal
       );
+
+      if (isVoiceAiErrorCode(data.error)) {
+        throw new Error(data.error);
+      }
       
       clearTimeout(timeoutId);
 
@@ -148,7 +158,12 @@ export function VoiceCommandButton({
       if (!transcription.trim() && !hasActions) {
         setResultMsg({ type: "info", text: "O áudio não gerou transcrição nem lançamentos." });
       } else if (onCommandProcessed) {
-        onCommandProcessed({ transcription, identifiedActions });
+        onCommandProcessed({
+          transcription,
+          identifiedActions,
+          warnings: Array.isArray(data.warnings) ? data.warnings : [],
+          unparsedFragments: Array.isArray(data.unparsedFragments) ? data.unparsedFragments : [],
+        });
       }
 
       if (stopAiSupervisor) {
@@ -166,6 +181,12 @@ export function VoiceCommandButton({
       let errMsg = "Falha ao processar áudio.";
       if (error.name === "AbortError") {
         errMsg = "O assistente de IA demorou muito para processar o áudio (limite de tempo atingido). Por favor, tente novamente.";
+      } else if (isVoiceAiErrorCode(error.message) || (error.message && (
+        error.message.includes("VOICE_TRANSCRIPTION_FAILED") ||
+        error.message.includes("VOICE_PARSE_FAILED") ||
+        error.message.includes("VOICE_SCHEMA_INVALID")
+      ))) {
+        errMsg = VOICE_UNAVAILABLE_MESSAGE;
       } else if (error.message) {
         if (error.message.includes("quota") || error.message.includes("429")) {
           errMsg = "Erro 429: Cota excedida na API. Verifique seus créditos ou chave de acesso.";

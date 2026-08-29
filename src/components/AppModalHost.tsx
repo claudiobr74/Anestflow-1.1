@@ -22,7 +22,12 @@ type AppModalHostProps = {
   showProceduresModal: boolean;
   onCloseProcedures: () => void;
   onLoadDocument: (doc: AnesthesiaDocument) => void;
-  pendingVoice: { transcription: string; actions: SanitizedVoiceActions | null } | null;
+  pendingVoice: {
+    transcription: string;
+    actions: SanitizedVoiceActions | null;
+    warnings?: string[];
+    unparsedFragments?: string[];
+  } | null;
   onDismissVoice: () => void;
   onConfirmVoice: () => void;
   showResetConfirm: boolean;
@@ -121,6 +126,8 @@ export default function AppModalHost({
         isOpen={Boolean(pendingVoice)}
         transcription={pendingVoice?.transcription || ""}
         summaries={pendingVoice?.actions ? summarizeVoiceActions(pendingVoice.actions) : []}
+        warnings={pendingVoice?.warnings}
+        unparsedFragments={pendingVoice?.unparsedFragments}
         canApply={canEdit && Boolean(pendingVoice?.actions || pendingVoice?.transcription?.trim())}
         isDark={isDark}
         onDismiss={onDismissVoice}

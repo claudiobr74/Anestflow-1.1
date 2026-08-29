@@ -3,6 +3,7 @@ import { AnesthesiaDocument, AnestheticNarrativeLaunch } from "../types";
 import { X, Check, Plus, Edit2, Copy, RotateCcw, FileText, Trash2, Star, Download, Upload, Clock, User, Shield, AlertCircle, FileDown, Eye, CheckCircle2, Sparkles, Loader2 } from "lucide-react";
 import { SYSTEM_MODELS, compileNarrativeDraft, AnesthesiaModel } from "../utils/narrativeTemplates";
 import { invokeAiFunction } from "../lib/aiFunctions";
+import { NARRATIVE_UNAVAILABLE_MESSAGE } from "../lib/aiErrorCodes";
 import { toAIClinicalContext } from "../lib/aiClinicalContext";
 
 interface AnesthesiaDescriptionDrawerProps {
@@ -131,17 +132,17 @@ export default function AnesthesiaDescriptionDrawer({
     }, 55000); // 55s component-level safety timeout (letting central supervisor handle 60s)
 
     try {
-      const data = await invokeAiFunction<{ description?: string }>(
+      const data = await invokeAiFunction<{ description?: string; error?: string }>(
         "generate-description",
         { document: toAIClinicalContext(ficha), models },
         controller.signal
       );
       clearTimeout(timeoutId);
-      if (data.description) {
-        setEditingText(data.description);
-      } else {
+      if (data.error || !data.description?.trim()) {
         setEditingText("");
-        alert("Não foi possível gerar a descrição.");
+        alert(NARRATIVE_UNAVAILABLE_MESSAGE);
+      } else {
+        setEditingText(data.description);
       }
 
       if (stopAiSupervisor) {
@@ -157,7 +158,7 @@ export default function AnesthesiaDescriptionDrawer({
       if (e.name === "AbortError") {
         alert("O servidor de IA demorou muito para responder (limite de tempo atingido). Por favor, tente novamente.");
       } else {
-        alert(e.message || "Falha de rede ao conectar com IA.");
+        alert(NARRATIVE_UNAVAILABLE_MESSAGE);
       }
       setEditingText("");
     } finally {

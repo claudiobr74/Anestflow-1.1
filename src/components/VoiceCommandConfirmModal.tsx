@@ -5,6 +5,8 @@ export interface VoiceCommandConfirmModalProps {
   isOpen: boolean;
   transcription: string;
   summaries: string[];
+  warnings?: string[];
+  unparsedFragments?: string[];
   canApply: boolean;
   isDark?: boolean;
   onConfirm: () => void;
@@ -15,6 +17,8 @@ export function VoiceCommandConfirmModal({
   isOpen,
   transcription,
   summaries,
+  warnings = [],
+  unparsedFragments = [],
   canApply,
   isDark = false,
   onConfirm,
@@ -85,6 +89,21 @@ export function VoiceCommandConfirmModal({
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Nenhum lançamento estruturado. Você pode gravar a transcrição original mesmo assim.
           </p>
+        )}
+
+        {(warnings.length > 0 || unparsedFragments.length > 0) && (
+          <div className="mt-3 space-y-1">
+            {warnings.map((line, index) => (
+              <p key={`w-${index}`} className="text-xs text-amber-700 dark:text-amber-400">
+                {line}
+              </p>
+            ))}
+            {unparsedFragments.map((line, index) => (
+              <p key={`u-${index}`} className="text-xs text-zinc-500">
+                Trecho não estruturado: {line}
+              </p>
+            ))}
+          </div>
         )}
 
         <div className="mt-5 flex gap-3">

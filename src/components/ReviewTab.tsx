@@ -9,7 +9,8 @@ import { ShieldAlert, CheckCircle, Lock, Edit3, Plus, BrainCircuit, Activity, Cl
 import { invokeAiFunction } from "../lib/aiFunctions";
 import { toAIClinicalContext } from "../lib/aiClinicalContext";
 import {
-  AI_REVIEW_PARSE_FAILED,
+  AI_REVIEW_FAILED,
+  AI_REVIEW_NO_ALERTS_MESSAGE,
   AI_REVIEW_UNAVAILABLE_MESSAGE,
   isAiReviewParseFailedMessage,
   parseAiReviewPayload,
@@ -58,6 +59,7 @@ export default function ReviewTab({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAlerts, setAiAlerts] = useState<ValidationAlert[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiAuditRan, setAiAuditRan] = useState(false);
 
   // Amendment state
   const [amendmentText, setAmendmentText] = useState("");
@@ -110,6 +112,7 @@ export default function ReviewTab({
     setAiLoading(true);
     setAiError(null);
     setAiAlerts([]);
+    setAiAuditRan(false);
 
     const controller = new AbortController();
 
@@ -136,10 +139,11 @@ export default function ReviewTab({
       if (!parsed.ok) {
         setAiError(AI_REVIEW_UNAVAILABLE_MESSAGE);
         if (stopAiSupervisor) {
-          stopAiSupervisor(`Erro: ${AI_REVIEW_PARSE_FAILED}`);
+          stopAiSupervisor(`Erro: ${parsed.ok === false ? parsed.error : "AI_REVIEW_FAILED"}`);
         }
         return;
       }
+      setAiAuditRan(true);
       setAiAlerts(parsed.alerts);
       
       if (stopAiSupervisor) {
@@ -155,7 +159,7 @@ export default function ReviewTab({
       let errMsg = err.message || "Erro desconhecido.";
       if (err.name === "AbortError") {
         errMsg = "O servidor de IA demorou muito para responder (limite de tempo atingido). Por favor, tente novamente em alguns instantes.";
-      } else if (isAiReviewParseFailedMessage(errMsg)) {
+      } else if (isAiReviewParseFailedMessage(errMsg) || errMsg.includes(AI_REVIEW_FAILED)) {
         errMsg = AI_REVIEW_UNAVAILABLE_MESSAGE;
       } else if (errMsg.includes("quota") || errMsg.includes("429")) {
         errMsg = "Erro 429: Cota excedida na API. Verifique seus créditos ou chave de acesso.";
@@ -580,7 +584,7 @@ export default function ReviewTab({
             {aiLoading && (
               <div className="text-center py-12 space-y-3">
                 <BrainCircuit className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-                <p className="text-xs text-slate-500 dark:text-zinc-400 font-bold">O Gemini 3.5 está auditando o prontuário para inconsistências clínicas...</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 font-bold">O Gemini 3.6 está auditando o prontuário para inconsistências clínicas...</p>
                 <p className="text-xs text-slate-400 dark:text-zinc-500">Verificando coerência de doses, tempos operatórios e antecedentes anestésicos.</p>
               </div>
             )}
@@ -617,8 +621,17 @@ export default function ReviewTab({
             {!aiLoading && !aiError && aiAlerts.length === 0 && (
               <div className="text-center py-12 text-slate-400 dark:text-zinc-500">
                 <BrainCircuit className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-semibold">Assistente de IA inativo.</p>
-                <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Clique em "Auditar com IA" para rodar a consistência do prontuário eletrônico.</p>
+                {aiAuditRan ? (
+                  <>
+                    <p className="text-xs font-semibold">{AI_REVIEW_NO_ALERTS_MESSAGE}</p>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">A auditoria concluiu sem achados. Isso não substitui a revisão humana no encerramento.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold">Assistente de IA inativo.</p>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Clique em "Auditar com IA" para rodar a consistência do prontuário eletrônico.</p>
+                  </>
+                )}
               </div>
             )}
           </div>
