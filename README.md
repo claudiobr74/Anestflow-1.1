@@ -268,7 +268,7 @@ O e-mail do entrante é **obrigatório**. O cliente resolve o perfil com `lookup
 
 O botão Sincronização do `ShareModal` pausa de verdade o **autosave de saída** (`pauseAutosave` / `resumeAutosave`). Offline continua offline; pausado não se disfarça de offline. Realtime de entrada segue ativo. `retrySyncNow` no badge continua sendo flush explícito.
 
-Com um único usuário de teste não dá para completar o handover entre dois médicos. Claim na própria ficha é no-op; `assume_responsibility` na própria ficha também é no-op (depois de validar o motivo); transferir/solicitar para o próprio UID falha com `incoming_must_differ`; e-mail inexistente falha com `profile_not_found`; motivo curto falha com `reason_required`.
+O live `fase04_live.ts` (um usuário) cobre no-op, self-transfer, perfil ausente e `reason_required`. Com `ONDA3_TEST_EMAIL_B` + `ONDA3_TEST_PASSWORD_B`, `fase04_handover_live.ts` exercita participante sem pendência (`claim_requires_pending`), `request_transfer` A→B, aceite via `claim_responsibility` e `assume_responsibility` excepcional.
 
 ## Fase 5 (renomear `document` → `ficha`)
 

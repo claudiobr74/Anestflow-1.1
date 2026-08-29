@@ -1045,6 +1045,14 @@ try {
   assert(readme4.includes("Fase 4") && readme4.includes("request_transfer"), "README documenta Fase 4");
   assert(readme4.includes("assume_responsibility"), "README documenta assume_responsibility");
   assert(readme4.includes("pauseAutosave"), "README documenta pauseAutosave");
+  assert(readme4.includes("fase04_handover_live"), "README documenta o live A→B");
+
+  const handoverLive = fs.readFileSync(path.join(process.cwd(), "src/tests/fase04_handover_live.ts"), "utf-8");
+  assert(handoverLive.includes("ONDA3_TEST_EMAIL_B"), "Live A→B lê o segundo usuário");
+  assert(handoverLive.includes("claim_requires_pending"), "Live A→B exercita claim_requires_pending");
+  assert(handoverLive.includes("assumeResponsibilityAtomic"), "Live A→B exercita assume excepcional");
+  assert(handoverLive.includes("requestTransferAtomic"), "Live A→B pede transferência");
+  assert(handoverLive.includes("claimResponsibilityAtomic"), "Live A→B aceita via claim");
 } catch (err) {
   assert(false, `Falha na verificação da Fase 4: ${err}`);
 }
