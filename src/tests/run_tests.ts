@@ -15,6 +15,12 @@ import {
 } from "../lib/authErrors.ts";
 import { isMockProcedureId, isUuid, toDbStatus, fromDbStatus, isMeaningfulDocument } from "../lib/procedureMapper.ts";
 import { computeSHA256 } from "../lib/signatureService.ts";
+import {
+  checkLeakedPassword,
+  HIBP_RANGE_URL,
+  matchHibpRangeBody,
+  sha1HexUpper,
+} from "../lib/leakedPassword.ts";
 import fs from "fs";
 import path from "path";
 
@@ -457,7 +463,45 @@ try {
   assert(false, `Falha na verificação da onda 9: ${err}`);
 }
 
-// 12. VERIFICAÇÃO FINAL DE RESULTADOS
+// 12. ONDA 10 — HIBP NO CADASTRO (K-ANONYMITY)
+console.log("\n12. Verificando checagem HIBP no cadastro (onda 10)...");
+try {
+  const loginUi = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+  assert(matchHibpRangeBody("AABBCC:12\nDDEEFF:1", "aabbcc"), "Range HIBP casa suffix com count > 0");
+  assert(!matchHibpRangeBody("AABBCC:0", "AABBCC"), "Padding count 0 não é vazamento");
+  assert(!matchHibpRangeBody("DDEEFF:99", "AABBCC"), "Suffix diferente não casa");
+
+  const hash = await sha1HexUpper("Password1234");
+  assert(hash.length === 40, "SHA-1 hex tem 40 caracteres");
+
+  const mockHit: typeof fetch = async (input) => {
+    const url = String(input);
+    assert(url.startsWith(HIBP_RANGE_URL), "Consulta usa a URL de range do HIBP");
+    assert(url.length === HIBP_RANGE_URL.length + 5, "A URL leva só os 5 hex do prefixo");
+    assert(!url.toUpperCase().includes(hash.slice(5)), "O restante do SHA-1 não vai na URL");
+    return new Response(`${hash.slice(5)}:99\n00000000000000000000000000000000000:0`, { status: 200 });
+  };
+  const hit = await checkLeakedPassword("Password1234", mockHit);
+  assert(hit.leaked && hit.checked, "Senha presente no range mockado é recusada");
+
+  const mockDown: typeof fetch = async () => new Response("unavailable", { status: 503 });
+  const open = await checkLeakedPassword("Password1234", mockDown);
+  assert(!open.leaked && !open.checked, "HIBP 503 é fail-open");
+
+  const leakIdx = loginUi.indexOf("checkLeakedPassword");
+  const signUpIdx = loginUi.indexOf("supabase.auth.signUp");
+  assert(leakIdx >= 0, "LoginScreen consulta HIBP no cadastro");
+  assert(signUpIdx > leakIdx, "Checagem HIBP ocorre antes de signUp");
+  assert(loginUi.includes("AUTH_ERROR_LEAKED_PASSWORD"), "Cadastro usa a mensagem de senha vazada");
+  assert(!loginUi.includes("signUp({") || loginUi.indexOf("if (leak.leaked)") < signUpIdx, "signUp não roda se a senha vazou");
+  assert(readme.includes("Onda 10"), "README documenta a onda 10");
+  assert(readme.includes("k-anonymity"), "README explica k-anonymity");
+} catch (err) {
+  assert(false, `Falha na verificação da onda 10: ${err}`);
+}
+
+// 13. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");

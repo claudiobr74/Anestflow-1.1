@@ -15,7 +15,7 @@ O backend alvo é o projeto **Anestflow** na organização Macedotech:
 | Região | `us-west-2` |
 | Dashboard | [abrir projeto](https://supabase.com/dashboard/project/plciototnjsdjzhudptc) |
 
-Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**. Senha vazada (HaveIBeenPwned) no cliente é a **onda 8**. Onda **9** fecha o que ainda dava para fazer no código e lista o que só o Dashboard/ops resolve.
+Identidade versionada em `supabase/remote.json`. Schema clínico, RLS e RPCs da onda 1 já estão aplicados neste projeto. Login é a **onda 2**. Persistência e Realtime das fichas é a **onda 3**. IA é a **onda 5**. O SDK Firebase saiu na **onda 6**. Sessão 12h/8h no cliente é a **onda 7**. Senha vazada (HaveIBeenPwned) no cliente é a **onda 8**. Onda **9** fecha o que ainda dava para fazer no código e lista o que só o Dashboard/ops resolve. Onda **10** recusa senha vazada no cadastro (HaveIBeenPwned k-anonymity) sem esperar o toggle do Dashboard.
 
 ## Onda 0 (fundação)
 
@@ -188,7 +188,7 @@ Inventário do que as ondas 0–8 **não** cobriram, e o que ainda entra no cód
 
 | Item | Onde |
 |---|---|
-| Prevent use of leaked passwords (HaveIBeenPwned) | Auth → Providers → Email (Pro+) |
+| Prevent use of leaked passwords (HaveIBeenPwned) no Auth hospedado | Auth → Providers → Email (Pro+). O cadastro no app já consulta HIBP na onda 10. |
 | Sessão 12h / ociosidade 8h iguais ao `config.toml` | Auth → Settings (CLI não aplica no cloud) |
 | Confirmar e-mail ON, cadastro anônimo OFF | Auth → Providers / Settings |
 | SMTP próprio (sair do teto de 2 e-mails/hora) | Auth → SMTP |
@@ -200,3 +200,16 @@ Inventário do que as ondas 0–8 **não** cobriram, e o que ainda entra no cód
 | Merge da pilha de PRs no `main` | revisão humana |
 
 Não desligue a confirmação de e-mail para contornar o limite de SMTP.
+
+## Onda 10 (senha vazada no cadastro)
+
+O advisor `auth_leaked_password_protection` continua WARN no Anestflow até o toggle **Prevent use of leaked passwords** no Dashboard (Pro+). Sem `SUPABASE_ACCESS_TOKEN` esta onda **não** liga o Auth hospedado.
+
+Enquanto isso, o cadastro no cliente consulta a API [Pwned Passwords](https://haveibeenpwned.com/API/v3#PwnedPasswords) **antes** de `signUp`:
+
+- Só os 5 primeiros hex do SHA-1 saem do dispositivo (k-anonymity; header `Add-Padding`)
+- Senha conhecida em vazamento → aviso em português, **sem** criar conta e **sem** gastar a cota de e-mail
+- Se o HaveIBeenPwned estiver fora do ar, o cadastro segue (fail-open); tamanho/complexidade continuam obrigatórios
+- Login de quem já tem conta **não** é bloqueado por esta checagem
+
+O toggle no Dashboard continua recomendado: aí o GoTrue também recusa senha vazada no servidor.
