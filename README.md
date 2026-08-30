@@ -26,11 +26,11 @@ Abriu o trilho: CLI, Auth local, env e vínculo com este projeto. Firebase Auth 
 O `supabase/config.toml` já define isto para `npx supabase start`:
 
 - Cadastro anônimo desligado
-- Confirmação de e-mail **obrigatória**
+- Confirmação de e-mail **obrigatória** (conta Google já vem com e-mail autenticado pelo provedor)
 - Senha mínima 12 caracteres, maiúsculas + minúsculas + dígitos
 - Sessão: timebox 12h, inatividade 8h
 - JWT 1 hora, rotação de refresh token
-- Google OAuth preparado mas **desligado** até existirem Client ID/Secret (não colocar secret no Vite)
+- Google OAuth **habilitado no app** via `signInWithOAuth` (Client Secret só no Dashboard / env da CLI; nunca no Vite)
 - Firebase **não** é provider third-party
 
 No cloud: **Authentication → Providers / Settings** com as mesmas opções. O CLI não aplica `config.toml` no projeto hospedado.
@@ -92,9 +92,10 @@ Advisors de segurança no projeto: **0 lints** depois da onda 1.
 
 - Cliente `src/lib/supabase.ts` com chave publishable (`sb_publishable_…` ou anon legado)
 - Tela de login/cadastro via `signInWithPassword` / `signUp`
+- **Continuar com Google** via `signInWithOAuth` (mesmo `auth.users` / `profiles`; sem Client ID no frontend)
 - Perfil clínico em `public.profiles` (CRM, UF, hospital)
 - Confirmação de e-mail obrigatória; senha mínima 12 caracteres com maiúsculas, minúsculas e dígito
-- Google OAuth continua **desligado** até Client ID/Secret no Dashboard
+- Usuário Google com CRM/UF/hospital incompletos abre o Complete Profile existente
 - Rotas `/api/*` autenticadas saíram; resta só `GET /api/health` público
 - Busca de colega em `ShareModal` usa `lookup_profile_by_email`
 
@@ -110,6 +111,14 @@ O que fazer quando a tela avisar o limite:
 4. Se você já tem um usuário confirmado neste projeto, entre com esse e-mail.
 
 Não desligue a confirmação de e-mail para contornar o limite.
+
+### Login com Google
+
+O botão **Continuar com Google** chama `signInWithOAuth({ provider: "google" })` no cliente Supabase já existente. O retorno é `window.location.origin` (funciona em localhost, preview e produção se a URL estiver na allow-list do Auth). Não há `VITE_GOOGLE_CLIENT_ID` nem secret no bundle.
+
+Fluxo: Google → Supabase Auth → `auth.users` → trigger `handle_new_user` → `public.profiles` → AnestFlow. CRM, UF e hospital **não** vêm do Google: perfil incompleto abre o Complete Profile de sempre. Logout continua `supabase.auth.signOut()` (não revoga a sessão Google do navegador). Usuário só-Google reautentica no lock/step-up com o mesmo OAuth (`prompt=login`), sem bypass de assinatura.
+
+Relatórios: `GOOGLE_AUTH_AUDIT.md`, `GOOGLE_AUTH_IMPLEMENTATION_REPORT.md`.
 
 ## Onda 3 (fichas, worklist, Realtime)
 
@@ -173,7 +182,7 @@ Ligar no projeto (plano Pro ou superior):
 2. **Prevent use of leaked passwords** → ON
 3. Salvar
 
-SMTP próprio e Google OAuth continuam fora desta onda (precisam de secret no Dashboard). Storage não entra: áudio de voz não é persistido.
+SMTP próprio continua fora do código (precisa de secret no Dashboard). Storage não entra: áudio de voz não é persistido.
 
 ## Onda 9 (fechamento)
 
@@ -192,7 +201,7 @@ Inventário do que as ondas 0–8 **não** cobriram, e o que ainda entra no cód
 | Sessão 12h / ociosidade 8h iguais ao `config.toml` | Auth → Settings (CLI não aplica no cloud) |
 | Confirmar e-mail ON, cadastro anônimo OFF | Auth → Providers / Settings |
 | SMTP próprio (sair do teto de 2 e-mails/hora) | Auth → SMTP |
-| Google OAuth | Auth → Providers → Google, com Client ID/Secret |
+| Google OAuth (Client Secret e URLs de redirect) | Auth → Providers → Google — o app já chama `signInWithOAuth`; não colocar secret no Vite |
 | `GEMINI_API_KEY` | `npx supabase secrets set` / Edge Function secrets |
 | `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` | Vercel → Environment Variables |
 | Repositório GitHub **privado** | Settings do repo |
