@@ -309,13 +309,19 @@ declare
   v_org uuid;
   v_count integer;
 begin
-  select count(*)::int, min(m.organization_id)
-  into v_count, v_org
+  select count(*)::int
+  into v_count
   from public.organization_members m
   join public.organizations o on o.id = m.organization_id
   where m.user_id = p_uid
     and o.status is distinct from 'archived';
   if v_count = 1 then
+    select m.organization_id
+    into v_org
+    from public.organization_members m
+    join public.organizations o on o.id = m.organization_id
+    where m.user_id = p_uid
+      and o.status is distinct from 'archived';
     return v_org;
   end if;
 
@@ -323,12 +329,17 @@ begin
     return null;
   end if;
 
-  select count(*)::int, min(o.id)
-  into v_count, v_org
+  select count(*)::int
+  into v_count
   from public.organizations o
   where private.normalize_org_name(o.name) = private.normalize_org_name(p_hospital)
     and o.status is distinct from 'archived';
   if v_count = 1 then
+    select o.id
+    into v_org
+    from public.organizations o
+    where private.normalize_org_name(o.name) = private.normalize_org_name(p_hospital)
+      and o.status is distinct from 'archived';
     return v_org;
   end if;
   return null;

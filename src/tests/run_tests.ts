@@ -2546,9 +2546,16 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
     "supabase/migrations/20260830140400_admin_hardening_ops_settings.sql",
     "supabase/migrations/20260830140500_admin_hardening_issue_dedup_verify.sql",
     "supabase/migrations/20260830140600_admin_dashboard_heatmap_nested_agg.sql",
+    "supabase/migrations/20260830140700_fix_resolve_org_min_uuid.sql",
   ];
   const hardeningExists = hardeningFiles.every((rel) => fs.existsSync(path.join(process.cwd(), rel)));
   assert(hardeningExists, "migrations de hardening estão versionadas");
+  const orgResolveSql = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260830140700_fix_resolve_org_min_uuid.sql"),
+    "utf-8"
+  );
+  assert(!orgResolveSql.includes("min(m.organization_id)"), "resolve org não usa min(uuid)");
+  assert(!orgResolveSql.includes("min(o.id)"), "resolve org por hospital não usa min(uuid)");
   const dashSql = fs.readFileSync(
     path.join(process.cwd(), "supabase/migrations/20260830140200_admin_hardening_rpcs.sql"),
     "utf-8"
