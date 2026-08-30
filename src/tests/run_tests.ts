@@ -2520,6 +2520,7 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
 
   const aiFnSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/aiFunctions.ts"), "utf-8");
   assert(aiFnSrc.includes("record_ai_usage"), "IA registra telemetria técnica");
+  assert(!aiFnSrc.includes("procedure_id ?? rec.id"), "telemetria não usa document.id como procedure_id");
   assert(!/transcript\b|audioBase64|prompt_text/.test(aiFnSrc), "telemetria de IA não envia transcript");
 
   const procSvc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
