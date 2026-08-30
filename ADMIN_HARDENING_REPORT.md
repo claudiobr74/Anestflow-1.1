@@ -132,7 +132,13 @@ RPCs de procedimentos devolvem metadata (id, status, hospital institucional, res
 
 `src/tests/admin_live_e2e.ts` existe. Sem `ONDA3_TEST_EMAIL` neste workspace o script encerra com `ADMIN_LIVE_E2E_SKIPPED`.
 
-Regressão estática: `tsc`, `lint:lib`, `run_tests.ts` (ver evidência da rodada).
+Regressão estática desta rodada:
+
+- `npx tsc --noEmit` — PASS
+- `npm run lint:lib` — PASS
+- `npx tsx src/tests/run_tests.ts` — **1069/1069** PASS
+- `npm run build` — PASS
+- `npx tsx src/tests/admin_live_e2e.ts` — SKIPPED (sem `VITE_SUPABASE_*` / `ONDA3_TEST_*`)
 
 ## 20. Clinical Regression
 

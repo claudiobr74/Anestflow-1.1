@@ -135,17 +135,20 @@ function recordAiUsageSafe(payload: {
   procedure_id?: string | null;
   model?: string | null;
 }): void {
-  void getSupabase()
-    .rpc("record_ai_usage", {
-      p_payload: {
-        feature: payload.feature,
-        status: payload.status,
-        latency_ms: payload.latency_ms,
-        error_code: payload.error_code || null,
-        procedure_id: payload.procedure_id || null,
-        model: payload.model || null,
-      },
-    })
-    .then(() => undefined)
-    .catch(() => undefined);
+  void (async () => {
+    try {
+      await getSupabase().rpc("record_ai_usage", {
+        p_payload: {
+          feature: payload.feature,
+          status: payload.status,
+          latency_ms: payload.latency_ms,
+          error_code: payload.error_code || null,
+          procedure_id: payload.procedure_id || null,
+          model: payload.model || null,
+        },
+      });
+    } catch {
+      /* telemetria não pode quebrar a IA clínica */
+    }
+  })();
 }

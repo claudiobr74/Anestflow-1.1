@@ -21,9 +21,8 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-if (!url || !key || key.includes("xxxxxxxx")) fail("VITE_SUPABASE_URL / PUBLISHABLE_KEY ausentes");
-if (!email || !password) {
-  console.log("ADMIN_LIVE_E2E_SKIPPED sem ONDA3_TEST_EMAIL / ONDA3_TEST_PASSWORD");
+if (!url || !key || key.includes("xxxxxxxx") || !email || !password) {
+  console.log("ADMIN_LIVE_E2E_SKIPPED sem VITE_SUPABASE_* / ONDA3_TEST_EMAIL / ONDA3_TEST_PASSWORD");
   process.exit(0);
 }
 

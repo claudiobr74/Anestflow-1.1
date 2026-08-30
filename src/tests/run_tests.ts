@@ -2514,7 +2514,7 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
 
   const aiFnSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/aiFunctions.ts"), "utf-8");
   assert(aiFnSrc.includes("record_ai_usage"), "IA registra telemetria técnica");
-  assert(!aiFnSrc.includes("transcript"), "telemetria de IA não envia transcript");
+  assert(!/transcript\b|audioBase64|prompt_text/.test(aiFnSrc), "telemetria de IA não envia transcript");
 
   const procSvc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
   assert(procSvc.includes("organization_id"), "insert clínico tenta gravar organization_id");
@@ -2532,7 +2532,7 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
     "supabase/migrations/20260830140500_admin_hardening_issue_dedup_verify.sql",
   ];
   const hardeningExists = hardeningFiles.every((rel) => fs.existsSync(path.join(process.cwd(), rel)));
-  assert(hardeningExists || sql.includes("force row level security"), "hardening SQL existe ou admin_erp ainda tem FORCE RLS");
+  assert(hardeningExists, "migrations de hardening estão versionadas");
   assert(!sql.includes("patient->>'name'"), "RPC de procedimentos não seleciona nome do paciente");
   assert(!sql.includes("signed_canonical"), "Admin não devolve signed_canonical");
   assert(sql.includes("patient->>'hospital'"), "hospital institucional é metadata operacional");
