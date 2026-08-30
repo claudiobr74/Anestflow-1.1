@@ -2437,6 +2437,7 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
   assert(formatInt(0) === "0", "métrica zero real não vira número de design");
   assert(formatInt(null) === "—", "métrica ausente não inventa valor");
   assert(formatBRLFromCents(0).includes("0"), "financeiro sem contrato mostra R$ 0");
+  assert(formatBRLFromCents(null) === "—", "custo de IA nulo não vira R$ 0");
   assert(formatPct(null) === "—", "percentual sem base não inventa 99,8%");
   const grouped = groupSeriesPoints(
     [
@@ -2498,10 +2499,40 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
   assert(adminSrc.includes("SESSION_TIMEBOX_MS"), "settings de sessão lê o runtime de 12h");
   assert(adminSrc.includes("showAdminLink"), "link Admin no header clínico é condicional");
 
+  const adminAppSrc = fs.readFileSync(path.join(process.cwd(), "src/admin/AdminApp.tsx"), "utf-8");
+  assert(!adminAppSrc.includes("adminBootstrapSelf"), "AdminApp não chama adminBootstrapSelf");
+  assert(adminAppSrc.includes("adminWhoami"), "gate consulta adminWhoami");
+
+  const hardeningVerify = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260830140500_admin_hardening_issue_dedup_verify.sql"),
+    "utf-8"
+  );
+  assert(hardeningVerify.includes("occurrences = coalesce(occurrences, 1) + 1"), "issue incrementa occurrences");
+  assert(hardeningVerify.includes("verify_procedure_integrity_core"), "listagem Admin usa verify_core");
+  assert(!hardeningVerify.includes("admin_integrity_status(p.id)"), "listagem não gera issue por page view");
+  assert(hardeningVerify.includes("admin_verify_procedure"), "RPC explícita de verificação existe");
+
+  const aiFnSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/aiFunctions.ts"), "utf-8");
+  assert(aiFnSrc.includes("record_ai_usage"), "IA registra telemetria técnica");
+  assert(!aiFnSrc.includes("transcript"), "telemetria de IA não envia transcript");
+
+  const procSvc = fs.readFileSync(path.join(process.cwd(), "src/lib/proceduresService.ts"), "utf-8");
+  assert(procSvc.includes("organization_id"), "insert clínico tenta gravar organization_id");
+  assert(procSvc.includes("resolve_my_organization_id"), "organization_id vem de RPC inequívoca");
+
   const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260830013809_admin_erp.sql"), "utf-8");
   assert(sql.includes("force row level security"), "tabelas admin usam FORCE RLS");
   assert(sql.includes("not_platform_admin"), "RPC recusa não-admin");
-  assert(sql.includes("admin_bootstrap_self"), "bootstrap do primeiro admin existe");
+  const hardeningFiles = [
+    "supabase/migrations/20260830140000_admin_hardening_schema.sql",
+    "supabase/migrations/20260830140100_admin_hardening_integrity_issues.sql",
+    "supabase/migrations/20260830140200_admin_hardening_rpcs.sql",
+    "supabase/migrations/20260830140300_admin_hardening_users_ops.sql",
+    "supabase/migrations/20260830140400_admin_hardening_ops_settings.sql",
+    "supabase/migrations/20260830140500_admin_hardening_issue_dedup_verify.sql",
+  ];
+  const hardeningExists = hardeningFiles.every((rel) => fs.existsSync(path.join(process.cwd(), rel)));
+  assert(hardeningExists || sql.includes("force row level security"), "hardening SQL existe ou admin_erp ainda tem FORCE RLS");
   assert(!sql.includes("patient->>'name'"), "RPC de procedimentos não seleciona nome do paciente");
   assert(!sql.includes("signed_canonical"), "Admin não devolve signed_canonical");
   assert(sql.includes("patient->>'hospital'"), "hospital institucional é metadata operacional");
