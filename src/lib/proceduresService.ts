@@ -129,10 +129,24 @@ async function insertProcedureParent(
   userId: string,
   procedureId: string
 ) {
+  let organizationId: string | null = null;
+  try {
+    const hospital =
+      cleanedDoc.patient && typeof cleanedDoc.patient === "object"
+        ? String((cleanedDoc.patient as { hospital?: string }).hospital || "")
+        : "";
+    const { data } = await supabase.rpc("resolve_my_organization_id", {
+      p_hospital: hospital || null,
+    });
+    if (typeof data === "string" && data.length > 0) organizationId = data;
+  } catch {
+    organizationId = null;
+  }
   const { error: insertError } = await supabase.from("procedures").insert({
     id: procedureId,
     created_by: userId,
     responsible_id: userId,
+    ...(organizationId ? { organization_id: organizationId } : {}),
     ...parentPayloadForWrite(cleanedDoc, userId, { includeStatus: true })
   });
   if (insertError) throwClinical(insertError);

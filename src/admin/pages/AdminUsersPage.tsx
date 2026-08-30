@@ -1,7 +1,7 @@
 import React from "react";
 import { Plus } from "lucide-react";
-import { adminListUsers } from "../api";
-import type { AdminUserListItem } from "../types";
+import { adminListUsersPage, adminSetUserStatus } from "../api";
+import type { AdminRole, AdminUserListItem } from "../types";
 import { formatInt, formatRelative, initialsFromName, uniqueStrings, USER_STATUS_LABEL } from "../format";
 import { navigateAdmin, usersHref } from "../routes";
 import {
@@ -12,7 +12,6 @@ import {
   LoadingBlock,
   PageHeader,
   Pagination,
-  paginate,
   PrimaryButton,
   SecondaryButton,
   SelectFilter,
@@ -22,20 +21,37 @@ import AdminUserDrawer from "../components/AdminUserDrawer";
 
 const PAGE_SIZE = 10;
 
-function statusTone(status: string): "success" | "warning" | "neutral" {
-  if (status === "ativo") return "success";
+function statusTone(status: string): "success" | "warning" | "danger" | "neutral" {
+  if (status === "ativo" || status === "active") return "success";
   if (status === "perfil_incompleto" || status === "convite_pendente") return "warning";
+  if (status === "inactive" || status === "suspended") return "danger";
   return "neutral";
 }
+
+function isInactiveStatus(row: AdminUserListItem): boolean {
+  const status = String(row.account_status || row.status);
+  return status === "inactive" || status === "suspended";
+}
+
+const USER_STATUS_FILTERS = [
+  { value: "active", label: "Ativo" },
+  { value: "inactive", label: "Inativo" },
+  { value: "suspended", label: "Suspenso" },
+  { value: "convite_pendente", label: "Convite pendente" },
+  { value: "perfil_incompleto", label: "Perfil incompleto" },
+];
 
 export default function AdminUsersPage({
   isDark,
   drawerId,
+  role,
 }: {
   isDark: boolean;
   drawerId: string | null;
+  role?: AdminRole | string | null;
 }) {
   const [rows, setRows] = React.useState<AdminUserListItem[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -45,24 +61,41 @@ export default function AdminUsersPage({
   const [perfil, setPerfil] = React.useState("all");
   const [page, setPage] = React.useState(1);
   const [inviteHint, setInviteHint] = React.useState(false);
+  const isSuperAdmin = role !== "CLINIC_ADMIN";
+
+  const reload = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await adminListUsersPage(page, PAGE_SIZE, search);
+      setRows(result.items);
+      setTotalCount(result.total_count);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Falha ao listar usuários.");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search]);
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void adminListUsers()
-      .then((list) => {
-        if (!cancelled) setRows(list);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Falha ao listar usuários.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    void reload().finally(() => {
+      if (cancelled) return;
+    });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reload]);
+
+  const toggleStatus = async (row: AdminUserListItem) => {
+    setError(null);
+    try {
+      const next = await adminSetUserStatus(row.id, isInactiveStatus(row) ? "active" : "inactive");
+      setRows((current) => current.map((item) => (item.id === next.id ? { ...item, ...next } : item)));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar status.");
+    }
+  };
 
   const ufs = uniqueStrings(rows.map((row) => row.uf));
   const orgs = uniqueStrings(rows.map((row) => row.organization_name));
@@ -72,7 +105,15 @@ export default function AdminUsersPage({
       const blob = `${row.full_name ?? ""} ${row.email ?? ""} ${row.crm ?? ""}`.toLowerCase();
       if (!blob.includes(q)) return false;
     }
-    if (status !== "all" && row.status !== status) return false;
+    if (status !== "all") {
+      const current = String(row.status);
+      const account = String(row.account_status ?? "");
+      if (status === "active") {
+        if (current !== "active" && current !== "ativo") return false;
+      } else if (current !== status && account !== status) {
+        return false;
+      }
+    }
     if (uf !== "all" && row.uf !== uf) return false;
     if (org !== "all" && row.organization_name !== org) return false;
     if (perfil === "admin" && !row.is_platform_admin) return false;
@@ -84,7 +125,7 @@ export default function AdminUsersPage({
     setPage(1);
   }, [search, status, uf, org, perfil]);
 
-  const active = rows.filter((row) => row.status === "ativo").length;
+  const active = rows.filter((row) => row.status === "ativo" || row.status === "active").length;
   const pending = rows.filter((row) => row.status === "convite_pendente").length;
   const incomplete = rows.filter((row) => row.status === "perfil_incompleto").length;
 
@@ -111,7 +152,7 @@ export default function AdminUsersPage({
       {!loading ? (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatTile isDark={isDark} label="Total usuários" value={formatInt(rows.length)} />
+            <StatTile isDark={isDark} label="Total usuários" value={formatInt(totalCount)} />
             <StatTile isDark={isDark} label="Ativos" value={formatInt(active)} tone="success" />
             <StatTile isDark={isDark} label="Convite pendente" value={formatInt(pending)} tone="warning" />
             <StatTile isDark={isDark} label="Perfil incompleto" value={formatInt(incomplete)} tone="warning" />
@@ -129,7 +170,7 @@ export default function AdminUsersPage({
               label="Status"
               value={status}
               onChange={setStatus}
-              options={[{ value: "all", label: "Status" }, ...Object.entries(USER_STATUS_LABEL).map(([value, label]) => ({ value, label }))]}
+              options={[{ value: "all", label: "Status" }, ...USER_STATUS_FILTERS]}
             />
             <SelectFilter
               isDark={isDark}
@@ -152,7 +193,7 @@ export default function AdminUsersPage({
           </FilterBar>
           <DataTable<AdminUserListItem>
             isDark={isDark}
-            rows={paginate(filtered, page, PAGE_SIZE)}
+            rows={filtered}
             rowKey={(row) => row.id}
             selectedKey={drawerId}
             emptyTitle="Nenhum usuário encontrado"
@@ -192,7 +233,8 @@ export default function AdminUsersPage({
               {
                 key: "profile",
                 header: "Perfil",
-                render: (row) => (row.is_platform_admin ? "Super Admin" : "Anestesiologista"),
+                render: (row) =>
+                  row.is_platform_admin ? "Super Admin" : row.is_clinic_admin ? "Clinic Admin" : "Anestesiologista",
               },
               {
                 key: "status",
@@ -212,18 +254,40 @@ export default function AdminUsersPage({
                 key: "actions",
                 header: "Ações",
                 render: (row) => (
-                  <SecondaryButton isDark={isDark} onClick={() => navigateAdmin(usersHref(row.id))}>
-                    Gerenciar
-                  </SecondaryButton>
+                  <div className="flex flex-wrap gap-2">
+                    {isSuperAdmin && !row.is_platform_admin ? (
+                      <SecondaryButton isDark={isDark} onClick={() => void toggleStatus(row)}>
+                        {isInactiveStatus(row) ? "Ativar" : "Desativar"}
+                      </SecondaryButton>
+                    ) : null}
+                    <SecondaryButton isDark={isDark} onClick={() => navigateAdmin(usersHref(row.id))}>
+                      Gerenciar
+                    </SecondaryButton>
+                  </div>
                 ),
               },
             ]}
           />
-          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="usuários" isDark={isDark} />
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={status !== "all" || uf !== "all" || org !== "all" || perfil !== "all" ? filtered.length : totalCount}
+            onPage={setPage}
+            noun="usuários"
+            isDark={isDark}
+          />
         </>
       ) : null}
       {drawerId ? (
-        <AdminUserDrawer userId={drawerId} isDark={isDark} onClose={() => navigateAdmin(usersHref())} />
+        <AdminUserDrawer
+          userId={drawerId}
+          isDark={isDark}
+          role={role}
+          onClose={() => navigateAdmin(usersHref())}
+          onUpdated={(user) => {
+            setRows((current) => current.map((row) => (row.id === user.id ? { ...row, ...user } : row)));
+          }}
+        />
       ) : null}
     </div>
   );

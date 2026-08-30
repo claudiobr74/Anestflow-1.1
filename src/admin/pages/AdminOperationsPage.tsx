@@ -17,8 +17,14 @@ function statusLabel(status: string): { text: string; className: string } {
   if (status === "operational") {
     return { text: "Operacional", className: "text-emerald-600" };
   }
+  if (status === "degraded") {
+    return { text: "Degradado", className: "text-amber-600" };
+  }
+  if (status === "down") {
+    return { text: "Indisponível", className: "text-rose-600" };
+  }
   if (status === "unknown") {
-    return { text: "Sem telemetria", className: "text-amber-600" };
+    return { text: "Não monitorado", className: "text-amber-600" };
   }
   return { text: status, className: "" };
 }

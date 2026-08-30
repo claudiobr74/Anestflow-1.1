@@ -1,23 +1,58 @@
 import React from "react";
 import { Building2 } from "lucide-react";
-import { adminGetOrganization } from "../api";
-import type { OrganizationDetail } from "../types";
+import { adminArchiveOrganization, adminGetOrganization, adminUpdateOrganization } from "../api";
+import type { AdminRole, OrganizationDetail, OrgPlan, OrgStatus } from "../types";
 import { asNumber, formatBRLFromCents, formatDate, formatInt, initialsFromName, ORG_STATUS_LABEL, ORG_TYPE_LABEL } from "../format";
 import { navigateAdmin } from "../routes";
-import { Badge, ChartCard, ErrorBanner, LoadingBlock, PageHeader, SecondaryButton, StatTile, cardClass } from "../components/ui";
+import {
+  Badge,
+  ChartCard,
+  ErrorBanner,
+  Field,
+  LoadingBlock,
+  PageHeader,
+  PrimaryButton,
+  SecondaryButton,
+  StatTile,
+  TextInput,
+  cardClass,
+} from "../components/ui";
 import { LineChart, CHART_BRAND } from "../components/charts";
 
 export default function AdminOrganizationDetailPage({
   organizationId,
   isDark,
+  role,
 }: {
   organizationId: string;
   isDark: boolean;
+  role?: AdminRole | string | null;
 }) {
   const [org, setOrg] = React.useState<OrganizationDetail | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [section, setSection] = React.useState<"overview" | "members">("overview");
+  const [editing, setEditing] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [name, setName] = React.useState("");
+  const [city, setCity] = React.useState("");
+  const [state, setState] = React.useState("");
+  const [plan, setPlan] = React.useState<OrgPlan | string>("trial");
+  const [monthlyCents, setMonthlyCents] = React.useState("");
+  const [billingCycle, setBillingCycle] = React.useState("monthly");
+  const [statusValue, setStatusValue] = React.useState<OrgStatus | string>("active");
+  const isSuperAdmin = role !== "CLINIC_ADMIN";
+
+  const fillForm = (row: OrganizationDetail) => {
+    setName(row.name);
+    setCity(row.city ?? "");
+    setState(row.state ?? "");
+    setPlan(row.plan);
+    setMonthlyCents(String(row.monthly_cents ?? 0));
+    setBillingCycle(row.billing_cycle || "monthly");
+    setStatusValue(row.status);
+  };
 
   React.useEffect(() => {
     let cancelled = false;
@@ -25,7 +60,10 @@ export default function AdminOrganizationDetailPage({
     setError(null);
     void adminGetOrganization(organizationId)
       .then((row) => {
-        if (!cancelled) setOrg(row);
+        if (!cancelled) {
+          setOrg(row);
+          fillForm(row);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -74,7 +112,17 @@ export default function AdminOrganizationDetailPage({
         isDark={isDark}
         actions={
           <>
-            <SecondaryButton isDark={isDark} disabled title="Edição cadastral ainda não disponível nesta versão.">
+            <SecondaryButton
+              isDark={isDark}
+              disabled={!isSuperAdmin}
+              title={isSuperAdmin ? undefined : "Apenas Super Admin"}
+              onClick={() => {
+                if (!isSuperAdmin || !org) return;
+                fillForm(org);
+                setFormError(null);
+                setEditing(true);
+              }}
+            >
               Editar Organização
             </SecondaryButton>
             <SecondaryButton isDark={isDark} disabled title="Faturamento ainda não integrado">
@@ -83,6 +131,121 @@ export default function AdminOrganizationDetailPage({
           </>
         }
       />
+      {editing && isSuperAdmin ? (
+        <form
+          className={cardClass(isDark, "mb-4 space-y-3 p-4")}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void (async () => {
+              setSaving(true);
+              setFormError(null);
+              try {
+                const next = await adminUpdateOrganization(organizationId, {
+                  name: name.trim(),
+                  city: city.trim() || null,
+                  state: state.trim() || null,
+                  plan,
+                  monthly_cents: Number(monthlyCents) || 0,
+                  billing_cycle: billingCycle,
+                  status: statusValue,
+                });
+                setOrg(next);
+                fillForm(next);
+                setEditing(false);
+              } catch (err: unknown) {
+                setFormError(err instanceof Error ? err.message : "Falha ao atualizar organização.");
+              } finally {
+                setSaving(false);
+              }
+            })();
+          }}
+        >
+          <h2 className="text-sm font-bold">Editar organização</h2>
+          {formError ? <ErrorBanner message={formError} isDark={isDark} /> : null}
+          <Field label="Nome" isDark={isDark}>
+            <TextInput value={name} onChange={setName} isDark={isDark} />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Cidade" isDark={isDark}>
+              <TextInput value={city} onChange={setCity} isDark={isDark} />
+            </Field>
+            <Field label="UF" isDark={isDark}>
+              <TextInput value={state} onChange={setState} isDark={isDark} />
+            </Field>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Plano" isDark={isDark}>
+              <select
+                value={plan}
+                onChange={(event) => setPlan(event.target.value as OrgPlan)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? "bg-zinc-950 border-zinc-700" : "bg-[#f8f9fa] border-[#e8ecf0]"}`}
+              >
+                <option value="trial">Trial</option>
+                <option value="basic">Basic</option>
+                <option value="standard">Standard</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </Field>
+            <Field label="Status" isDark={isDark}>
+              <select
+                value={statusValue}
+                onChange={(event) => setStatusValue(event.target.value as OrgStatus)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? "bg-zinc-950 border-zinc-700" : "bg-[#f8f9fa] border-[#e8ecf0]"}`}
+              >
+                <option value="active">Ativo</option>
+                <option value="trial">Trial</option>
+                <option value="suspended">Suspenso</option>
+                <option value="archived">Arquivado</option>
+              </select>
+            </Field>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Mensalidade (centavos)" isDark={isDark}>
+              <TextInput value={monthlyCents} onChange={setMonthlyCents} isDark={isDark} />
+            </Field>
+            <Field label="Ciclo" isDark={isDark}>
+              <select
+                value={billingCycle}
+                onChange={(event) => setBillingCycle(event.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${isDark ? "bg-zinc-950 border-zinc-700" : "bg-[#f8f9fa] border-[#e8ecf0]"}`}
+              >
+                <option value="monthly">Mensal</option>
+                <option value="annual">Anual</option>
+              </select>
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <PrimaryButton type="submit" disabled={saving || !name.trim()}>
+              Salvar
+            </PrimaryButton>
+            <SecondaryButton isDark={isDark} onClick={() => setEditing(false)}>
+              Cancelar
+            </SecondaryButton>
+            <SecondaryButton
+              isDark={isDark}
+              disabled={saving || org.status === "archived"}
+              onClick={() => {
+                void (async () => {
+                  setSaving(true);
+                  setFormError(null);
+                  try {
+                    const next = await adminArchiveOrganization(organizationId);
+                    setOrg(next);
+                    fillForm(next);
+                    setEditing(false);
+                  } catch (err: unknown) {
+                    setFormError(err instanceof Error ? err.message : "Falha ao arquivar organização.");
+                  } finally {
+                    setSaving(false);
+                  }
+                })();
+              }}
+            >
+              Arquivar
+            </SecondaryButton>
+          </div>
+        </form>
+      ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${isDark ? "bg-violet-500/20 text-violet-300" : "bg-[#efeaff] text-[#6c5ce7]"}`}>
           <Building2 className="h-5 w-5" />

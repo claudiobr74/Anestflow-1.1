@@ -60,6 +60,10 @@ export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
     const done = asNumber(point.completed);
     return total > 0 ? (done / total) * 100 : 0;
   });
+  const usersActivePresent = data?.metrics.users_active != null;
+  const usersLabel = usersActivePresent ? "Usuários ativos" : "Usuários cadastrados";
+  const usersValue = usersActivePresent ? data?.metrics.users_active : data?.metrics.users_registered;
+  const signatureRate = data?.metrics.signature_rate_pct ?? data?.metrics.success_rate_pct ?? null;
 
   return (
     <div>
@@ -90,12 +94,18 @@ export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
       {data ? (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <MetricCard isDark={isDark} label="Usuários ativos" value={formatInt(data.metrics.users_active)} series={[]} />
+            <MetricCard
+              isDark={isDark}
+              label={usersLabel}
+              value={formatInt(usersValue)}
+              hint={usersActivePresent ? undefined : "Contagem de profiles cadastrados no escopo."}
+              series={[]}
+            />
             <MetricCard isDark={isDark} label="Organizações ativas" value={formatInt(data.metrics.organizations_active)} series={[]} />
             <MetricCard isDark={isDark} label="Procedimentos" value={formatInt(data.metrics.procedures)} series={totals} />
             <MetricCard isDark={isDark} label="Procedimentos hoje" value={formatInt(data.metrics.procedures_today)} series={todaySeries} />
             <MetricCard isDark={isDark} label="Usuários ativos hoje" value={formatInt(data.metrics.users_active_today)} series={[]} />
-            <MetricCard isDark={isDark} label="Taxa de sucesso" value={formatPct(data.metrics.success_rate_pct)} series={successSeries} />
+            <MetricCard isDark={isDark} label="Taxa de assinatura" value={formatPct(signatureRate)} series={successSeries} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile isDark={isDark} label="Proc. por sala avg" value={formatInt(data.kpis.proc_per_room_avg)} />

@@ -1,7 +1,16 @@
 import React from "react";
-import { adminListProceduresMeta } from "../api";
+import { adminListProceduresPage } from "../api";
 import type { ProcedureMeta } from "../types";
-import { formatDateTime, formatInt, formatMinutes, procedureStatusLabel, shortId, uniqueStrings } from "../format";
+import {
+  formatDateTime,
+  formatInt,
+  formatMinutes,
+  integrityStatusLabel,
+  integrityStatusOf,
+  procedureStatusLabel,
+  shortId,
+  uniqueStrings,
+} from "../format";
 import {
   Badge,
   DataTable,
@@ -10,7 +19,6 @@ import {
   LoadingBlock,
   PageHeader,
   Pagination,
-  paginate,
   SecondaryButton,
   SelectFilter,
   StatTile,
@@ -26,8 +34,23 @@ function statusTone(status: string): "brand" | "success" | "warning" | "neutral"
   return "neutral";
 }
 
+function integrityToneClass(status: string, isDark: boolean): string {
+  if (status === "intact") return isDark ? "text-emerald-300" : "text-emerald-700";
+  if (status.includes("mismatch")) return isDark ? "text-rose-300" : "text-rose-700";
+  if (status === "legacy") return isDark ? "text-amber-300" : "text-amber-700";
+  return isDark ? "text-zinc-500" : "text-[#636e72]";
+}
+
+function matchesIntegrityFilter(row: ProcedureMeta, filter: string): boolean {
+  if (filter === "all") return true;
+  const status = integrityStatusOf(row);
+  if (filter === "mismatch") return status.includes("mismatch");
+  return status === filter;
+}
+
 export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
   const [rows, setRows] = React.useState<ProcedureMeta[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -37,11 +60,22 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
   const [page, setPage] = React.useState(1);
 
   React.useEffect(() => {
+    setPage(1);
+  }, [search, status]);
+
+  React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void adminListProceduresMeta(200)
-      .then((list) => {
-        if (!cancelled) setRows(list);
+    void adminListProceduresPage({
+      page,
+      pageSize: PAGE_SIZE,
+      search,
+      status,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setRows(result.items);
+        setTotalCount(result.total_count);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Falha ao listar procedimentos.");
@@ -52,28 +86,14 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page, search, status]);
 
   const hospitals = uniqueStrings(rows.map((row) => row.hospital));
-
-  const integrityOf = (row: ProcedureMeta): "integro" | "nao_verificado" =>
-    row.has_hash && row.status === "signed" ? "integro" : "nao_verificado";
-
   const filtered = rows.filter((row) => {
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const blob = `${row.id} ${row.responsible_name ?? ""} ${row.hospital ?? ""} ${shortId(row.id)}`.toLowerCase();
-      if (!blob.includes(q)) return false;
-    }
-    if (status !== "all" && row.status !== status) return false;
     if (hospital !== "all" && row.hospital !== hospital) return false;
-    if (integrity !== "all" && integrityOf(row) !== integrity) return false;
+    if (!matchesIntegrityFilter(row, integrity)) return false;
     return true;
   });
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [search, status, hospital, integrity]);
 
   const signed = rows.filter((row) => row.status === "signed").length;
   const inProgress = rows.filter((row) => row.status === "in_progress").length;
@@ -92,7 +112,7 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
       {!loading ? (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatTile isDark={isDark} label="Total período" value={formatInt(rows.length)} />
+            <StatTile isDark={isDark} label="Total período" value={formatInt(totalCount)} />
             <StatTile isDark={isDark} label="Concluídos" value={formatInt(signed)} tone="success" />
             <StatTile isDark={isDark} label="Em andamento" value={formatInt(inProgress)} tone="brand" />
             <StatTile isDark={isDark} label="Com intercorrência" value={formatInt(incidents)} tone="warning" />
@@ -124,14 +144,16 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
               onChange={setIntegrity}
               options={[
                 { value: "all", label: "Integridade" },
-                { value: "integro", label: "Íntegro" },
-                { value: "nao_verificado", label: "Não verificado" },
+                { value: "intact", label: "Íntegro" },
+                { value: "not_verified", label: "Não verificado" },
+                { value: "legacy", label: "Legado" },
+                { value: "mismatch", label: "Inconsistência detectada" },
               ]}
             />
           </FilterBar>
           <DataTable<ProcedureMeta>
             isDark={isDark}
-            rows={paginate(filtered, page, PAGE_SIZE)}
+            rows={filtered}
             rowKey={(row) => row.id}
             emptyTitle="Nenhum procedimento no período"
             emptyDescription="A listagem usa apenas metadados operacionais. Dados clínicos não são exibidos."
@@ -193,12 +215,12 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
               {
                 key: "integrity",
                 header: "Integridade",
-                render: (row) =>
-                  integrityOf(row) === "integro" ? (
-                    <span className={isDark ? "text-emerald-300" : "text-emerald-700"}>Íntegro</span>
-                  ) : (
-                    <span className={isDark ? "text-zinc-500" : "text-[#636e72]"}>Não verificado</span>
-                  ),
+                render: (row) => {
+                  const statusValue = integrityStatusOf(row);
+                  return (
+                    <span className={integrityToneClass(statusValue, isDark)}>{integrityStatusLabel(statusValue)}</span>
+                  );
+                },
               },
               {
                 key: "actions",
@@ -211,7 +233,7 @@ export default function AdminProceduresPage({ isDark }: { isDark: boolean }) {
               },
             ]}
           />
-          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="procedimentos" isDark={isDark} />
+          <Pagination page={page} pageSize={PAGE_SIZE} total={totalCount} onPage={setPage} noun="procedimentos" isDark={isDark} />
         </>
       ) : null}
     </div>

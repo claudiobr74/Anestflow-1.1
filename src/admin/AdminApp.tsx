@@ -3,9 +3,9 @@ import LoginScreen from "../components/LoginScreen";
 import { beginSession, clearClinicalBrowserCache, clearSessionClock } from "../lib/sessionPolicy";
 import { ensureSupabaseConfig, getSupabase, isSupabaseConfigured } from "../lib/supabase";
 import type { SessionUser } from "../lib/sessionUser";
-import { AdminRpcError, adminBootstrapSelf, adminListIssues, isPlatformAdmin } from "./api";
-import { parseAdminRoute, type AdminRoute } from "./routes";
-import type { AdminTheme } from "./types";
+import { AdminRpcError, adminListIssues, adminWhoami } from "./api";
+import { navigateAdmin, parseAdminRoute, type AdminRoute } from "./routes";
+import type { AdminRole, AdminTheme } from "./types";
 import AdminShell from "./components/AdminShell";
 import AdminOverviewPage from "./pages/AdminOverviewPage";
 import AdminOrganizationsPage from "./pages/AdminOrganizationsPage";
@@ -48,6 +48,7 @@ export default function AdminApp() {
   const [gate, setGate] = React.useState<Gate>("boot");
   const [gateError, setGateError] = React.useState<string | null>(null);
   const [user, setUser] = React.useState<SessionUser | null>(() => readStoredUser());
+  const [role, setRole] = React.useState<AdminRole | string | null>(null);
   const [issuesOpen, setIssuesOpen] = React.useState(0);
 
   const isDark = theme === "dark" || theme === "dark-clean";
@@ -74,12 +75,18 @@ export default function AdminApp() {
         setGate("login");
         return;
       }
-      await adminBootstrapSelf();
-      const admin = await isPlatformAdmin();
-      if (!admin) {
+      const who = await adminWhoami();
+      if (!who.role || who.role === "USER") {
+        setRole(who.role || "USER");
         setGate("forbidden");
         return;
       }
+      if (who.role !== "SUPER_ADMIN" && who.role !== "CLINIC_ADMIN") {
+        setRole(who.role);
+        setGate("forbidden");
+        return;
+      }
+      setRole(who.role);
       try {
         const issues = await adminListIssues();
         setIssuesOpen(issues.filter((issue) => issue.status !== "resolved").length);
@@ -109,6 +116,12 @@ export default function AdminApp() {
   React.useEffect(() => {
     void runGate();
   }, [runGate]);
+
+  React.useEffect(() => {
+    if (role === "CLINIC_ADMIN" && (route.tab === "financial" || route.tab === "settings")) {
+      navigateAdmin("/admin");
+    }
+  }, [role, route.tab]);
 
   React.useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -210,6 +223,7 @@ export default function AdminApp() {
   return (
     <AdminShell
       route={route}
+      role={role === "CLINIC_ADMIN" ? "CLINIC_ADMIN" : "SUPER_ADMIN"}
       isDark={isDark}
       userName={user?.name || "Admin"}
       issuesOpen={issuesOpen}
@@ -222,16 +236,26 @@ export default function AdminApp() {
       {route.tab === "overview" ? <AdminOverviewPage isDark={isDark} /> : null}
       {route.tab === "organizations" && !route.organizationId ? <AdminOrganizationsPage isDark={isDark} /> : null}
       {route.tab === "organizations" && route.organizationId ? (
-        <AdminOrganizationDetailPage organizationId={route.organizationId} isDark={isDark} />
+        <AdminOrganizationDetailPage
+          organizationId={route.organizationId}
+          isDark={isDark}
+          role={role === "CLINIC_ADMIN" ? "CLINIC_ADMIN" : "SUPER_ADMIN"}
+        />
       ) : null}
-      {route.tab === "users" ? <AdminUsersPage isDark={isDark} drawerId={route.drawerId} /> : null}
+      {route.tab === "users" ? (
+        <AdminUsersPage
+          isDark={isDark}
+          drawerId={route.drawerId}
+          role={role === "CLINIC_ADMIN" ? "CLINIC_ADMIN" : "SUPER_ADMIN"}
+        />
+      ) : null}
       {route.tab === "procedures" ? <AdminProceduresPage isDark={isDark} /> : null}
       {route.tab === "ai" ? <AdminAiPage isDark={isDark} /> : null}
-      {route.tab === "financial" ? <AdminFinancialPage isDark={isDark} /> : null}
+      {route.tab === "financial" && role !== "CLINIC_ADMIN" ? <AdminFinancialPage isDark={isDark} /> : null}
       {route.tab === "operations" ? <AdminOperationsPage isDark={isDark} /> : null}
       {route.tab === "issues" ? <AdminIssuesPage isDark={isDark} drawerId={route.drawerId} /> : null}
       {route.tab === "audit" ? <AdminAuditPage isDark={isDark} /> : null}
-      {route.tab === "settings" ? <AdminSettingsPage isDark={isDark} /> : null}
+      {route.tab === "settings" && role !== "CLINIC_ADMIN" ? <AdminSettingsPage isDark={isDark} /> : null}
     </AdminShell>
   );
 }

@@ -168,7 +168,7 @@ export default function AdminAiPage({ isDark }: { isDark: boolean }) {
   );
 }
 
-function FeatureCard({ isDark, title, calls }: { isDark: boolean; title: string; calls: number }) {
+function FeatureCard({ isDark, title, calls }: { isDark: boolean; title: string; calls: number | null }) {
   return (
     <div className={cardClass(isDark, "p-4")}>
       <p className="text-sm font-bold">{title}</p>

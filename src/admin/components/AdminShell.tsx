@@ -2,9 +2,11 @@ import React from "react";
 import { Bell, HeartPulse, LogOut, Moon, Sun, Stethoscope } from "lucide-react";
 import { ADMIN_TABS, navigateAdmin, type AdminRoute } from "../routes";
 import { initialsFromName } from "../format";
+import type { AdminRole } from "../types";
 
 export default function AdminShell({
   route,
+  role,
   isDark,
   userName,
   issuesOpen,
@@ -14,6 +16,7 @@ export default function AdminShell({
   children,
 }: {
   route: AdminRoute;
+  role?: AdminRole | string | null;
   isDark: boolean;
   userName: string;
   issuesOpen: number;
@@ -82,7 +85,9 @@ export default function AdminShell({
                 </span>
                 <span className="hidden text-left sm:block">
                   <span className="block text-sm font-semibold leading-tight">{userName || "Admin"}</span>
-                  <span className={`block text-[11px] ${isDark ? "text-zinc-500" : "text-[#636e72]"}`}>Super Admin</span>
+                  <span className={`block text-[11px] ${isDark ? "text-zinc-500" : "text-[#636e72]"}`}>
+                    {role === "CLINIC_ADMIN" ? "Clinic Admin" : "Super Admin"}
+                  </span>
                 </span>
               </button>
               {menuOpen ? (
@@ -135,7 +140,10 @@ export default function AdminShell({
           className={`flex h-12 items-stretch gap-5 overflow-x-auto border-b px-8 ${isDark ? "border-zinc-800" : "border-[#e8ecf0]"}`}
           aria-label="Admin"
         >
-          {ADMIN_TABS.map((tab) => {
+          {ADMIN_TABS.filter((tab) => {
+            if (role === "CLINIC_ADMIN" && (tab.id === "financial" || tab.id === "settings")) return false;
+            return true;
+          }).map((tab) => {
             const active = route.tab === tab.id;
             return (
               <button

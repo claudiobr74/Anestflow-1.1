@@ -1,29 +1,54 @@
 import React from "react";
 import { Building2, X } from "lucide-react";
-import { adminGetUser } from "../api";
-import type { AdminUserDetail } from "../types";
+import {
+  adminAddMembership,
+  adminGetUser,
+  adminRemoveMembership,
+  adminSetMembershipRole,
+  adminSetUserStatus,
+} from "../api";
+import type { AdminRole, AdminUserDetail } from "../types";
 import { formatDate, formatRelative, initialsFromName, loginProviderLabel, USER_STATUS_LABEL } from "../format";
-import { Badge, ErrorBanner, LoadingBlock } from "./ui";
+import { Badge, ErrorBanner, Field, LoadingBlock, SecondaryButton, TextInput } from "./ui";
 
 function statusTone(status: string): "success" | "warning" | "danger" | "neutral" {
-  if (status === "ativo") return "success";
+  if (status === "ativo" || status === "active") return "success";
   if (status === "perfil_incompleto") return "warning";
   if (status === "convite_pendente") return "warning";
+  if (status === "inactive" || status === "suspended") return "danger";
   return "neutral";
+}
+
+function isInactiveStatus(user: AdminUserDetail): boolean {
+  const status = String(user.account_status || user.status);
+  return status === "inactive" || status === "suspended";
 }
 
 export default function AdminUserDrawer({
   userId,
   isDark,
+  role,
   onClose,
+  onUpdated,
 }: {
   userId: string;
   isDark: boolean;
+  role?: AdminRole | string | null;
   onClose: () => void;
+  onUpdated?: (user: AdminUserDetail) => void;
 }) {
   const [user, setUser] = React.useState<AdminUserDetail | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [orgId, setOrgId] = React.useState("");
+  const [memberRole, setMemberRole] = React.useState("anestesista");
+  const isSuperAdmin = role !== "CLINIC_ADMIN";
+
+  const applyUser = (row: AdminUserDetail) => {
+    setUser(row);
+    onUpdated?.(row);
+  };
 
   React.useEffect(() => {
     let cancelled = false;
@@ -53,6 +78,22 @@ export default function AdminUserDrawer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const run = async (fn: () => Promise<AdminUserDetail>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      applyUser(await fn());
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar usuário.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectClass = isDark
+    ? "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+    : "w-full rounded-lg border border-[#e8ecf0] bg-[#f8f9fa] px-3 py-2 text-sm";
 
   return (
     <aside
@@ -98,7 +139,23 @@ export default function AdminUserDrawer({
                     Super Admin
                   </Badge>
                 ) : null}
+                {user.is_clinic_admin && !user.is_platform_admin ? (
+                  <Badge tone="brand" isDark={isDark}>
+                    Clinic Admin
+                  </Badge>
+                ) : null}
               </div>
+              {isSuperAdmin && !user.is_platform_admin ? (
+                <div className="mt-3">
+                  <SecondaryButton
+                    isDark={isDark}
+                    disabled={saving}
+                    onClick={() => void run(() => adminSetUserStatus(user.id, isInactiveStatus(user) ? "active" : "inactive"))}
+                  >
+                    {isInactiveStatus(user) ? "Ativar" : "Desativar"}
+                  </SecondaryButton>
+                </div>
+              ) : null}
             </div>
 
             <section>
@@ -109,7 +166,7 @@ export default function AdminUserDrawer({
                 <Row label="UF de Registro" value={user.uf || "—"} isDark={isDark} />
                 <Row
                   label="Perfil de Acesso"
-                  value={user.is_platform_admin ? "Super Admin" : "Anestesiologista"}
+                  value={user.is_platform_admin ? "Super Admin" : user.is_clinic_admin ? "Clinic Admin" : "Anestesiologista"}
                   accent
                   isDark={isDark}
                 />
@@ -132,12 +189,67 @@ export default function AdminUserDrawer({
               ) : (
                 <div className="space-y-2">
                   {(user.memberships ?? []).map((membership) => (
-                    <div key={membership.organization_id}>
+                    <div key={membership.organization_id} className="space-y-2">
                       <OrgCard name={membership.name} role={membership.role} isDark={isDark} />
+                      {isSuperAdmin ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            aria-label="Papel"
+                            value={membership.role}
+                            disabled={saving}
+                            onChange={(event) =>
+                              void run(() => adminSetMembershipRole(user.id, membership.organization_id, event.target.value))
+                            }
+                            className={selectClass}
+                          >
+                            <option value="anestesista">Anestesista</option>
+                            <option value="coordenador">Coordenador</option>
+                            <option value="residente">Residente</option>
+                            <option value="admin">Clinic Admin</option>
+                          </select>
+                          <SecondaryButton
+                            isDark={isDark}
+                            disabled={saving}
+                            onClick={() => void run(() => adminRemoveMembership(user.id, membership.organization_id))}
+                          >
+                            Remover
+                          </SecondaryButton>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
               )}
+              {isSuperAdmin ? (
+                <div className="mt-3 space-y-2">
+                  <Field label="ID da organização" isDark={isDark}>
+                    <TextInput isDark={isDark} value={orgId} onChange={setOrgId} />
+                  </Field>
+                  <Field label="Papel" isDark={isDark}>
+                    <select
+                      value={memberRole}
+                      onChange={(event) => setMemberRole(event.target.value)}
+                      className={selectClass}
+                    >
+                      <option value="anestesista">Anestesista</option>
+                      <option value="coordenador">Coordenador</option>
+                      <option value="residente">Residente</option>
+                      <option value="admin">Clinic Admin</option>
+                    </select>
+                  </Field>
+                  <SecondaryButton
+                    isDark={isDark}
+                    disabled={saving || !orgId.trim()}
+                    onClick={() => {
+                      const id = orgId.trim();
+                      if (!id) return;
+                      void run(() => adminAddMembership(user.id, id, memberRole)).then(() => setOrgId(""));
+                    }}
+                  >
+                    Adicionar vínculo
+                  </SecondaryButton>
+                </div>
+              ) : null}
             </section>
 
             <section>
