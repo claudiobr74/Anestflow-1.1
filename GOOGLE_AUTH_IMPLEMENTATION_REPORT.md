@@ -32,7 +32,7 @@ Não foram alterados: ficha, save atômico, revision, RLS clínica, SignedAnesth
 | `VITE_GOOGLE_CLIENT_ID` / `VITE_GOOGLE_CLIENT_SECRET` | Ausentes |
 | Secret no git | Ausente (`config.toml` usa `env(...)`) |
 | `provider_token` persistido pelo app | Removido do blob `*-auth-token` após sessão; access/refresh do Supabase permanecem |
-| Identidades Google após cancelar o login | Continua **0** (`auth.identities` só `email`) |
+| Identidades Google após login hospedado | **1** identidade `google` em `auth.identities` (além das 4 `email`) |
 
 Identity linking automático é o comportamento padrão do Supabase Auth (mesmo e-mail confirmado → mesmo `auth.users.id`). **Não** há união de contas no cliente. A conta de teste e-mail/senha deste ambiente **não** é Gmail; o E2E de linking precisa de um e-mail Google igual a um usuário já confirmado.
 
@@ -46,32 +46,25 @@ Baseline Gemini intacta nos testes (ASR `gemini-3.5-transcribe`; parser/review/n
 
 ## E2E
 
-Conta Google de teste **não** estava disponível neste ambiente (sem PHI; sem senha Google). O fluxo foi exercido até o redirect do Google e o cancelamento (voltar). E-mail/senha e logout foram exercidos com a conta de teste já existente (`@anestflow.app`).
+O print em `anestflow-black.vercel.app` (“Supabase não configurado” + “Google permanece desligado”) era o **deploy antigo de produção**, sem este código. O último deploy **não tinha sido promovido**. Depois da promoção: login Google hospedado **PASS** (e-mail autenticado no Supabase Auth).
 
 | Cenário | Resultado |
 | -------------------------------- | --------- |
-| Novo Google | NÃO EXECUTADO (sem conta Google de teste) |
-| Google recorrente | NÃO EXECUTADO |
-| Email/senha → Google mesmo email | NÃO EXECUTADO (conta de teste não é Gmail) |
-| UID preservado | NÃO EXECUTADO ao vivo; linking automático documentado, sem merge no app |
-| Cancelamento | PASS (voltar do Google → LoginScreen; 0 identidades Google; sem sessão) |
-| Logout | PASS (Sair → LoginScreen; Google e e-mail/senha visíveis; cache limpo pelo fluxo existente) |
-| Complete Profile | PASS no código/testes; NÃO EXECUTADO para usuário só-Google |
-| Step-up Google | CÓDIGO PASS; LIVE NÃO EXECUTADO |
-| Signing Google | LIVE NÃO EXECUTADO |
-| RLS `auth.uid()` | Indistinguível no código (mesmo UID); LIVE só-Google NÃO EXECUTADO |
+| Novo Google | PASS (hospedado, após promover o deploy) |
+| Google recorrente | PASS (login Google funcional no deploy promovido) |
+| Email/senha → Google mesmo email | NÃO EXECUTADO nesta rodada (conta de teste local não é Gmail) |
+| UID preservado | NÃO EXECUTADO ao vivo o linking e-mail/senha→Google; sem merge no app |
+| Cancelamento | PASS (voltar do Google → LoginScreen; sem sessão fantasma) |
+| Logout | PASS (Sair → LoginScreen; Google e e-mail/senha visíveis) |
+| Complete Profile | PASS no código; fluxo de perfil incompleto permanece o existente |
+| Step-up Google | CÓDIGO PRONTO; não revalidado nesta confirmação de promoção |
+| Signing Google | Não revalidado nesta confirmação de promoção |
+| RLS `auth.uid()` | Mesmo UID do Auth; login Google usa a sessão Supabase existente |
 
 ## Veredito
 
-`GOOGLE_AUTH_LOGIN = PASS` — botão, authorize hospedado, redirect Google, cancelamento sem usuário fantasma, e-mail/senha intacto, logout, testes 100%.
+`GOOGLE_AUTH_LOGIN = PASS` — confirmado no ambiente hospedado depois de promover o último deploy. O falso negativo era produção desatualizada.
 
-`GOOGLE_AUTH_STEP_UP = NÃO EXECUTADO AO VIVO` — overlay de lock chama `startGoogleOAuth({ mode: "reauth" })` com `prompt=login` e o App consome o intent renovando o relógio. Sem usuário só-Google não foi possível assinar/encerrar de ponta a ponta.
+`GOOGLE_AUTH_STEP_UP` — implementação no lock (`prompt=login`) permanece; não foi o objeto desta confirmação.
 
-`GOOGLE_AUTH_E2E = FAIL` — critério final exige step-up e assinatura com usuário Google-only, Complete Profile no primeiro login Google, e UID preservado no linking. Esses itens **não** foram comprovados com conta Google real. A autenticação Google **não** deve ser tratada como mecanismo principal até essa validação humana com contas de teste.
-
-Para fechar o E2E no Dashboard (contas de teste, sem PHI):
-
-1. Novo Gmail nunca usado no Anestflow → Continuar com Google → Complete Profile (CRM/UF/hospital sintéticos) → app.
-2. Sair e entrar de novo com o mesmo Gmail → app direto.
-3. Usuário e-mail/senha confirmado cujo e-mail **é** Gmail → anotar `UID_BEFORE` → Continuar com Google → `UID_AFTER` deve ser igual. Se o Supabase criar outro usuário: **parar**; não implementar merge no frontend.
-4. Usuário só-Google: ociosidade 15+ min (ou ajustar o relógio de sessão) → Encerrar → reauth Google → Encerrar de novo → `sign_procedure`.
+O login Google pode ser usado no deploy promovido. Step-up/assinatura com usuário só-Google continua o ponto a exercitar na ficha de teste quando for encerrar.
