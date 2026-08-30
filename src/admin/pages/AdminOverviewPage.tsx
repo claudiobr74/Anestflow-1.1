@@ -2,7 +2,17 @@ import React from "react";
 import { RefreshCw } from "lucide-react";
 import { adminDashboardOverview } from "../api";
 import type { AdminRange, DashboardOverview } from "../types";
-import { asNumber, formatInt, formatMinutes, formatPct, formatUpdatedAt, RANGE_OPTIONS } from "../format";
+import {
+  asNumber,
+  formatInt,
+  formatMinutes,
+  formatPct,
+  formatUpdatedAt,
+  groupSeriesPoints,
+  RANGE_OPTIONS,
+  SERIES_GRAIN_OPTIONS,
+  type SeriesGrain,
+} from "../format";
 import {
   ChartCard,
   ErrorBanner,
@@ -11,12 +21,14 @@ import {
   PageHeader,
   SecondaryButton,
   SegmentedControl,
+  SelectFilter,
   StatTile,
 } from "../components/ui";
 import { BarChart, DonutChart, Heatmap, LineChart, VerticalBars, CHART_BRAND, CHART_TEAL } from "../components/charts";
 
 export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
   const [range, setRange] = React.useState<AdminRange>("30d");
+  const [grain, setGrain] = React.useState<SeriesGrain>("daily");
   const [data, setData] = React.useState<DashboardOverview | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -39,8 +51,9 @@ export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
   }, [load, range]);
 
   const series = data?.series ?? [];
-  const totals = series.map((point) => asNumber(point.total));
-  const completed = series.map((point) => asNumber(point.completed));
+  const grouped = groupSeriesPoints(series, grain);
+  const totals = grouped.totals;
+  const completed = grouped.completed;
   const todaySeries = series.slice(-1).map((point) => asNumber(point.total));
   const successSeries = series.map((point) => {
     const total = asNumber(point.total);
@@ -59,6 +72,13 @@ export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
         actions={
           <>
             <SegmentedControl value={range} options={RANGE_OPTIONS} onChange={setRange} isDark={isDark} />
+            <SelectFilter
+              isDark={isDark}
+              label="Organização"
+              value="all"
+              onChange={() => undefined}
+              options={[{ value: "all", label: "Todas as organizações" }]}
+            />
             <SecondaryButton isDark={isDark} onClick={() => void load(range)}>
               <RefreshCw className="h-4 w-4" /> Atualizar
             </SecondaryButton>
@@ -90,10 +110,14 @@ export default function AdminOverviewPage({ isDark }: { isDark: boolean }) {
             <StatTile isDark={isDark} label="Com intercorrência" value={formatInt(data.kpis.with_incident)} tone="warning" />
           </div>
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <ChartCard title="Procedimentos ao longo do tempo" isDark={isDark}>
+            <ChartCard
+              title="Procedimentos ao longo do tempo"
+              isDark={isDark}
+              actions={<SegmentedControl value={grain} options={SERIES_GRAIN_OPTIONS} onChange={setGrain} isDark={isDark} />}
+            >
               <LineChart
                 isDark={isDark}
-                labels={series.map((point) => point.day)}
+                labels={grouped.labels}
                 series={[
                   { id: "total", label: "Total", color: CHART_BRAND, values: totals },
                   { id: "done", label: "Concluídos", color: CHART_TEAL, values: completed },

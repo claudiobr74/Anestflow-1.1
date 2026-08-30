@@ -229,3 +229,49 @@ export function loginProviderLabel(provider: string | null | undefined): string 
   if (provider === "google") return "Google";
   return provider;
 }
+
+export type SeriesGrain = "daily" | "weekly" | "monthly";
+
+export const SERIES_GRAIN_OPTIONS: { value: SeriesGrain; label: string }[] = [
+  { value: "daily", label: "Diário" },
+  { value: "weekly", label: "Semanal" },
+  { value: "monthly", label: "Mensal" },
+];
+
+function grainKey(day: string, grain: SeriesGrain): string {
+  if (grain === "monthly") return day.slice(0, 7);
+  if (grain === "weekly") {
+    const date = new Date(`${day}T12:00:00Z`);
+    if (Number.isNaN(date.getTime())) return day;
+    const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const dayNum = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    return `${utc.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  }
+  return day;
+}
+
+export function groupSeriesPoints(
+  points: Array<{ day: string; total?: number; completed?: number; count?: number }>,
+  grain: SeriesGrain
+): { labels: string[]; totals: number[]; completed: number[] } {
+  const buckets = new Map<string, { total: number; completed: number }>();
+  const order: string[] = [];
+  for (const point of points) {
+    const key = grainKey(point.day, grain);
+    if (!buckets.has(key)) {
+      buckets.set(key, { total: 0, completed: 0 });
+      order.push(key);
+    }
+    const bucket = buckets.get(key)!;
+    bucket.total += asNumber(point.total ?? point.count);
+    bucket.completed += asNumber(point.completed);
+  }
+  return {
+    labels: order,
+    totals: order.map((key) => buckets.get(key)!.total),
+    completed: order.map((key) => buckets.get(key)!.completed),
+  };
+}

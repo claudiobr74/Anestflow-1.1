@@ -74,8 +74,8 @@ export default function AdminApp() {
         setGate("login");
         return;
       }
-      const bootstrapped = await adminBootstrapSelf();
-      const admin = bootstrapped && (await isPlatformAdmin());
+      await adminBootstrapSelf();
+      const admin = await isPlatformAdmin();
       if (!admin) {
         setGate("forbidden");
         return;

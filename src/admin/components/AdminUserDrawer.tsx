@@ -46,9 +46,19 @@ export default function AdminUserDrawer({
 
   const panel = isDark ? "bg-zinc-900 border-zinc-800 text-zinc-100" : "bg-white border-[#e8ecf0] text-[#2d3436]";
 
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <aside
       className={`fixed inset-y-0 right-0 z-50 flex w-[480px] max-w-[100vw] flex-col border-l shadow-xl ${panel}`}
+      role="dialog"
+      aria-modal="true"
       aria-labelledby="admin-user-drawer-title"
     >
       <div className={`flex items-center justify-between border-b px-5 py-4 ${isDark ? "border-zinc-800" : "border-[#e8ecf0]"}`}>

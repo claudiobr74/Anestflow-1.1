@@ -1,4 +1,5 @@
 import React from "react";
+import { Plus } from "lucide-react";
 import { adminListUsers } from "../api";
 import type { AdminUserListItem } from "../types";
 import { formatInt, formatRelative, initialsFromName, uniqueStrings, USER_STATUS_LABEL } from "../format";
@@ -12,6 +13,7 @@ import {
   PageHeader,
   Pagination,
   paginate,
+  PrimaryButton,
   SecondaryButton,
   SelectFilter,
   StatTile,
@@ -94,9 +96,9 @@ export default function AdminUsersPage({
         breadcrumb={[{ label: "Administração" }, { label: "Usuários" }]}
         isDark={isDark}
         actions={
-          <SecondaryButton isDark={isDark} onClick={() => setInviteHint(true)}>
-            Novo Usuário
-          </SecondaryButton>
+          <PrimaryButton onClick={() => setInviteHint(true)}>
+            <Plus className="h-4 w-4" /> Novo Usuário
+          </PrimaryButton>
         }
       />
       {inviteHint ? (

@@ -366,6 +366,7 @@ export function DataTable<T>({
   rowKey,
   onRowClick,
   selectedKey,
+  selectedClassName,
   emptyTitle,
   emptyDescription,
   isDark,
@@ -375,6 +376,7 @@ export function DataTable<T>({
   rowKey: (row: NoInfer<T>) => string;
   onRowClick?: (row: NoInfer<T>) => void;
   selectedKey?: string | null;
+  selectedClassName?: string;
   emptyTitle: string;
   emptyDescription?: string;
   isDark: boolean;
@@ -416,9 +418,8 @@ export function DataTable<T>({
                       onRowClick ? "cursor-pointer" : ""
                     } ${
                       selected
-                        ? isDark
-                          ? "bg-violet-500/10"
-                          : "bg-[#efeaff]"
+                        ? selectedClassName ??
+                          (isDark ? "bg-violet-500/10" : "bg-[#efeaff]")
                         : isDark
                           ? "hover:bg-zinc-800/60"
                           : "hover:bg-[#f8f9fa]"
@@ -522,7 +523,10 @@ export function SecondaryButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.();
+      }}
       disabled={disabled}
       title={title}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${

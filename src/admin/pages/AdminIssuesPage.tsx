@@ -45,6 +45,7 @@ export default function AdminIssuesPage({
   const [severity, setSeverity] = React.useState("all");
   const [status, setStatus] = React.useState("all");
   const [type, setType] = React.useState("all");
+  const [org, setOrg] = React.useState("all");
   const [page, setPage] = React.useState(1);
 
   const load = React.useCallback(async () => {
@@ -65,16 +66,18 @@ export default function AdminIssuesPage({
   }, [load]);
 
   const types = uniqueStrings(rows.map((row) => row.incident_type));
+  const orgs = uniqueStrings(rows.map((row) => row.organization_name));
   const filtered = rows.filter((row) => {
     if (severity !== "all" && row.severity !== severity) return false;
     if (status !== "all" && row.status !== status) return false;
     if (type !== "all" && row.incident_type !== type) return false;
+    if (org !== "all" && row.organization_name !== org) return false;
     return true;
   });
 
   React.useEffect(() => {
     setPage(1);
-  }, [severity, status, type]);
+  }, [severity, status, type, org]);
 
   return (
     <div>
@@ -105,6 +108,13 @@ export default function AdminIssuesPage({
             />
             <SelectFilter
               isDark={isDark}
+              label="Organização"
+              value={org}
+              onChange={setOrg}
+              options={[{ value: "all", label: "Organização" }, ...orgs.map((value) => ({ value, label: value }))]}
+            />
+            <SelectFilter
+              isDark={isDark}
               label="Status"
               value={status}
               onChange={setStatus}
@@ -117,6 +127,7 @@ export default function AdminIssuesPage({
             rows={paginate(filtered, page, PAGE_SIZE)}
             rowKey={(row) => row.id}
             selectedKey={drawerId}
+            selectedClassName={isDark ? "bg-violet-500/10 border-l-4 border-l-rose-500" : "bg-[#efeaff] border-l-4 border-l-rose-500"}
             emptyTitle="Nenhum incidente registrado"
             emptyDescription="A fila de problemas começa vazia. O drawer só abre para uma linha real."
             onRowClick={(row) => navigateAdmin(issuesHref(row.id))}

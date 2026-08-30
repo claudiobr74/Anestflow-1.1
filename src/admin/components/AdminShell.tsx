@@ -42,7 +42,12 @@ export default function AdminShell({
       <header className={`sticky top-0 z-40 ${headerBg}`}>
         <div className={`flex h-[68px] items-center justify-between border-b px-8 py-4 ${isDark ? "border-zinc-800" : "border-[#e8ecf0]"}`}>
           <div className="flex items-center gap-2.5">
-            <HeartPulse className="h-7 w-7 text-[#6c5ce7]" strokeWidth={2.25} aria-hidden />
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#6c5ce7] shadow-[0_2px_8px_rgba(108,92,231,0.35)]"
+              aria-hidden
+            >
+              <HeartPulse className="h-3.5 w-3.5 text-white" strokeWidth={2.4} />
+            </span>
             <div className="flex items-baseline gap-1.5 text-[18px] leading-none">
               <span className="font-bold text-[#6c5ce7]">AnestFlow</span>
               <span className={`font-normal ${isDark ? "text-zinc-200" : "text-[#2d3436]"}`}>Admin</span>

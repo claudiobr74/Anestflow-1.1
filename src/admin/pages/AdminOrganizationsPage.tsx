@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus } from "lucide-react";
+import { Building2, Plus } from "lucide-react";
 import { adminCreateOrganization, adminListOrganizations } from "../api";
 import type { OrganizationListItem, OrgPlan, OrgType } from "../types";
 import { formatInt, ORG_PLAN_LABEL, ORG_STATUS_LABEL, ORG_TYPE_LABEL } from "../format";
@@ -205,7 +205,14 @@ export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) 
               {
                 key: "name",
                 header: "Organização",
-                render: (row) => <span className="font-semibold">{row.name}</span>,
+                render: (row) => (
+                  <span className="inline-flex items-center gap-2 font-semibold">
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${isDark ? "bg-violet-500/20 text-violet-300" : "bg-[#efeaff] text-[#6c5ce7]"}`}>
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    {row.name}
+                  </span>
+                ),
               },
               {
                 key: "type",

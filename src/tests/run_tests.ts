@@ -44,6 +44,17 @@ import {
 } from "../lib/googleAuth.ts";
 import { isProfileComplete } from "../lib/profileService.ts";
 import { installMemoryStorage, storageDump } from "./memoryStorage.ts";
+import { ADMIN_AI_MODEL_CARDS, ADMIN_AI_PROMPT_ROWS } from "../admin/aiCatalog.ts";
+import { formatBRLFromCents, formatInt, formatPct, groupSeriesPoints } from "../admin/format.ts";
+import { ADMIN_TABS, isAdminPathname, parseAdminRoute } from "../admin/routes.ts";
+import { paginate } from "../admin/components/ui.tsx";
+import {
+  AI_MODEL_CONFIG,
+  FORBIDDEN_CLINICAL_MODELS,
+  GEMINI_CLINICAL_MODEL,
+  GEMINI_TRANSCRIBE_MODEL,
+  assertProductionAiModels,
+} from "../lib/aiModelConfig.ts";
 import fs from "fs";
 import path from "path";
 
@@ -2397,7 +2408,112 @@ try {
   assert(false, `Falha na verificação do Google Auth: ${err}`);
 }
 
-// 23. VERIFICAÇÃO FINAL DE RESULTADOS
+console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
+{
+  assert(isAdminPathname("/admin") === true, "/admin é pathname administrativo");
+  assert(isAdminPathname("/admin/users") === true, "/admin/users é pathname administrativo");
+  assert(isAdminPathname("/") === false, "ficha clínica não é pathname administrativo");
+  assert(isAdminPathname("/administrador") === false, "prefixo /admin exige barra ou fim");
+
+  const overview = parseAdminRoute("/admin", "");
+  assert(overview.tab === "overview" && overview.organizationId === null, "/admin abre visão geral");
+  const orgList = parseAdminRoute("/admin/organizations", "");
+  assert(orgList.tab === "organizations" && orgList.organizationId === null, "/admin/organizations lista instituições");
+  const orgDetail = parseAdminRoute("/admin/organizations/11111111-1111-4111-8111-111111111111", "");
+  assert(orgDetail.organizationId === "11111111-1111-4111-8111-111111111111", "detalhe de organização lê UUID");
+  const usersDrawer = parseAdminRoute("/admin/users", "?id=22222222-2222-4222-8222-222222222222");
+  assert(usersDrawer.tab === "users" && usersDrawer.drawerId?.startsWith("22222222"), "usuário abre drawer via query id");
+  const issuesDrawer = parseAdminRoute("/admin/issues", "?id=33333333-3333-4333-8333-333333333333");
+  assert(issuesDrawer.tab === "issues" && issuesDrawer.drawerId?.startsWith("33333333"), "problema abre drawer via query id");
+  assert(parseAdminRoute("/admin/ai", "").tab === "ai", "/admin/ai existe");
+  assert(parseAdminRoute("/admin/financial", "").tab === "financial", "/admin/financial existe");
+  assert(parseAdminRoute("/admin/operations", "").tab === "operations", "/admin/operations existe");
+  assert(parseAdminRoute("/admin/audit", "").tab === "audit", "/admin/audit existe");
+  assert(parseAdminRoute("/admin/settings", "").tab === "settings", "/admin/settings existe");
+  assert(parseAdminRoute("/admin/procedures", "").tab === "procedures", "/admin/procedures existe");
+  assert(ADMIN_TABS.length === 10, "shell tem 10 abas do Figma");
+  assert(ADMIN_TABS.every((tab) => tab.href.startsWith("/admin")), "abas do Admin não usam react-router");
+
+  assert(formatInt(0) === "0", "métrica zero real não vira número de design");
+  assert(formatInt(null) === "—", "métrica ausente não inventa valor");
+  assert(formatBRLFromCents(0).includes("0"), "financeiro sem contrato mostra R$ 0");
+  assert(formatPct(null) === "—", "percentual sem base não inventa 99,8%");
+  const grouped = groupSeriesPoints(
+    [
+      { day: "2026-08-01", total: 2, completed: 1 },
+      { day: "2026-08-02", total: 3, completed: 2 },
+      { day: "2026-08-10", total: 4, completed: 4 },
+    ],
+    "monthly"
+  );
+  assert(grouped.labels.length === 1 && grouped.totals[0] === 9, "grão mensal agrega série real");
+  assert(paginate([1, 2, 3, 4, 5], 2, 2).join(",") === "3,4", "paginação administrativa é por página");
+
+  assertProductionAiModels();
+  assert(ADMIN_AI_MODEL_CARDS[0].model === GEMINI_TRANSCRIBE_MODEL, "Admin ASR usa gemini-3.5-transcribe");
+  assert(ADMIN_AI_MODEL_CARDS.every((card) => card.id === "transcription" || card.model === GEMINI_CLINICAL_MODEL), "parser/review/narrativa usam gemini-3.6-flash");
+  assert(ADMIN_AI_PROMPT_ROWS.every((row) => !row.model.includes("flash-latest")), "catálogo Admin não usa alias -latest");
+  assert((FORBIDDEN_CLINICAL_MODELS as readonly string[]).includes("gemini-flash-latest"), "flash-latest permanece proibido");
+  assert(AI_MODEL_CONFIG.voiceParser.thinkingLevel === "minimal", "thinking do parser no Admin é o do runtime");
+}
+
+{
+  const adminSrc = readSrc(
+    "src/admin/AdminApp.tsx",
+    "src/admin/api.ts",
+    "src/admin/routes.ts",
+    "src/admin/aiCatalog.ts",
+    "src/admin/pages/AdminOverviewPage.tsx",
+    "src/admin/pages/AdminOrganizationsPage.tsx",
+    "src/admin/pages/AdminUsersPage.tsx",
+    "src/admin/pages/AdminProceduresPage.tsx",
+    "src/admin/pages/AdminAiPage.tsx",
+    "src/admin/pages/AdminFinancialPage.tsx",
+    "src/admin/pages/AdminOperationsPage.tsx",
+    "src/admin/pages/AdminIssuesPage.tsx",
+    "src/admin/pages/AdminAuditPage.tsx",
+    "src/admin/pages/AdminSettingsPage.tsx",
+    "src/admin/components/AdminShell.tsx",
+    "src/admin/components/AdminUserDrawer.tsx",
+    "src/admin/components/AdminIssueDrawer.tsx",
+    "src/main.tsx",
+    "src/App.tsx"
+  );
+  assert(!adminSrc.includes("react-router-dom"), "Admin não introduz react-router-dom");
+  assert(!adminSrc.includes("GEMINI_API_KEY"), "Admin não expõe GEMINI_API_KEY no browser");
+  assert(!adminSrc.includes("VITE_GEMINI"), "Admin não lê VITE_GEMINI");
+  assert(!adminSrc.includes("gemini-flash-latest"), "Admin não referencia gemini-flash-latest");
+  assert(!adminSrc.includes("Hospital Santa Maria"), "Admin não copia hospitais de design");
+  assert(!adminSrc.includes("fakeUsers"), "Admin não usa fakeUsers");
+  assert(!adminSrc.includes("fakeOrganizations"), "Admin não usa fakeOrganizations");
+  assert(!adminSrc.includes("GPT-4o"), "Admin não mostra GPT-4o no lugar do Gemini");
+  assert(!/\b1284\b/.test(adminSrc), "Admin não hardcoda 1.284 procedimentos");
+  assert(adminSrc.includes("is_platform_admin"), "gate consulta is_platform_admin");
+  assert(adminSrc.includes("not_platform_admin") || adminSrc.includes("forbidden"), "UI trata 403 de plataforma");
+  assert(adminSrc.includes("admin_list_procedures_meta"), "procedimentos usam RPC metadata-first");
+  assert(adminSrc.includes("Acesso ao prontuário permanece restrito"), "Ver Ficha não abre prontuário");
+  assert(adminSrc.includes("w-[480px]"), "drawer de usuário tem 480px");
+  assert(adminSrc.includes("w-[520px]"), "drawer de problema tem 520px");
+  assert(adminSrc.includes("bg-black/60"), "drawer de problema tem overlay");
+  assert(adminSrc.includes("SESSION_TIMEBOX_MS"), "settings de sessão lê o runtime de 12h");
+  assert(adminSrc.includes("showAdminLink"), "link Admin no header clínico é condicional");
+
+  const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260830013809_admin_erp.sql"), "utf-8");
+  assert(sql.includes("force row level security"), "tabelas admin usam FORCE RLS");
+  assert(sql.includes("not_platform_admin"), "RPC recusa não-admin");
+  assert(sql.includes("admin_bootstrap_self"), "bootstrap do primeiro admin existe");
+  assert(!sql.includes("patient->>'name'"), "RPC de procedimentos não seleciona nome do paciente");
+  assert(!sql.includes("signed_canonical"), "Admin não devolve signed_canonical");
+  assert(sql.includes("patient->>'hospital'"), "hospital institucional é metadata operacional");
+  assert(sql.includes("organizations_deny_authenticated"), "policy deny-all em organizations");
+  assert(sql.includes("comment on function public.admin_list_procedures_meta"), "RPC de procedimentos documenta ausência de PHI");
+
+  const mainSrc = fs.readFileSync(path.join(process.cwd(), "src/main.tsx"), "utf-8");
+  assert(mainSrc.includes("AdminApp"), "Root monta AdminApp em /admin");
+  assert(mainSrc.includes("isAdminPathname"), "Root escolhe Admin pelo pathname");
+}
+
+// 24. VERIFICAÇÃO FINAL DE RESULTADOS
 console.log("\n=================================================");
 console.log(`📊 RESUMO DOS TESTES: ${passedTests}/${totalTests} aprovados (${Math.round((passedTests/totalTests)*100)}%)`);
 console.log("=================================================");
