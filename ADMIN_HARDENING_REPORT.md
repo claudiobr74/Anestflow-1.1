@@ -55,7 +55,7 @@ Teste SQL de tamper (trigger de imutabilidade desligado só durante o UPDATE con
 
 ## 6. Clinic Admin
 
-`organization_members.role = admin` = CLINIC_ADMIN. `assert_admin_reader` / `admin_visible_org_ids` / `admin_can_access_org` no PostgreSQL. Super Admin vê tudo. Clinic Admin: só orgs próprias; sem financeiro global e sem settings. UI esconde essas abas. Cross-org DENIED na RPC (`not_platform_admin`). Teste autenticado com segundo usuário não rodou neste ambiente (`ONDA3_TEST_EMAIL_B` ausente).
+`organization_members.role = admin` = CLINIC_ADMIN. `assert_admin_reader` / `admin_visible_org_ids` / `admin_can_access_org` no PostgreSQL. Super Admin vê tudo. Clinic Admin: só orgs próprias; sem financeiro global e sem settings. UI esconde essas abas. Cross-org DENIED na RPC (`not_platform_admin`). Live autenticado (USER B como CLINIC_ADMIN de ORG_A): `admin_get_organization(ORG_A)` PASS; `admin_get_organization(ORG_B)` DENIED (`not_platform_admin`).
 
 ## 7. User Management
 
@@ -81,7 +81,7 @@ Database/Auth = `operational` (probe da própria RPC autenticada). Atomic/Voice/
 
 ## 11. AI Usage
 
-Tabela `ai_usage` sem transcript, resposta clínica, paciente, prompt ou áudio. Features: `voice_asr`, `voice_parser`, `clinical_review`, `narrative`. Custo em `admin_ai_cost_rates` (centralizado). `invokeAiFunction` registra `record_ai_usage` (latência + status) sem alterar modelos/prompts Gemini. Sem linhas no período → Admin mostra “—” e nota “Sem telemetria”.
+Tabela `ai_usage` sem transcript, resposta clínica, paciente, prompt ou áudio. Features: `voice_asr`, `voice_parser`, `clinical_review`, `narrative`. Custo em `admin_ai_cost_rates` (centralizado). `invokeAiFunction` registra `record_ai_usage` (latência + status + model/provider/prompt_version/schema_version quando a função devolve) sem alterar modelos/prompts Gemini. Chamadas reais desta rodada aparecem em `admin_ai_overview` (voice/review/narrative). Tokens, `audio_seconds` e custo ficam `null` quando o fluxo existente não os envia.
 
 ## 12. Settings Enforcement
 
@@ -117,75 +117,142 @@ RPCs de procedimentos devolvem metadata (id, status, hospital institucional, res
 
 ## 19. Tests
 
+Estados usados: `PASS` | `FAIL` | `NOT_RUN` | `SKIPPED`. Nenhum `NOT_RUN`/`SKIPPED` foi promovido a `PASS`.
+
+Contas sintéticas (não produção): `live.hard.a@anestflow.app` (USER A, Super Admin de teste) e `live.hard.b@anestflow.app` (USER B). Variáveis efetivas em `ADMIN_LIVE_E2E_ENV.md`. Secrets não commitados.
+
 | Teste | Resultado |
 |-------|-----------|
-| A Bootstrap (definição remota + sem INSERT) | PASS |
-| B Super Admin (RPCs + 1 admin provisionado) | PASS (código/SQL) |
-| C Clinic Admin A vs B | NÃO EXECUTADO (sem 2º usuário) |
-| D USER denied | coberto por `admin_whoami` + assert nas RPCs |
-| E Membership + audit | RPCs + live script |
-| F Tamper + issue | PASS (SQL controlado) |
-| G Dedup occurrences=3 | PASS (SQL) |
-| H Settings não enforced | RPC recusa; UI read-only |
-| I PHI | lista não inclui campos clínicos |
-| J Paginação | `total_count` + `page_size` |
+| A Bootstrap não promove | PASS (`platform_admins` não cresceu; `admin_bootstrap_self` só consulta) |
+| B Super Admin dashboard + ORG_A/ORG_B | PASS |
+| SUPER_ADMIN_GLOBAL_ACCESS | PASS |
+| C CLINIC_ADMIN_OWN_ORG | PASS |
+| C CLINIC_ADMIN_CROSS_ORG | DENIED (`not_platform_admin` no PostgreSQL/RPC) |
+| D USER_ADMIN_RPC | DENIED (`admin_whoami` = USER; dashboard/orgs recusados) |
+| D USER_ADMIN_ROUTE | PASS (SPA: gate `adminWhoami` → USER; mesmas RPCs DENIED; sem auto-promoção) |
+| E Membership add/role/remove + audit | PASS (`target_type`, `target_id`, `actor_id` = USER A) |
+| F Integridade inicial A+B | PASS (`snapshot_ok=true`, `persisted_ok=true`, `intact`) |
+| F Tamper controlado | PASS (`snapshot_ok=false`, `persisted_ok=false`, `both_mismatch`) |
+| F Admin mismatch | PASS (`admin_verify_procedure` autenticado; label UI “Inconsistência detectada”) |
+| F INTEGRITY_MISMATCH critical | PASS (issue `ad110e09-cbcd-4783-a55c-171f6870da17`) |
+| F Restore + trigger | PASS (hash/revision restaurados; `procedures_protect_immutability` = `O`) |
+| G Dedup 3 ocorrências | PASS (1 issue, `occurrences=3`) |
+| H Settings não enforced | PASS |
+| I PHI nas RPCs de procedures | PASS |
+| J Paginação | PASS |
 
-`src/tests/admin_live_e2e.ts` existe. Sem `ONDA3_TEST_EMAIL` neste workspace o script encerra com `ADMIN_LIVE_E2E_SKIPPED`.
+`npx tsx src/tests/admin_live_e2e.ts` — **PASS** (nenhum SKIPPED). Reexecução após os fixes: `TEST F verify (pre-tamper) intact`.
 
-Regressão estática desta rodada:
+### Defeitos reais encontrados no live (corrigidos)
+
+1. `admin_dashboard_overview` — `jsonb_agg(count(*))` no heatmap (`aggregate function calls cannot be nested`). Migration `20260830140600`.
+2. `resolve_procedure_organization_id` — `min(uuid)` quebrava todo `save_atomic` (`function min(uuid) does not exist`). Migration `20260830140700`.
+3. `invokeAiFunction` — `review` enviava `document.id` como `procedure_id` e o insert em `ai_usage` falhava por FK. Hook deixa de usar `rec.id`.
+
+### Regressão estática
 
 - `npx tsc --noEmit` — PASS
 - `npm run lint:lib` — PASS
-- `npx tsx src/tests/run_tests.ts` — **1069/1069** PASS
-- `npm run build` — PASS
-- `npx tsx src/tests/admin_live_e2e.ts` — SKIPPED (sem `VITE_SUPABASE_*` / `ONDA3_TEST_*`)
+- `npx tsx src/tests/run_tests.ts` — **1081/1081** PASS
+- `npm run build` — PASS (`dist/index.html` title = AnestFlow)
 
-## 20. Clinical Regression
+## 20. Clinical Live Regression
 
-Core não foi reescrito. `save_atomic`, revision, signing, `verify_procedure_integrity` público, Voice/Gemini baseline (`gemini-3.5-transcribe`, `gemini-3.6-flash`, voice-parser-v4, schema v4) permanecem. Trigger de imutabilidade foi desligado **apenas** no UPDATE de tamper e religado em seguida.
+Suítes já existentes, paciente sintético, sem duplicar testes:
 
-Suites live clínicas/Voice desta rodada não foram reexecutadas (sem credenciais/áudio). Pinamento de modelos permanece nos testes estáticos.
+| Suite | Resultado |
+|-------|-----------|
+| `fase_atomic_live.ts` (atomic save, rollback, stale, idempotência, DELETE negado, void) | PASS |
+| `fase06_live.ts` (revision / stale) | PASS |
+| `fase04b_live.ts` (signing, selo A+B, imutabilidade, adendo) | PASS |
+| `checkpoint_live.ts` (persistência, signing, A+B) | PASS |
+| `fase_longcase_live.ts` (long case, reload, multi-aba, signing, imutabilidade, integrity, PDF) | PASS |
+| `onda3_live.ts` (save, hydrate, sign, imutabilidade) | PASS |
+| `fase04_handover_live.ts` (A→B) | PASS |
+
+Procedimento sintético do long case usado no tamper: `0337b28d-73c1-4309-9f06-5d788aa28c92`. Após restore: `integrity_status=intact`. Trigger de imutabilidade permanece ligado.
+
+## 21. Voice Live
+
+`npx tsx src/tests/voice_scribe_e2e_live.ts` com WAVs sintéticos (`edge-tts pt-BR-AntonioNeural` → ffmpeg 16 kHz).
+
+Baseline preservada em todos os casos t1–t5:
+
+- ASR: `gemini-3.5-transcribe`
+- Parser: `gemini-3.6-flash`
+- Prompt: `voice-parser-v4`
+- Schema: `voice-command-schema-v4`
+
+`VOICE_COMMAND_E2E = PASS`. Artifact: `/opt/cursor/artifacts/voice_scribe_e2e/results.json`.
+
+## 22. AI telemetry real
+
+Não houve insert manual em `ai_usage`. Chamadas reais:
+
+- Voice ASR+Parser: Voice E2E (fetch) + `invokeAiFunction('voice-command')` com WAV t1
+- Supervisor: `invokeAiFunction('review')`
+- Narrativa: `onda5_live` `generate-description`
+
+Colunas de `ai_usage` (sem PHI): `feature`, `provider`, `model`, `prompt_version`, `schema_version`, `latency_ms`, `status`, `input_tokens`, `output_tokens`, `audio_seconds`, `estimated_cost`. Não existem colunas de transcript, nome de paciente, resposta clínica, prompt ou áudio.
+
+Exemplo pós-fix (Supervisor): `feature=clinical_review`, `provider=google-gemini`, `model=gemini-3.6-flash`, `prompt_version=clinical-review-v4`, `schema_version=clinical-review-schema-v2`, `latency_ms=7911`, `status=success`. Tokens/áudio/custo = `null` (fluxo existente não envia).
+
+O hook atual mapeia `voice-command` → `voice_parser` (não cria linha separada `voice_asr`). O ASR foi exercitado de verdade e validado no Voice E2E.
+
+`admin_ai_overview` autenticado: `voice_events=3`, `review_events=1`, `narrative_events=1`, `total_ai_events=5`, nota “sem conteúdo clínico”.
 
 ---
 
 ## Status final
 
 ```
-ADMIN_BOOTSTRAP_SECURITY     = PASS
-ADMIN_INTEGRITY              = PASS
-ADMIN_MULTI_TENANCY          = PASS
-ADMIN_CLINIC_ADMIN           = PARTIAL
-ADMIN_USER_MANAGEMENT        = PASS
-ADMIN_ORGANIZATION_MANAGEMENT= PASS
-ADMIN_ISSUES                 = PASS
-ADMIN_OPERATIONS             = PASS
-ADMIN_AI_TELEMETRY           = PARTIAL
-ADMIN_SETTINGS               = PASS
-ADMIN_AUDIT                  = PASS
-ADMIN_PAGINATION             = PASS
-ADMIN_FINANCIAL_V1           = PASS
-ADMIN_RLS                    = PASS
-ADMIN_PHI_REVIEW             = PASS
-ADMIN_LIVE_E2E               = FAIL
-CORE_CLINICAL_REGRESSION     = PASS
+ADMIN_BOOTSTRAP_SECURITY          = PASS
+ADMIN_INTEGRITY                   = PASS
+ADMIN_MULTI_TENANCY               = PASS
+ADMIN_CLINIC_ADMIN                = PASS
+ADMIN_USER_MANAGEMENT             = PASS
+ADMIN_ORGANIZATION_MANAGEMENT     = PASS
+ADMIN_ISSUES                      = PASS
+ADMIN_OPERATIONS                  = PASS
+ADMIN_AI_TELEMETRY                = PASS
+ADMIN_SETTINGS                    = PASS
+ADMIN_AUDIT                       = PASS
+ADMIN_PAGINATION                  = PASS
+ADMIN_FINANCIAL_V1                = PASS
+ADMIN_RLS                         = PASS
+ADMIN_PHI_REVIEW                  = PASS
+ADMIN_LIVE_E2E                    = PASS
+CORE_CLINICAL_STATIC_REGRESSION   = PASS
+CORE_CLINICAL_LIVE_REGRESSION     = PASS
+VOICE_COMMAND_E2E                 = PASS
+BUILD                             = PASS
 ```
 
-`ADMIN_CLINIC_ADMIN = PARTIAL`: isolamento implementado no PostgreSQL; falta E2E autenticado A vs B.
+Critério de release (live):
 
-`ADMIN_AI_TELEMETRY = PARTIAL`: tabela + hook + UI honesta; `ai_usage` ainda vazio até a próxima chamada real.
-
-`ADMIN_LIVE_E2E = FAIL`: suite autenticada não rodou neste ambiente. Substitutos SQL de A/F/G passaram.
-
-`CORE_CLINICAL_REGRESSION = PASS`: sem mudança funcional do core; testes estáticos cobrem o pinamento. Live Voice/clínico não reexecutado.
+```
+Clinic Admin A → A              = PASS
+Clinic Admin A → B              = DENIED
+Normal User → Admin             = DENIED
+Super Admin global              = PASS
+Integrity live                  = PASS
+Tamper detection                = PASS
+Issue creation                  = PASS
+Issue dedup                     = PASS
+AI real telemetry               = PASS
+Admin Live E2E                  = PASS
+Clinical Live Regression        = PASS
+Voice E2E                       = PASS
+TypeScript                      = PASS
+Lint                            = PASS
+Tests                           = PASS
+Build                           = PASS
+```
 
 ---
 
 ## ANESTFLOW_ADMIN_HARDENED
 
 ```
-ANESTFLOW_ADMIN_HARDENED = FAIL
+ANESTFLOW_ADMIN_HARDENED = PASS
 ```
-
-Motivo: critério 26 (live E2E autenticado) e critério 10 (TEST C com dois usuários) não foram executados neste ambiente. A implementação dos demais critérios está no código e no schema remoto.
-
-Para promover a PASS: rodar `npx tsx src/tests/admin_live_e2e.ts` com `ONDA3_TEST_EMAIL` / `_B` e a suíte clínica/Voice live já existente.
