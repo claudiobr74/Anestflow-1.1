@@ -349,15 +349,16 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
-# Google OAuth for AnestFlow. Keep disabled until Client ID/Secret exist in env
-# (Dashboard → Authentication → Providers → Google). Never put the secret in Vite.
+# Google OAuth for AnestFlow. Secret stays in env / Dashboard — never in Vite.
+# Hosted provider is toggled in the Dashboard; this block is for `npx supabase start`.
 [auth.external.google]
-enabled = false
+enabled = true
 client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 redirect_uri = ""
 url = ""
-skip_nonce_check = false
+# Local Google sign-in often needs this; hosted Auth ignores config.toml.
+skip_nonce_check = true
 email_optional = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.
