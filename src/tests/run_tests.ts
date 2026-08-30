@@ -2545,9 +2545,23 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
     "supabase/migrations/20260830140300_admin_hardening_users_ops.sql",
     "supabase/migrations/20260830140400_admin_hardening_ops_settings.sql",
     "supabase/migrations/20260830140500_admin_hardening_issue_dedup_verify.sql",
+    "supabase/migrations/20260830140600_admin_dashboard_heatmap_nested_agg.sql",
   ];
   const hardeningExists = hardeningFiles.every((rel) => fs.existsSync(path.join(process.cwd(), rel)));
   assert(hardeningExists, "migrations de hardening estão versionadas");
+  const dashSql = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260830140200_admin_hardening_rpcs.sql"),
+    "utf-8"
+  );
+  const dashFixSql = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260830140600_admin_dashboard_heatmap_nested_agg.sql"),
+    "utf-8"
+  );
+  assert(
+    !dashSql.includes("'count', count(*)::int") && !dashFixSql.includes("'count', count(*)::int"),
+    "heatmap do dashboard não aninha jsonb_agg com count(*)"
+  );
+  assert(dashSql.includes("extract(isodow from p.created_at)::int as dow"), "heatmap agrega em subquery");
   assert(!sql.includes("patient->>'name'"), "RPC de procedimentos não seleciona nome do paciente");
   assert(!sql.includes("signed_canonical"), "Admin não devolve signed_canonical");
   assert(sql.includes("patient->>'hospital'"), "hospital institucional é metadata operacional");
