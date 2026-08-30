@@ -5,6 +5,7 @@ import {
   evaluateSession,
   evaluateWorkstationLock,
   needsSignatureStepUp,
+  SESSION_ACTIVITY_KEY,
   SESSION_INACTIVITY_MS,
   SESSION_TIMEBOX_MS,
   SIGNATURE_STEP_UP_MS,
@@ -14,6 +15,10 @@ import {
 import {
   AUTH_ERROR_EMAIL_SEND_RATE,
   AUTH_ERROR_LEAKED_PASSWORD,
+  AUTH_ERROR_OAUTH_CANCELLED,
+  AUTH_ERROR_OAUTH_GENERIC,
+  AUTH_ERROR_OAUTH_PROVIDER,
+  AUTH_ERROR_OAUTH_REDIRECT,
   AUTH_ERROR_TOO_MANY_REQUESTS,
   mapAuthError
 } from "../lib/authErrors.ts";
@@ -25,6 +30,19 @@ import {
   matchHibpRangeBody,
   sha1HexUpper,
 } from "../lib/leakedPassword.ts";
+import {
+  consumeOAuthReauthIfPresent,
+  displayNameFromAuthUser,
+  getAuthRedirectTo,
+  markOAuthReauthIntent,
+  parseOAuthCallbackError,
+  sessionUserCanEnterApp,
+  startGoogleOAuth,
+  stripProviderOAuthTokensFromStorage,
+  userHasGoogleIdentity,
+  userHasPasswordIdentity,
+} from "../lib/googleAuth.ts";
+import { isProfileComplete } from "../lib/profileService.ts";
 import { installMemoryStorage, storageDump } from "./memoryStorage.ts";
 import fs from "fs";
 import path from "path";
@@ -1523,6 +1541,8 @@ try {
   assert(appSrc.includes("setWorkstationLocked(true)"), "Lock não faz logout");
   const lockUi = fs.readFileSync(path.join(process.cwd(), "src/components/WorkstationLockScreen.tsx"), "utf-8");
   assert(lockUi.includes("signInWithPassword"), "Desbloqueio revalida a senha");
+  assert(lockUi.includes("startGoogleOAuth"), "Usuário Google reautentica no lock via OAuth");
+  assert(lockUi.includes('mode: "reauth"'), "Reauth Google pede prompt=login");
   assert(!lockUi.includes("signOut") && !lockUi.includes("setFicha"), "Lock não destrói a ficha nem faz logout sozinho");
 
   const { getBlankDocument } = await import("../mockData.ts");
@@ -2233,6 +2253,148 @@ try {
   assert(readme.includes("ATOMICITY_AND_RLS_AUDIT.md"), "README aponta a auditoria");
 } catch (err) {
   assert(false, `Falha na verificação da transação clínica: ${err}`);
+}
+
+// 24. GOOGLE AUTH (OAUTH SUPABASE)
+console.log("\n24. Verificando login Google via Supabase Auth...");
+try {
+  const loginUi = fs.readFileSync(path.join(process.cwd(), "src/components/LoginScreen.tsx"), "utf-8");
+  const googleAuthSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/googleAuth.ts"), "utf-8");
+  const lockUi = fs.readFileSync(path.join(process.cwd(), "src/components/WorkstationLockScreen.tsx"), "utf-8");
+  const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf-8");
+  const triggerSrc = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260830003000_google_oauth_profile_name.sql"),
+    "utf-8"
+  );
+  const envExample = fs.readFileSync(path.join(process.cwd(), ".env.example"), "utf-8");
+  const configToml = fs.readFileSync(path.join(process.cwd(), "supabase/config.toml"), "utf-8");
+  const readme = fs.readFileSync(path.join(process.cwd(), "README.md"), "utf-8");
+
+  assert(loginUi.includes("Continuar com Google"), "LoginScreen tem o botão Continuar com Google");
+  assert(loginUi.includes("handleGoogleSignIn"), "LoginScreen tem handler Google");
+  assert(loginUi.includes("startGoogleOAuth"), "Botão Google chama startGoogleOAuth");
+  assert(loginUi.includes("signInWithPassword"), "Login por e-mail/senha permanece");
+  assert(loginUi.includes("isProfileComplete"), "Retorno OAuth reutiliza isProfileComplete");
+  assert(loginUi.includes("setNeedsProfile(true)"), "Perfil incompleto abre Complete Profile");
+  assert(loginUi.includes("onLoginRef.current(profileToDoctor"), "Perfil completo entra no app");
+  assert(!loginUi.includes("google_users"), "LoginScreen não cria identidade paralela");
+  assert(!loginUi.includes("VITE_GOOGLE_CLIENT"), "Frontend não lê Client ID/Secret do Google");
+  assert(!googleAuthSrc.includes("256506538709"), "Client ID do Google não está no helper");
+  assert(!envExample.includes("VITE_GOOGLE_CLIENT_SECRET"), ".env.example não expõe secret no Vite");
+  assert(!envExample.includes("VITE_GOOGLE_CLIENT_ID"), ".env.example não pede Client ID no Vite");
+  assert(googleAuthSrc.includes('provider: "google"'), "OAuth usa provider google");
+  assert(googleAuthSrc.includes("redirectTo"), "OAuth envia redirectTo");
+  assert(!googleAuthSrc.includes("calendar") && !googleAuthSrc.includes("drive.readonly"), "Sem scopes extras de Google APIs");
+  assert(appSrc.includes("consumeOAuthReauthIfPresent"), "App consome reauth Google antes do lock");
+  assert(appSrc.includes("getSupabase().auth.signOut"), "Logout continua no signOut do Supabase");
+  assert(lockUi.includes("signInWithPassword") && lockUi.includes("startGoogleOAuth"), "Lock oferece senha e Google");
+  assert(triggerSrc.includes("raw_user_meta_data ->> 'name'"), "Trigger aceita name do Google");
+  assert(!triggerSrc.includes("avatar_url"), "Trigger não persiste avatar do Google");
+  assert(configToml.includes("[auth.external.google]"), "config.toml declara o provider Google");
+  assert(configToml.includes("env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"), "Secret local vem de env, não do git");
+  assert(readme.includes("Continuar com Google"), "README documenta o login Google");
+
+  assert(getAuthRedirectTo("http://localhost:3000") === "http://localhost:3000/", "redirectTo usa a origem + /");
+  assert(getAuthRedirectTo("https://app.example/") === "https://app.example/", "redirectTo não duplica a barra");
+
+  const oauthCalls: unknown[] = [];
+  const mockClient = {
+    auth: {
+      signInWithOAuth: async (params: unknown) => {
+        oauthCalls.push(params);
+        return { data: { provider: "google" as const, url: "https://accounts.google.com/o" }, error: null };
+      }
+    }
+  };
+  const ok = await startGoogleOAuth({
+    mode: "login",
+    origin: "https://anestflow.example",
+    supabase: mockClient
+  });
+  assert(ok.error === null, "startGoogleOAuth resolve sem erro no mock");
+  const firstCall = oauthCalls[0] as { provider: string; options: { redirectTo: string; queryParams?: Record<string, string> } };
+  assert(firstCall.provider === "google", "Teste 1: provider = google");
+  assert(firstCall.options.redirectTo === "https://anestflow.example/", "Teste 2: redirectTo é a origem da app");
+  assert(!firstCall.options.queryParams, "Login inicial não força prompt=login");
+
+  oauthCalls.length = 0;
+  await startGoogleOAuth({ mode: "reauth", origin: "https://anestflow.example", supabase: mockClient });
+  const reauthCall = oauthCalls[0] as { options: { queryParams?: Record<string, string> } };
+  assert(reauthCall.options.queryParams?.prompt === "login", "Step-up Google pede reautenticação");
+
+  const errClient = {
+    auth: {
+      signInWithOAuth: async () => ({
+        data: { provider: "google" as const, url: null },
+        error: { message: "Unsupported provider", code: "unsupported_provider" }
+      })
+    }
+  };
+  const failed = await startGoogleOAuth({ supabase: errClient, origin: "http://localhost:3000" });
+  assert(
+    mapAuthError(failed.error) === AUTH_ERROR_OAUTH_PROVIDER,
+    "Teste 3: erro do Supabase vira mensagem amigável"
+  );
+  assert(
+    mapAuthError({ code: "access_denied", message: "User cancelled" }) === AUTH_ERROR_OAUTH_CANCELLED,
+    "Cancelamento OAuth tem mensagem própria"
+  );
+  assert(
+    mapAuthError({ message: "redirect_uri mismatch" }) === AUTH_ERROR_OAUTH_REDIRECT,
+    "Redirect mismatch tem mensagem própria"
+  );
+  assert(
+    mapAuthError({ message: "Unable to exchange oauth code" }) === AUTH_ERROR_OAUTH_GENERIC,
+    "Falha OAuth genérica não vaza stack"
+  );
+
+  const callbackErr = parseOAuthCallbackError("?error=access_denied&error_description=The+user+denied", "");
+  assert(callbackErr?.code === "access_denied", "Callback de cancelamento é lido da query");
+  assert(parseOAuthCallbackError("?code=pkce-code", "") === null, "Code PKCE não é tratado como erro");
+
+  assert(userHasPasswordIdentity({ identities: [{ provider: "email" }] }) === true, "Identidade email tem senha");
+  assert(userHasGoogleIdentity({ identities: [{ provider: "google" }] }) === true, "Identidade google é detectada");
+  assert(userHasPasswordIdentity({ identities: [{ provider: "google" }] }) === false, "Google-only não tem senha");
+  assert(sessionUserCanEnterApp({ identities: [{ provider: "google" }] }) === true, "Google-only entra sem confirmar e-mail extra");
+  assert(sessionUserCanEnterApp({ email_confirmed_at: null, identities: [{ provider: "email" }] }) === false, "Email/senha não confirmado continua bloqueado");
+  assert(displayNameFromAuthUser({ user_metadata: { name: "Dra. Teste" } }) === "Dra. Teste", "Nome do Google preenche Complete Profile");
+
+  assert(
+    isProfileComplete({ id: "u1", full_name: "A", crm: "1", uf: "GO", hospital: "H", email: "a@b.com" }) === true,
+    "Teste 6: profile completo entra"
+  );
+  assert(
+    isProfileComplete({ id: "u1", full_name: "A", crm: null, uf: "GO", hospital: "H", email: "a@b.com" }) === false,
+    "Teste 5: CRM ausente abre Complete Profile"
+  );
+  assert(
+    isProfileComplete({ id: "u1", full_name: "Google Name", crm: "", uf: "", hospital: "", email: "g@x.com" }) === false,
+    "Nome do Google sozinho não completa o perfil profissional"
+  );
+
+  markOAuthReauthIntent("signature");
+  const intent = consumeOAuthReauthIfPresent(5_000_000);
+  assert(intent?.reason === "signature", "Intent de step-up Google é consumido");
+  assert(localStorage.getItem(SESSION_ACTIVITY_KEY) === "5000000", "Reauth Google renova o relógio do posto");
+  assert(consumeOAuthReauthIfPresent() === null, "Intent não é reutilizado");
+
+  localStorage.setItem(
+    "sb-test-auth-token",
+    JSON.stringify({
+      access_token: "keep-access",
+      refresh_token: "keep-refresh",
+      provider_token: "drop-me",
+      provider_refresh_token: "drop-me-too",
+      user: { id: "u1" }
+    })
+  );
+  stripProviderOAuthTokensFromStorage();
+  const stored = JSON.parse(localStorage.getItem("sb-test-auth-token") || "{}");
+  assert(stored.access_token === "keep-access", "Access token do Supabase permanece");
+  assert(stored.refresh_token === "keep-refresh", "Refresh token do Supabase permanece");
+  assert(!stored.provider_token && !stored.provider_refresh_token, "Tokens do Google não ficam no localStorage");
+} catch (err) {
+  assert(false, `Falha na verificação do Google Auth: ${err}`);
 }
 
 // 23. VERIFICAÇÃO FINAL DE RESULTADOS

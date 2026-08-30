@@ -24,6 +24,14 @@ import { checkLeakedPassword } from "../lib/leakedPassword";
 import { validateClinicalPassword } from "../lib/passwordPolicy";
 import { consumeSessionEndMessage } from "../lib/sessionPolicy";
 import {
+  consumeOAuthCallbackError,
+  displayNameFromAuthUser,
+  sessionUserCanEnterApp,
+  startGoogleOAuth,
+  stripProviderOAuthTokensFromStorage
+} from "../lib/googleAuth";
+import GoogleAuthButton from "./GoogleAuthButton";
+import {
   fetchOwnProfile,
   isProfileComplete,
   profileToDoctor,
@@ -58,6 +66,7 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   const [info, setInfo] = useState("");
   const [sessionNotice, setSessionNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [needsProfile, setNeedsProfile] = useState(false);
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
@@ -72,6 +81,8 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
   useEffect(() => {
     const notice = consumeSessionEndMessage();
     if (notice) setSessionNotice(notice);
+    const oauthError = consumeOAuthCallbackError();
+    if (oauthError) setError(mapAuthError(oauthError));
   }, []);
 
   useEffect(() => {
@@ -88,7 +99,8 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
       }
 
       setCurrentUser(user);
-      if (!user.email_confirmed_at) {
+      stripProviderOAuthTokensFromStorage();
+      if (!sessionUserCanEnterApp(user)) {
         setNeedsEmailConfirm(true);
         setNeedsProfile(false);
         return;
@@ -102,7 +114,10 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
           onLoginRef.current(profileToDoctor(profile!));
         } else {
           setNeedsProfile(true);
-          if (profile?.full_name) setName(profile.full_name);
+          const fromProfile = profile?.full_name?.trim();
+          const fromGoogle = displayNameFromAuthUser(user);
+          if (fromProfile) setName(fromProfile);
+          else if (fromGoogle) setName(fromGoogle);
           if (profile?.crm) setCrm(profile.crm);
           if (profile?.uf) setUf(profile.uf);
           if (profile?.hospital) setHospital(profile.hospital);
@@ -140,8 +155,30 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
     };
   }, []);
 
+  const handleGoogleSignIn = async () => {
+    if (isSubmitting || isGoogleSubmitting) return;
+    setError("");
+    setInfo("");
+    setIsGoogleSubmitting(true);
+    try {
+      const configError = await ensureSupabaseConfig();
+      if (configError) {
+        setError(configError);
+        setIsGoogleSubmitting(false);
+        return;
+      }
+      const { error: oauthError } = await startGoogleOAuth({ mode: "login" });
+      if (oauthError) throw oauthError;
+    } catch (err: unknown) {
+      console.error("Google Auth Error:", err);
+      setError(mapAuthError(err as { message?: string; code?: string }));
+      setIsGoogleSubmitting(false);
+    }
+  };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGoogleSubmitting) return;
     setError("");
     setInfo("");
     if (!email.trim() || !password) {
@@ -357,6 +394,21 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
                 </button>
               </div>
             ) : !needsProfile ? (
+              <div className="space-y-4">
+                <GoogleAuthButton
+                  onClick={() => void handleGoogleSignIn()}
+                  disabled={isSubmitting || isGoogleSubmitting}
+                  busy={isGoogleSubmitting}
+                  isDark={isDark}
+                  label="Continuar com Google"
+                />
+                <div className="flex items-center gap-3" role="separator" aria-label="ou">
+                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
+                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    ou
+                  </span>
+                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
+                </div>
               <form onSubmit={handleEmailAuth} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-zinc-400 tracking-wider mb-1.5">
@@ -406,7 +458,7 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isGoogleSubmitting}
                   className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm shadow-sm active:scale-98 transition flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
                 >
                   {isSubmitting ? (
@@ -434,10 +486,8 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
                     O cadastro recusa senhas que aparecem em vazamentos públicos (HaveIBeenPwned), sem enviar a senha completa. O SMTP padrão envia no máximo 2 e-mails de confirmação por hora. Se o cadastro falhar por limite, não tente de novo — use Entrar se a conta já existir.
                   </p>
                 )}
-                <p className={`text-center text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                  Google OAuth está preparado no Auth, mas permanece desligado até existirem Client ID e Secret no Dashboard.
-                </p>
               </form>
+              </div>
             ) : (
               <form onSubmit={handleProfileSubmit} className="space-y-4">
                 <div>

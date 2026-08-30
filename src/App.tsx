@@ -29,6 +29,10 @@ import {
   persistSessionEndReason,
   type SessionViolation,
 } from "./lib/sessionPolicy";
+import {
+  consumeOAuthReauthIfPresent,
+  stripProviderOAuthTokensFromStorage,
+} from "./lib/googleAuth";
 import { purgeClinicalPhiFromLocalStorage } from "./lib/clinicalStorageKeys";
 import {
   canEditDocument,
@@ -47,6 +51,7 @@ import AppModalHost from "./components/AppModalHost";
 
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(() => {
+    consumeOAuthReauthIfPresent();
     const saved = localStorage.getItem("anesthesia_user");
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -137,6 +142,7 @@ export default function App() {
           return;
         }
         if (supabaseUser) {
+          stripProviderOAuthTokensFromStorage();
           setIsEmailVerified(Boolean(supabaseUser.email_confirmed_at));
           if (supabaseUser.email) {
             setUser((prev) => {
