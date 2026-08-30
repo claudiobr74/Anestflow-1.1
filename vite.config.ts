@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: PWA_REGISTER_TYPE,
+        includeAssets: ['logo.png'],
         workbox: {
           cacheId: PWA_CACHE_NAME,
           skipWaiting: true,
@@ -24,7 +25,7 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 5000000
         },
         manifest: {
-          name: 'Registro Anestésico Digital',
+          name: 'AnestFlow',
           short_name: 'AnestFlow',
           description: 'Prontuário Anestésico Digital PWA',
           theme_color: '#ffffff',

@@ -2520,6 +2520,15 @@ console.log("\n--- 23. Admin ERP (rotas, RBAC, PHI, IA) ---");
   assert(procSvc.includes("organization_id"), "insert clínico tenta gravar organization_id");
   assert(procSvc.includes("resolve_my_organization_id"), "organization_id vem de RPC inequívoca");
 
+  const indexHtml = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf-8");
+  const viteCfg = fs.readFileSync(path.join(process.cwd(), "vite.config.ts"), "utf-8");
+  assert(indexHtml.includes("<title>AnestFlow</title>"), "aba do navegador é AnestFlow");
+  assert(!indexHtml.includes("Google AI Studio"), "index.html não usa branding do AI Studio");
+  assert(!indexHtml.includes("My Google AI Studio App"), "título template do AI Studio foi removido");
+  assert(indexHtml.includes('name="application-name" content="AnestFlow"'), "application-name é AnestFlow");
+  assert(viteCfg.includes("name: 'AnestFlow'"), "PWA name é AnestFlow");
+  assert(viteCfg.includes("short_name: 'AnestFlow'"), "PWA short_name é AnestFlow");
+
   const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260830013809_admin_erp.sql"), "utf-8");
   assert(sql.includes("force row level security"), "tabelas admin usam FORCE RLS");
   assert(sql.includes("not_platform_admin"), "RPC recusa não-admin");
