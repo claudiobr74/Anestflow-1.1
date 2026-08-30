@@ -15,6 +15,21 @@ export const AUTH_ERROR_TOO_MANY_REQUESTS =
 export const AUTH_ERROR_LEAKED_PASSWORD =
   "Esta senha aparece em vazamentos públicos (HaveIBeenPwned). Escolha outra senha longa e exclusiva, de preferência gerada por um gerenciador.";
 
+export const AUTH_ERROR_OAUTH_CANCELLED =
+  "Login com Google cancelado. Nenhuma sessão foi criada.";
+
+export const AUTH_ERROR_OAUTH_PROVIDER =
+  "O login com Google não está disponível neste ambiente. Use e-mail e senha, ou avise o administrador.";
+
+export const AUTH_ERROR_OAUTH_REDIRECT =
+  "O retorno do Google não coincide com o endereço desta aplicação. Verifique as URLs de redirecionamento no Auth.";
+
+export const AUTH_ERROR_OAUTH_NO_SESSION =
+  "O Google autorizou, mas a sessão do AnestFlow não foi criada. Tente de novo.";
+
+export const AUTH_ERROR_OAUTH_GENERIC =
+  "Não foi possível entrar com Google. Tente de novo ou use e-mail e senha.";
+
 export type AuthErrorLike = {
   message?: string;
   code?: string;
@@ -82,6 +97,42 @@ export function mapAuthError(err: AuthErrorLike | null | undefined): string {
   }
   if (code.includes("over_request") || message.includes("too many requests")) {
     return AUTH_ERROR_TOO_MANY_REQUESTS;
+  }
+  if (
+    code.includes("access_denied") ||
+    message.includes("access_denied") ||
+    message.includes("popup closed") ||
+    message.includes("popup_closed") ||
+    message.includes("user cancelled") ||
+    message.includes("user canceled") ||
+    message.includes("oauth_canceled")
+  ) {
+    return AUTH_ERROR_OAUTH_CANCELLED;
+  }
+  if (
+    code.includes("provider_disabled") ||
+    code.includes("provider_not_enabled") ||
+    code.includes("unsupported_provider") ||
+    message.includes("provider is not enabled") ||
+    message.includes("unsupported provider")
+  ) {
+    return AUTH_ERROR_OAUTH_PROVIDER;
+  }
+  if (
+    code.includes("redirect") ||
+    message.includes("redirect_uri") ||
+    message.includes("redirect uri mismatch") ||
+    message.includes("invalid redirect")
+  ) {
+    return AUTH_ERROR_OAUTH_REDIRECT;
+  }
+  if (
+    code.includes("oauth") ||
+    message.includes("oauth") ||
+    message.includes("unable to exchange") ||
+    message.includes("pkce")
+  ) {
+    return AUTH_ERROR_OAUTH_GENERIC;
   }
   return err?.message || "Erro na autenticação.";
 }
