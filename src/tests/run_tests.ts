@@ -2285,6 +2285,12 @@ try {
   assert(loginUi.includes("handleGoogleSignIn"), "LoginScreen tem handler Google");
   assert(loginUi.includes("startGoogleOAuth"), "Botão Google chama startGoogleOAuth");
   assert(loginUi.includes("signInWithPassword"), "Login por e-mail/senha permanece");
+  const emailFormIdx = loginUi.indexOf("<form onSubmit={handleEmailAuth}");
+  const googleBtnIdx = loginUi.indexOf("<GoogleAuthButton");
+  assert(
+    emailFormIdx >= 0 && googleBtnIdx > emailFormIdx,
+    "E-mail/senha aparece acima do botão Continuar com Google"
+  );
   assert(loginUi.includes("isProfileComplete"), "Retorno OAuth reutiliza isProfileComplete");
   assert(loginUi.includes("setNeedsProfile(true)"), "Perfil incompleto abre Complete Profile");
   assert(loginUi.includes("onLoginRef.current(profileToDoctor"), "Perfil completo entra no app");
