@@ -1,15 +1,23 @@
 export type AdminRange = "today" | "7d" | "30d" | "this_month" | "3m";
 
+export type AdminRole = "SUPER_ADMIN" | "CLINIC_ADMIN" | "USER";
+
 export type OrgType = "hospital" | "clinica" | "grupo" | "outro";
 export type OrgPlan = "enterprise" | "standard" | "basic" | "trial";
-export type OrgStatus = "active" | "suspended" | "trial";
+export type OrgStatus = "active" | "suspended" | "trial" | "archived";
 
 export type ProcedureStatus = "draft" | "in_progress" | "signed";
 
-export type UserAdminStatus = "ativo" | "convite_pendente" | "perfil_incompleto";
+export type UserAdminStatus =
+  | "ativo"
+  | "active"
+  | "inactive"
+  | "suspended"
+  | "convite_pendente"
+  | "perfil_incompleto";
 
 export type IssueSeverity = "critical" | "high" | "medium" | "low";
-export type IssueStatus = "open" | "investigating" | "resolved";
+export type IssueStatus = "open" | "investigating" | "resolved" | "ignored";
 
 export type SeriesPoint = {
   day: string;
@@ -40,13 +48,15 @@ export type HeatmapCell = {
 };
 
 export type DashboardMetrics = {
-  users_active: number;
+  users_active?: number | null;
+  users_registered?: number | null;
   organizations_active: number;
   organizations: number;
   procedures: number;
   procedures_today: number;
   users_active_today: number;
   success_rate_pct: number | null;
+  signature_rate_pct?: number | null;
 };
 
 export type DashboardKpis = {
@@ -55,7 +65,7 @@ export type DashboardKpis = {
   duration_anes_min: number | null;
   completed_pct: number | null;
   in_progress: number;
-  cancelled: number;
+  cancelled: number | null;
   with_addendum: number;
   with_incident: number;
   drafts: number;
@@ -93,9 +103,20 @@ export type OrganizationListItem = {
   city: string | null;
   state: string | null;
   monthly_cents: number;
+  billing_cycle?: string | null;
   created_at: string;
   members: number;
   procedures_month: number;
+};
+
+export type OrganizationPatch = {
+  name?: string;
+  city?: string | null;
+  state?: string | null;
+  plan?: OrgPlan | string;
+  monthly_cents?: number;
+  billing_cycle?: string;
+  status?: OrgStatus | string;
 };
 
 export type OrganizationMember = {
@@ -132,7 +153,9 @@ export type AdminUserListItem = {
   last_sign_in_at: string | null;
   email_confirmed_at: string | null;
   status: UserAdminStatus | string;
+  account_status?: string | null;
   is_platform_admin: boolean;
+  is_clinic_admin?: boolean;
   organization_name: string | null;
   login_provider: string | null;
 };
@@ -160,6 +183,12 @@ export type AdminUserDetail = AdminUserListItem & {
   recent_activity: UserActivityItem[];
 };
 
+export type ProcedureIntegrity = {
+  integrity_status?: string;
+  snapshot_ok?: boolean | null;
+  persisted_ok?: boolean | null;
+};
+
 export type ProcedureMeta = {
   id: string;
   status: ProcedureStatus | string;
@@ -168,6 +197,11 @@ export type ProcedureMeta = {
   updated_at: string | null;
   signed_at: string | null;
   has_hash: boolean;
+  organization_id?: string | null;
+  integrity_status?: string | null;
+  snapshot_ok?: boolean | null;
+  persisted_ok?: boolean | null;
+  integrity?: ProcedureIntegrity | null;
   responsible_name: string | null;
   responsible_crm: string | null;
   responsible_uf: string | null;
@@ -180,15 +214,15 @@ export type ProcedureMeta = {
 export type AiOverview = {
   range: AdminRange | string;
   note: string;
-  voice_events: number;
-  review_events: number;
-  narrative_events: number;
-  total_ai_events: number;
+  voice_events: number | null;
+  review_events: number | null;
+  narrative_events: number | null;
+  total_ai_events: number | null;
   success_rate_pct: number | null;
   latency_p50_ms: number | null;
   latency_p95_ms: number | null;
-  cost_brl: number;
-  cost_per_proc_brl: number;
+  cost_brl: number | null;
+  cost_per_proc_brl: number | null;
   errors: unknown[];
 };
 
@@ -200,17 +234,17 @@ export type OpsSubsystem = {
 };
 
 export type OpsMetrics24h = {
-  atomic_saves: number;
-  rollbacks: number;
-  stale_revisions: number;
-  tab_conflicts: number;
-  sync_failures: number;
-  sign_failures: number;
-  pdf_failures: number;
-  voice_failures: number;
-  review_failures: number;
-  integrity_mismatches: number;
-  signs: number;
+  atomic_saves: number | null;
+  rollbacks: number | null;
+  stale_revisions: number | null;
+  tab_conflicts: number | null;
+  sync_failures: number | null;
+  sign_failures: number | null;
+  pdf_failures: number | null;
+  voice_failures: number | null;
+  review_failures: number | null;
+  integrity_mismatches: number | null;
+  signs: number | null;
 };
 
 export type OpsEvent = {
@@ -244,7 +278,7 @@ export type FinancialOverview = {
   mrr_cents: number;
   arr_cents: number;
   ticket_cents: number;
-  ai_cost_cents: number;
+  ai_cost_cents: number | null;
   margin_pct: number | null;
   active_paid_orgs: number;
   trial_orgs: number;
@@ -266,6 +300,10 @@ export type AdminIssue = {
   error_code: string;
   severity: IssueSeverity | string;
   status: IssueStatus | string;
+  occurrences?: number | null;
+  last_seen_at?: string | null;
+  resolved_at?: string | null;
+  resolution_note?: string | null;
   organization_id: string | null;
   organization_name: string | null;
   procedure_id: string | null;
@@ -295,6 +333,8 @@ export type AdminFeatureFlags = {
   experimental: boolean;
 };
 
+export type AdminSettingsEnforcement = Record<string, string>;
+
 export type AdminSettings = {
   id: string;
   platform_name: string;
@@ -309,6 +349,7 @@ export type AdminSettings = {
   feature_flags: AdminFeatureFlags;
   updated_at: string;
   session_policy_hours: number;
+  enforcement?: AdminSettingsEnforcement;
 };
 
 export type AdminSettingsPatch = {
@@ -321,6 +362,19 @@ export type AdminSettingsPatch = {
   maintenance_mode?: boolean;
   support_email?: string;
   feature_flags?: Partial<AdminFeatureFlags>;
+};
+
+export type AdminWhoami = {
+  user_id: string;
+  role: AdminRole | string;
+  organization_ids: string[];
+};
+
+export type AdminListPage<T> = {
+  total_count: number;
+  page: number;
+  page_size: number;
+  items: T[];
 };
 
 export type AdminTheme = "light" | "dark" | "dark-clean";

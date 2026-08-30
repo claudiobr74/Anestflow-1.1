@@ -1,6 +1,6 @@
 import React from "react";
 import { Building2, Plus } from "lucide-react";
-import { adminCreateOrganization, adminListOrganizations } from "../api";
+import { adminCreateOrganization, adminListOrganizationsPage } from "../api";
 import type { OrganizationListItem, OrgPlan, OrgType } from "../types";
 import { formatInt, ORG_PLAN_LABEL, ORG_STATUS_LABEL, ORG_TYPE_LABEL } from "../format";
 import { navigateAdmin, organizationHref } from "../routes";
@@ -12,7 +12,6 @@ import {
   LoadingBlock,
   PageHeader,
   Pagination,
-  paginate,
   PrimaryButton,
   SecondaryButton,
   SelectFilter,
@@ -40,6 +39,7 @@ function statusTone(status: string): "success" | "danger" | "warning" | "neutral
 
 export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) {
   const [rows, setRows] = React.useState<OrganizationListItem[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -58,14 +58,16 @@ export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) 
     setLoading(true);
     setError(null);
     try {
-      setRows(await adminListOrganizations());
+      const result = await adminListOrganizationsPage(page, PAGE_SIZE, search);
+      setRows(result.items);
+      setTotalCount(result.total_count);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Falha ao listar organizações.");
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search]);
 
   React.useEffect(() => {
     void load();
@@ -167,7 +169,7 @@ export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) 
       {!loading ? (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            <StatTile isDark={isDark} label="Total de organizações" value={formatInt(rows.length)} />
+            <StatTile isDark={isDark} label="Total de organizações" value={formatInt(totalCount)} />
             <StatTile isDark={isDark} label="Ativas" value={formatInt(active)} tone="success" />
             <StatTile isDark={isDark} label="Trial" value={formatInt(trial)} tone="warning" />
           </div>
@@ -196,7 +198,7 @@ export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) 
           </FilterBar>
           <DataTable<OrganizationListItem>
             isDark={isDark}
-            rows={paginate(filtered, page, PAGE_SIZE)}
+            rows={filtered}
             rowKey={(row) => row.id}
             emptyTitle="Nenhuma organização cadastrada"
             emptyDescription="Hospitais em texto livre na ficha clínica não viram organização automaticamente. Cadastre uma instituição para começar."
@@ -261,7 +263,14 @@ export default function AdminOrganizationsPage({ isDark }: { isDark: boolean }) 
               },
             ]}
           />
-          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="organizações" isDark={isDark} />
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={type !== "all" || status !== "all" || plan !== "all" ? filtered.length : totalCount}
+            onPage={setPage}
+            noun="organizações"
+            isDark={isDark}
+          />
         </>
       ) : null}
     </div>

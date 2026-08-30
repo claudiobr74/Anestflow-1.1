@@ -35,10 +35,14 @@ export const ORG_STATUS_LABEL: Record<string, string> = {
   active: "Ativo",
   suspended: "Suspenso",
   trial: "Trial",
+  archived: "Arquivado",
 };
 
 export const USER_STATUS_LABEL: Record<string, string> = {
   ativo: "Ativo",
+  active: "Ativo",
+  inactive: "Inativo",
+  suspended: "Suspenso",
   convite_pendente: "Convite pendente",
   perfil_incompleto: "Perfil incompleto",
 };
@@ -54,7 +58,31 @@ export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: "Aberto",
   investigating: "Investigando",
   resolved: "Resolvido",
+  ignored: "Ignorado",
 };
+
+export const INTEGRITY_STATUS_LABEL: Record<string, string> = {
+  intact: "Íntegro",
+  not_verified: "Não verificado",
+  legacy: "Legado",
+  snapshot_mismatch: "Inconsistência detectada",
+  persisted_mismatch: "Inconsistência detectada",
+  both_mismatch: "Inconsistência detectada",
+};
+
+export function integrityStatusOf(row: {
+  integrity_status?: string | null;
+  integrity?: { integrity_status?: string | null } | null;
+}): string {
+  const nested = row.integrity && typeof row.integrity === "object" ? row.integrity.integrity_status : null;
+  return row.integrity_status || nested || "not_verified";
+}
+
+export function integrityStatusLabel(status: string | null | undefined): string {
+  if (!status) return "Não verificado";
+  if (status.includes("mismatch")) return "Inconsistência detectada";
+  return INTEGRITY_STATUS_LABEL[status] ?? status;
+}
 
 export const WEEKDAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"] as const;
 
@@ -81,7 +109,8 @@ export function formatPct(value: unknown): string {
 }
 
 export function formatBRLFromCents(cents: unknown): string {
-  const n = asFiniteNumber(cents) ?? 0;
+  const n = asFiniteNumber(cents);
+  if (n == null) return "—";
   return new Intl.NumberFormat(ADMIN_LOCALE, {
     style: "currency",
     currency: "BRL",
@@ -89,7 +118,8 @@ export function formatBRLFromCents(cents: unknown): string {
 }
 
 export function formatBRL(amount: unknown): string {
-  const n = asFiniteNumber(amount) ?? 0;
+  const n = asFiniteNumber(amount);
+  if (n == null) return "—";
   return new Intl.NumberFormat(ADMIN_LOCALE, {
     style: "currency",
     currency: "BRL",

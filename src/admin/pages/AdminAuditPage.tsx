@@ -1,5 +1,5 @@
 import React from "react";
-import { adminListAuditEvents } from "../api";
+import { adminListAuditPage } from "../api";
 import type { AuditEvent } from "../types";
 import { formatDateTime, uniqueStrings } from "../format";
 import {
@@ -10,7 +10,6 @@ import {
   LoadingBlock,
   PageHeader,
   Pagination,
-  paginate,
   SelectFilter,
 } from "../components/ui";
 
@@ -28,6 +27,7 @@ function tipoTone(tipo: string): "brand" | "success" | "warning" | "danger" | "i
 
 export default function AdminAuditPage({ isDark }: { isDark: boolean }) {
   const [rows, setRows] = React.useState<AuditEvent[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -37,9 +37,11 @@ export default function AdminAuditPage({ isDark }: { isDark: boolean }) {
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void adminListAuditEvents(200)
-      .then((list) => {
-        if (!cancelled) setRows(list);
+    void adminListAuditPage(page, PAGE_SIZE)
+      .then((result) => {
+        if (cancelled) return;
+        setRows(result.items);
+        setTotalCount(result.total_count);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Falha ao carregar auditoria.");
@@ -50,7 +52,7 @@ export default function AdminAuditPage({ isDark }: { isDark: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page]);
 
   const tipos = uniqueStrings(rows.map((row) => row.tipo));
   const filtered = rows.filter((row) => {
@@ -90,7 +92,7 @@ export default function AdminAuditPage({ isDark }: { isDark: boolean }) {
           </FilterBar>
           <DataTable<AuditEvent>
             isDark={isDark}
-            rows={paginate(filtered, page, PAGE_SIZE)}
+            rows={filtered}
             rowKey={(row) => row.id}
             emptyTitle="Nenhum evento de auditoria"
             emptyDescription="Eventos administrativos e clínicos (sem PHI) aparecem aqui quando existirem."
@@ -111,7 +113,7 @@ export default function AdminAuditPage({ isDark }: { isDark: boolean }) {
               { key: "ip", header: "IP", render: (row) => row.ip || "—" },
             ]}
           />
-          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="logs" isDark={isDark} />
+          <Pagination page={page} pageSize={PAGE_SIZE} total={search || tipo !== "all" ? filtered.length : totalCount} onPage={setPage} noun="logs" isDark={isDark} />
         </>
       ) : null}
     </div>

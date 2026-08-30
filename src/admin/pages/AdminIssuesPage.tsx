@@ -1,5 +1,5 @@
 import React from "react";
-import { adminListIssues } from "../api";
+import { adminListIssuesPage } from "../api";
 import type { AdminIssue } from "../types";
 import { formatDateTime, formatRelative, ISSUE_SEVERITY_LABEL, ISSUE_STATUS_LABEL, uniqueStrings } from "../format";
 import { issuesHref, navigateAdmin } from "../routes";
@@ -11,7 +11,6 @@ import {
   LoadingBlock,
   PageHeader,
   Pagination,
-  paginate,
   SelectFilter,
 } from "../components/ui";
 import AdminIssueDrawer from "../components/AdminIssueDrawer";
@@ -40,6 +39,7 @@ export default function AdminIssuesPage({
   drawerId: string | null;
 }) {
   const [rows, setRows] = React.useState<AdminIssue[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [severity, setSeverity] = React.useState("all");
@@ -52,14 +52,16 @@ export default function AdminIssuesPage({
     setLoading(true);
     setError(null);
     try {
-      setRows(await adminListIssues());
+      const result = await adminListIssuesPage(page, PAGE_SIZE);
+      setRows(result.items);
+      setTotalCount(result.total_count);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Falha ao listar problemas.");
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   React.useEffect(() => {
     void load();
@@ -124,7 +126,7 @@ export default function AdminIssuesPage({
           <h2 className="mb-3 text-sm font-bold">Incidentes ativos</h2>
           <DataTable<AdminIssue>
             isDark={isDark}
-            rows={paginate(filtered, page, PAGE_SIZE)}
+            rows={filtered}
             rowKey={(row) => row.id}
             selectedKey={drawerId}
             selectedClassName={isDark ? "bg-violet-500/10 border-l-4 border-l-rose-500" : "bg-[#efeaff] border-l-4 border-l-rose-500"}
@@ -175,7 +177,14 @@ export default function AdminIssuesPage({
               },
             ]}
           />
-          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="incidentes" isDark={isDark} />
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={severity !== "all" || status !== "all" || type !== "all" || org !== "all" ? filtered.length : totalCount}
+            onPage={setPage}
+            noun="incidentes"
+            isDark={isDark}
+          />
         </>
       ) : null}
       {drawerId ? (

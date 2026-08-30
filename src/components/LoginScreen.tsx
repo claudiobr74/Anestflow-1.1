@@ -395,21 +395,7 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
               </div>
             ) : !needsProfile ? (
               <div className="space-y-4">
-                <GoogleAuthButton
-                  onClick={() => void handleGoogleSignIn()}
-                  disabled={isSubmitting || isGoogleSubmitting}
-                  busy={isGoogleSubmitting}
-                  isDark={isDark}
-                  label="Continuar com Google"
-                />
-                <div className="flex items-center gap-3" role="separator" aria-label="ou">
-                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
-                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                    ou
-                  </span>
-                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
-                </div>
-              <form onSubmit={handleEmailAuth} className="space-y-4">
+                <form onSubmit={handleEmailAuth} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-zinc-400 tracking-wider mb-1.5">
                     Email
@@ -487,6 +473,20 @@ export default function LoginScreen({ onLogin, isDark, onToggleTheme }: LoginScr
                   </p>
                 )}
               </form>
+                <div className="flex items-center gap-3" role="separator" aria-label="ou">
+                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
+                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    ou
+                  </span>
+                  <div className={`flex-1 h-px ${isDark ? "bg-zinc-800" : "bg-zinc-200"}`} />
+                </div>
+                <GoogleAuthButton
+                  onClick={() => void handleGoogleSignIn()}
+                  disabled={isSubmitting || isGoogleSubmitting}
+                  busy={isGoogleSubmitting}
+                  isDark={isDark}
+                  label="Continuar com Google"
+                />
               </div>
             ) : (
               <form onSubmit={handleProfileSubmit} className="space-y-4">

@@ -67,32 +67,13 @@ export default function AdminSettingsPage({ isDark }: { isDark: boolean }) {
         base_url: settings.base_url,
         timezone: settings.timezone,
         locale: settings.locale,
-        require_2fa: settings.require_2fa,
         password_policy: settings.password_policy,
-        maintenance_mode: settings.maintenance_mode,
         support_email: settings.support_email,
-        feature_flags: settings.feature_flags,
       });
       setSettings(next);
       setInfo("Configurações salvas.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Falha ao salvar.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const patchFlag = async (key: keyof AdminFeatureFlags, value: boolean) => {
-    if (!settings) return;
-    const feature_flags = { ...settings.feature_flags, [key]: value };
-    setSettings({ ...settings, feature_flags });
-    setSaving(true);
-    setError(null);
-    try {
-      const next = await adminUpdateSettings({ feature_flags: { [key]: value } });
-      setSettings(next);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Falha ao atualizar flag.");
     } finally {
       setSaving(false);
     }
@@ -155,11 +136,27 @@ export default function AdminSettingsPage({ isDark }: { isDark: boolean }) {
                 <input className={inputClass} value={`${sessionHours}h`} readOnly />
               </Field>
               <div className="flex items-center justify-between gap-3">
-                <span className={`text-sm ${isDark ? "text-zinc-300" : "text-[#2d3436]"}`}>Dois fatores (2FA) obrigatório</span>
+                <div>
+                  <span className={`text-sm ${isDark ? "text-zinc-300" : "text-[#2d3436]"}`}>Dois fatores (2FA) obrigatório</span>
+                  <span className={`mt-0.5 block text-[11px] ${isDark ? "text-zinc-500" : "text-[#636e72]"}`}>Ainda não aplicado ao runtime</span>
+                </div>
                 <Toggle
                   label="Dois fatores (2FA) obrigatório"
                   checked={Boolean(settings.require_2fa)}
-                  onChange={(value) => setSettings({ ...settings, require_2fa: value })}
+                  disabled
+                  onChange={() => undefined}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className={`text-sm ${isDark ? "text-zinc-300" : "text-[#2d3436]"}`}>Modo de manutenção</span>
+                  <span className={`mt-0.5 block text-[11px] ${isDark ? "text-zinc-500" : "text-[#636e72]"}`}>Ainda não aplicado ao runtime</span>
+                </div>
+                <Toggle
+                  label="Modo de manutenção"
+                  checked={Boolean(settings.maintenance_mode)}
+                  disabled
+                  onChange={() => undefined}
                 />
               </div>
               <Field
@@ -185,12 +182,15 @@ export default function AdminSettingsPage({ isDark }: { isDark: boolean }) {
               <ul className="space-y-3">
                 {FLAG_LABELS.map((flag) => (
                   <li key={flag.key} className="flex items-center justify-between gap-3">
-                    <span className="text-sm">{flag.label}</span>
+                    <div>
+                      <span className="text-sm">{flag.label}</span>
+                      <span className={`mt-0.5 block text-[11px] ${isDark ? "text-zinc-500" : "text-[#636e72]"}`}>Ainda não aplicado ao runtime</span>
+                    </div>
                     <Toggle
                       label={flag.label}
                       checked={Boolean(settings.feature_flags?.[flag.key])}
-                      disabled={saving}
-                      onChange={(value) => void patchFlag(flag.key, value)}
+                      disabled
+                      onChange={() => undefined}
                     />
                   </li>
                 ))}
