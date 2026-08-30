@@ -1,6 +1,8 @@
-import {StrictMode} from 'react';
+import {StrictMode, useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import AdminApp from './admin/AdminApp.tsx';
+import { isAdminPathname } from './admin/routes.ts';
 import { ClinicalErrorBoundary } from './components/ClinicalErrorBoundary.tsx';
 import './index.css';
 
@@ -14,10 +16,22 @@ if (import.meta.env.DEV && typeof navigator !== "undefined" && "serviceWorker" i
   });
 }
 
+function Root() {
+  const [admin, setAdmin] = useState(() => isAdminPathname(window.location.pathname));
+  useEffect(() => {
+    const sync = () => setAdmin(isAdminPathname(window.location.pathname));
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  return (
+    <ClinicalErrorBoundary>
+      {admin ? <AdminApp /> : <App />}
+    </ClinicalErrorBoundary>
+  );
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClinicalErrorBoundary>
-      <App />
-    </ClinicalErrorBoundary>
+    <Root />
   </StrictMode>,
 );
