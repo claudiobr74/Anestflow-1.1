@@ -11,7 +11,8 @@ import {
   BrainCircuit,
   Settings,
   MoreHorizontal,
-  ChevronLeft
+  ChevronLeft,
+  Shield
 } from "lucide-react";
 import AnestFlowLogo from "./AnestFlowLogo";
 import { VoiceCommandButton } from "./VoiceCommandButton";
@@ -148,6 +149,8 @@ type AppHeaderProps = {
   onOpenSettings: () => void;
   onToggleTheme: () => void;
   onLogout: () => void;
+  showAdminLink?: boolean;
+  onOpenAdmin?: () => void;
 };
 
 export default function AppHeader({
@@ -171,7 +174,9 @@ export default function AppHeader({
   onResetBlank,
   onOpenSettings,
   onToggleTheme,
-  onLogout
+  onLogout,
+  showAdminLink = false,
+  onOpenAdmin
 }: AppHeaderProps) {
   const inProgress = isAnesthesiaInProgress(ficha.timers);
   const chipLabel = headerAnesthesiaChipLabel(ficha, now);
@@ -273,6 +278,19 @@ export default function AppHeader({
                     <RotateCcw className="h-4 w-4" /> Limpar Tudo
                   </button>
                   <div className={`my-1 h-px ${isDark ? "bg-zinc-800" : "bg-[#E5E7EB]"}`} />
+                  {showAdminLink && onOpenAdmin ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOverflowMenuOpen(false);
+                        onOpenAdmin();
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2.5 text-left ${menuHover}`}
+                    >
+                      <Shield className="h-4 w-4" /> Admin
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"

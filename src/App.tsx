@@ -85,6 +85,7 @@ export default function App() {
   const [workstationLocked, setWorkstationLocked] = useState(false);
   const [lockReason, setLockReason] = useState<"idle" | "signature">("idle");
   const [selectedMinutes, setSelectedMinutes] = useState<number | null>(null);
+  const [showAdminLink, setShowAdminLink] = useState(false);
 
   const { overflowMenuOpen, setOverflowMenuOpen, overflowMenuRef } = useOverflowMenu();
 
@@ -162,6 +163,29 @@ export default function App() {
       if (unsubscribe) unsubscribe();
     };
   }, [clearToBlankDocument]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setShowAdminLink(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getSupabase, isSupabaseConfigured, ensureSupabaseConfig } = await import("./lib/supabase");
+        await ensureSupabaseConfig();
+        if (!isSupabaseConfigured()) return;
+        const { data, error } = await getSupabase().rpc("is_platform_admin");
+        if (!cancelled && !error && data === true) setShowAdminLink(true);
+        else if (!cancelled) setShowAdminLink(false);
+      } catch {
+        if (!cancelled) setShowAdminLink(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
 
   const handleResendVerificationEmail = async () => {
     setResendingEmail(true);
@@ -456,6 +480,10 @@ export default function App() {
         onOpenSettings={() => setShowSettingsModal(true)}
         onToggleTheme={toggleTheme}
         onLogout={() => { void handleLogout(); }}
+        showAdminLink={showAdminLink}
+        onOpenAdmin={() => {
+          window.location.assign("/admin");
+        }}
       />
 
       <AppNav activeTab={activeTab} onChangeTab={setActiveTab} isDark={isDark} />
