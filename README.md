@@ -1,20 +1,13 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# AnestFlow
 
-# Run and deploy your AI Studio app
+Prontuário Anestésico Digital.
 
-This contains everything you need to run your app locally.
+## Executar localmente
 
-View your app in AI Studio: https://ai.studio/apps/53c7f9b0-7fac-4476-b772-ccbd3a050571
+**Pré-requisitos:** Node.js
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
+1. Instale as dependências:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Defina a `GEMINI_API_KEY` em [.env.local](.env.local) com a chave da API Gemini
+3. Execute o app:
    `npm run dev`
