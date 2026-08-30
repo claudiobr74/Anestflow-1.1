@@ -11,11 +11,13 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        includeAssets: ['logo.png'],
         workbox: {
-          maximumFileSizeToCacheInBytes: 5000000
+          maximumFileSizeToCacheInBytes: 5000000,
+          cleanupOutdatedCaches: true
         },
         manifest: {
-          name: 'Registro Anestésico Digital',
+          name: 'AnestFlow',
           short_name: 'AnestFlow',
           description: 'Prontuário Anestésico Digital PWA',
           theme_color: '#ffffff',
